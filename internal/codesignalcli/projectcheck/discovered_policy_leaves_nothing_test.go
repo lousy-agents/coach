@@ -17,7 +17,9 @@ func TestWhatTheWorkingTreeHoldsAtTheDiscoveredPathDecidesWhetherThereIsAPolicyT
 		want   bool
 	}{
 		{"a regular file", nil, false},
-		{"nothing at the path", &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Missing: projectconfig.MissingAbsent}, true},
+		{"nothing at the path", &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Missing: projectconfig.MissingAbsent, Remedy: projectreadiness.RemedyAuthor}, true},
+		{"a copy staged in the index", &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Missing: projectconfig.MissingAbsent, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseStagedCopy}, false},
+		{"a conflict recorded in the index", &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Missing: projectconfig.MissingAbsent, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseMergeConflict}, false},
 		{"a name the disk spells in another case", &projectconfig.ConfigError{Kind: projectconfig.KindInvalid, PolicyCause: projectreadiness.CauseNameCaseDiffers}, true},
 		{"a path inside a submodule", &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Missing: projectconfig.MissingAbsent, PolicyCause: projectreadiness.CauseInSubmodule}, false},
 		{"a directory", &projectconfig.ConfigError{Kind: projectconfig.KindInvalid, PolicyCause: projectreadiness.CauseNotARegularFile}, false},

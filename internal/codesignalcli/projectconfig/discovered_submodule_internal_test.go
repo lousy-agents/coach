@@ -22,8 +22,8 @@ func TestAFileAtTheDefaultPathInsideASubmoduleIsSetAsideAsTheSubmodules(t *testi
 	if refusal.PolicyCause != projectreadiness.CauseInSubmodule || refusal.Blocker != ".lousy-agents" || refusal.Remedy != projectreadiness.RemedyNone {
 		t.Errorf("refusal = %+v; want the cause in_submodule, the submodule named, and no way out", refusal)
 	}
-	if !settled.CanonicalOccupiedOnDisk() {
-		t.Error("CanonicalOccupiedOnDisk = false; the path is taken, so project.json is not to be moved there")
+	if !settled.CanonicalPathTaken() {
+		t.Error("CanonicalPathTaken = false; the path is taken, so project.json is not to be moved there")
 	}
 }
 

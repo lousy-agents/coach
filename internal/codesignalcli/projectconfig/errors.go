@@ -115,6 +115,22 @@ func (e *ConfigError) ReplacesPolicy() bool {
 	return (e.Kind == KindInvalid || e.Kind == KindUnreadable) && e.OffersAuthoring()
 }
 
+// AbsentFromDisk is whether nothing is at the policy's path in the working tree: the error is a missing policy
+// and not a path that is unusable or blocked by a file.
+func (e *ConfigError) AbsentFromDisk() bool {
+	return e.Kind == KindMissing && e.Missing == MissingAbsent
+}
+
+// FreeForANewPolicy is whether a new file can go at the policy's path, or project.json be moved there, without
+// losing work or failing: nothing is on disk, and nothing else holds the path. What else can hold it is decided where
+// the judgment of the path is made, which asks the index and the revision as well as the disk, and the remedy it
+// arrives at is a new policy only when nothing does: a staged copy or edit, a recorded conflict, a skip-worktree mark,
+// a sparse checkout, a submodule, or a policy the revision holds that a restore brings back each leave another remedy. This
+// is the one question every gate that writes or moves a policy asks, for a policy named and for one discovered.
+func (e *ConfigError) FreeForANewPolicy() bool {
+	return e.AbsentFromDisk() && e.Remedy == projectreadiness.RemedyAuthor
+}
+
 // readError classifies a runProjectConfigGit failure into a
 // user-facing message that never surfaces raw git stderr. A
 // *gitrepo.BoundError is our own timeout/output-budget text and is

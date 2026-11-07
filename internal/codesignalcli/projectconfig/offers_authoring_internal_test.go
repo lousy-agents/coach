@@ -85,3 +85,52 @@ func requireTheReadReplacesThePolicy(t *testing.T, kind gitrepo.BoundErrorKind, 
 	}
 	requireReplacesPolicy(t, configErr, want)
 }
+
+// A new file can go at a path, or project.json be moved there, only where nothing is on disk and the judgment of the
+// path arrived at a new policy as the way out. The index, a conflict, a mark, a sparse checkout, a submodule and the
+// revision's own copy each leave another remedy, so none is free.
+func TestAPathIsFreeForANewPolicyOnlyWhereNothingIsOnDiskAndAuthoringIsTheRemedy(t *testing.T) {
+	cases := map[string]struct {
+		err  *ConfigError
+		want bool
+	}{
+		"nothing is there": {&ConfigError{Kind: KindMissing, Missing: MissingAbsent, Remedy: projectreadiness.RemedyAuthor}, true},
+		"a staged copy that a new file would be added over": {&ConfigError{Kind: KindMissing, Missing: MissingAbsent, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseStagedCopy}, false},
+		"a path inside a submodule":                         {&ConfigError{Kind: KindMissing, Missing: MissingAbsent, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseInSubmodule}, false},
+		"a committed policy that a restore brings back":     {&ConfigError{Kind: KindMissing, Missing: MissingAbsent, Remedy: projectreadiness.RemedyRestore}, false},
+		"a file where a directory should be":                {&ConfigError{Kind: KindMissing, Missing: MissingBlockedParent, Remedy: projectreadiness.RemedyAuthor}, false},
+		"a path the disk cannot use":                        {&ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyAuthor}, false},
+		"an error that was never classified":                {&ConfigError{}, false},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) { requireFreeForANewPolicy(t, c.err, c.want) })
+	}
+}
+
+func requireFreeForANewPolicy(t *testing.T, err *ConfigError, want bool) {
+	t.Helper()
+	if got := err.FreeForANewPolicy(); got != want {
+		t.Errorf("FreeForANewPolicy() = %v for kind %d, missing %d and remedy %d, want %v", got, err.Kind, err.Missing, err.Remedy, want)
+	}
+}
+
+func TestOnlyAMissingPolicyIsAbsentFromDisk(t *testing.T) {
+	cases := map[string]struct {
+		err  *ConfigError
+		want bool
+	}{
+		"nothing is there":         {&ConfigError{Kind: KindMissing, Missing: MissingAbsent}, true},
+		"a file blocks the parent": {&ConfigError{Kind: KindMissing, Missing: MissingBlockedParent}, false},
+		"an invalid document":      {&ConfigError{Kind: KindInvalid, Missing: MissingAbsent}, false},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) { requireAbsentFromDisk(t, c.err, c.want) })
+	}
+}
+
+func requireAbsentFromDisk(t *testing.T, err *ConfigError, want bool) {
+	t.Helper()
+	if got := err.AbsentFromDisk(); got != want {
+		t.Errorf("AbsentFromDisk() = %v, want %v", got, want)
+	}
+}

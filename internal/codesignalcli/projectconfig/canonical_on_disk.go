@@ -35,7 +35,7 @@ func selectionOfTheProbe(err error) (Selection, error) {
 	switch {
 	case !errors.As(err, &refusal):
 		return Selection{}, err
-	case refusal.Kind == KindMissing && refusal.Missing == MissingAbsent:
+	case refusal.AbsentFromDisk():
 		return Selection{}, nil
 	}
 	return Selection{UnusableCanonical: refusal}, nil
