@@ -17,9 +17,6 @@ func refuseWhenReadRevisionsLackObjects(run Runner, dir, base, version string) e
 	}
 	for _, revision := range revisions {
 		missing, err := missingObjectsOf(run, dir, revision.name)
-		if errors.Is(err, exec.ErrNotFound) {
-			return gitNotFoundError()
-		}
 		if err != nil {
 			return cannotTellWhatIsMissing(version, err)
 		}
@@ -48,7 +45,13 @@ func revisionNames(revisions []readRevision) []string {
 	return names
 }
 
+// cannotTellWhatIsMissing is the refusal for a question the probe could not answer. Every question of the guard
+// ends here, so this is where a git that is not installed is told apart: its version is "unknown" only because
+// it cannot be started, and it is said so as every other read of git says it.
 func cannotTellWhatIsMissing(version string, cause error) error {
+	if errors.Is(cause, exec.ErrNotFound) {
+		return gitNotFoundError()
+	}
 	return &OperationalError{Message: fmt.Sprintf("could not tell whether this repository has the objects Coach reads (%s), and git %s cannot be told not to fetch the objects a partial clone lacks, so a read could run its remote's transport and write objects; %s", TerminalSafe(cause.Error()), version, wayOut("")), Cause: cause}
 }
 
