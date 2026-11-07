@@ -18,6 +18,8 @@ func TestWordLeavesPlainTextAndQuotesTheRest(t *testing.T) {
 		{"--base=origin/main", "--base=origin/main"},
 		{"x,y%z+w:v.json", "x,y%z+w:v.json"},
 		{"=lead.json", `'=lead.json'`},
+		{"^lead.json", `'^lead.json'`},
+		{"@lead.json", "@lead.json"},
 		{"", `''`},
 	}
 	for _, c := range cases {
