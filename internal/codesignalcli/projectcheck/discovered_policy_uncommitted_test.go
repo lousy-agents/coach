@@ -56,7 +56,7 @@ func TestADiscoveredPolicyUnderAFileOnDiskNamesTheFileInTheWay(t *testing.T) {
 func TestADiscoveredPolicyWhoseDiskStateCannotBeReadStopsTheCheck(t *testing.T) {
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
-	withReadinessGit(t, questionsWhereOnly(theRepositoryRootLookup))
+	withReadinessGit(t, questionsWhereOnly(t, theRepositoryRootLookup))
 
 	check, _, err := gapForDiscoveredPolicyOnDisk(repo, "HEAD", projectconfig.CanonicalPath, projectreadiness.Check{Code: projectreadiness.GapPolicyMissing})
 
