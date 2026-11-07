@@ -156,6 +156,9 @@ var causeRows = []causeRow{
 	{"a policy missing from inside a submodule checkout", "vendor/sub/cfg/p.json", "policy_missing", "in_submodule", func(repo string) {
 		addSubmodule(repo)
 	}},
+	{"a policy file inside a submodule checked out at the top level of the repository", "sub/coach.json", "policy_missing", "in_submodule", func(repo string) {
+		addSubmoduleAt(repo, "sub")
+	}},
 	{"a path that is a submodule, with its checkout there", "vendor/sub", "policy_invalid", "in_submodule", func(repo string) {
 		addSubmodule(repo)
 	}},

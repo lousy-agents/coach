@@ -32,7 +32,10 @@ func commitRepoWithSubmodule() string {
 }
 
 // addSubmodule records a submodule at vendor/sub in repo, whose own checkout holds a coach.json.
-func addSubmodule(repo string) {
+func addSubmodule(repo string) { addSubmoduleAt(repo, "vendor/sub") }
+
+// addSubmoduleAt commits a submodule at path, with its checkout there.
+func addSubmoduleAt(repo, path string) {
 	inner := GinkgoT().TempDir()
 	gitIn(inner, "init", "-q")
 	Expect(os.WriteFile(filepath.Join(inner, "coach.json"), []byte(singleRootPolicyJSON), 0o644)).To(Succeed())
@@ -40,7 +43,7 @@ func addSubmodule(repo string) {
 	innerCommit := exec.Command("git", "commit", "-q", "-m", "inner")
 	innerCommit.Dir, innerCommit.Env = inner, commitEnv
 	ExpectWithOffset(1, innerCommit.Run()).To(Succeed())
-	gitIn(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, "vendor/sub")
+	gitIn(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, path)
 	superCommit := exec.Command("git", "commit", "-q", "-m", "sub")
 	superCommit.Dir, superCommit.Env = repo, commitEnv
 	ExpectWithOffset(1, superCommit.Run()).To(Succeed())
