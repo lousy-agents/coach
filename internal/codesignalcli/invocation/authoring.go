@@ -30,7 +30,7 @@ func BatchAuthoring(target string) string {
 // command alone could not be.
 func directoryNote(target string) string {
 	if dir := path.Dir(target); target != "" && dir != "." {
-		return "once " + shellword.Word(dir) + " exists at the repository root, run"
+		return "after making sure " + shellword.Word(dir) + " exists at the repository root, run"
 	}
 	return ""
 }

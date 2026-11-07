@@ -22,7 +22,7 @@ func TestCommandText(t *testing.T) {
 		{"guided authoring", Command{Mode: SuggestProjectConfig}, "coach codesignal --baseline --suggest-project-config --project-language typescript"},
 		{"a path a shell would expand", Command{Mode: CheckProject, Policy: policyref.Named("$(touch PWNED).json")}, `coach codesignal --baseline --check-project --project-language typescript --project-config '$(touch PWNED).json'`},
 		{"guided authoring into a file at the repository root", Command{Mode: SuggestProjectConfig, Target: "new.json"}, "coach codesignal --baseline --suggest-project-config --project-language typescript --output new.json"},
-		{"guided authoring into a file in a directory says the directory must exist, because --output does not create it", Command{Mode: SuggestProjectConfig, Target: "cfg/new.json"}, "once cfg exists at the repository root, run coach codesignal --baseline --suggest-project-config --project-language typescript --output cfg/new.json"},
+		{"guided authoring into a file in a directory says the directory must exist, because --output does not create it", Command{Mode: SuggestProjectConfig, Target: "cfg/new.json"}, "after making sure cfg exists at the repository root, run coach codesignal --baseline --suggest-project-config --project-language typescript --output cfg/new.json"},
 		{"guided authoring into a path a shell would expand", Command{Mode: SuggestProjectConfig, Target: "$(touch PWNED).json"}, `coach codesignal --baseline --suggest-project-config --project-language typescript --output '$(touch PWNED).json'`},
 		{"guided authoring for a named policy never names --project-config, which authoring rejects", Command{Mode: SuggestProjectConfig, Policy: policyref.Named("cfg/new.json")}, "coach codesignal --baseline --suggest-project-config --project-language typescript"},
 	}
@@ -80,9 +80,9 @@ func TestBatchAuthoring(t *testing.T) {
 	cases := map[string]struct{ target, want string }{
 		"the default location":                {"", "coach codesignal --baseline --suggest-project-config"},
 		"a file at the repository root":       {"new.json", "coach codesignal --baseline --suggest-project-config --output new.json"},
-		"a file in a directory":               {"cfg/new.json", "once cfg exists at the repository root, run coach codesignal --baseline --suggest-project-config --output cfg/new.json"},
-		"a file in a nested directory":        {"a/b/new.json", "once a/b exists at the repository root, run coach codesignal --baseline --suggest-project-config --output a/b/new.json"},
-		"a path a shell would split":          {"my cfg/a b.json", "once 'my cfg' exists at the repository root, run coach codesignal --baseline --suggest-project-config --output 'my cfg/a b.json'"},
+		"a file in a directory":               {"cfg/new.json", "after making sure cfg exists at the repository root, run coach codesignal --baseline --suggest-project-config --output cfg/new.json"},
+		"a file in a nested directory":        {"a/b/new.json", "after making sure a/b exists at the repository root, run coach codesignal --baseline --suggest-project-config --output a/b/new.json"},
+		"a path a shell would split":          {"my cfg/a b.json", "after making sure 'my cfg' exists at the repository root, run coach codesignal --baseline --suggest-project-config --output 'my cfg/a b.json'"},
 		"a path whose name cannot be printed": {"bad\x1bname.json", "run --suggest-project-config with --output naming the same path (its name is not printed here)"},
 	}
 	for name, c := range cases {

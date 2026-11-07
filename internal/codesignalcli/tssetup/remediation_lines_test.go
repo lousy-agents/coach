@@ -76,7 +76,7 @@ type authoringCase struct {
 func TestSuggestProjectConfigRemediationForGoWritesWhereTheUserPointed(t *testing.T) {
 	cases := map[string]authoringCase{
 		"a named policy at the repository root":  {policyref.Named("new.json"), goAuthoring + " --output new.json"},
-		"a named policy in a directory":          {policyref.Named("cfg/new.json"), "once cfg exists at the repository root, run " + goAuthoring + " --output cfg/new.json"},
+		"a named policy in a directory":          {policyref.Named("cfg/new.json"), "after making sure cfg exists at the repository root, run " + goAuthoring + " --output cfg/new.json"},
 		"a named policy at the default location": {policyref.Named(".lousy-agents/coach.json"), goAuthoring},
 		"a policy nobody named":                  {policyref.Discovered("project.json"), goAuthoring},
 	}
@@ -88,7 +88,7 @@ func TestSuggestProjectConfigRemediationForGoWritesWhereTheUserPointed(t *testin
 func TestSuggestProjectConfigRemediationForTypeScriptWritesWhereTheUserPointed(t *testing.T) {
 	cases := map[string]authoringCase{
 		"a named policy at the repository root":  {policyref.Named("new.json"), tsAuthoring + " --output new.json -- "},
-		"a named policy in a directory":          {policyref.Named("cfg/new.json"), "once cfg exists at the repository root, run " + tsAuthoring + " --output cfg/new.json -- "},
+		"a named policy in a directory":          {policyref.Named("cfg/new.json"), "after making sure cfg exists at the repository root, run " + tsAuthoring + " --output cfg/new.json -- "},
 		"a named policy at the default location": {policyref.Named(".lousy-agents/coach.json"), tsAuthoring + " -- "},
 	}
 	for name, c := range cases {
