@@ -71,13 +71,14 @@ func checkPolicyOnDisk(run gitrepo.Runner, dir, revision, policyPath string) (pr
 	check, roots, err := checkPolicy(run, dir, revision, policyPath)
 	if err == nil && check.Code == projectreadiness.GapPolicyMissing {
 		check.Remedy = projectreadiness.RemedyNone
-		message, cause, unanswered := projectconfig.UncommittedPolicy(run, dir, revision, policyPath)
+		state, unanswered := projectconfig.UncommittedPolicyInIndex(run, dir, revision, policyPath)
 		if unanswered != nil {
 			return projectreadiness.Check{}, nil, unansweredQuestion(policyPath, unanswered)
 		}
-		check = check.WithCause(message, cause)
-		// The file's presence made the gap this one and not a missing policy to author, so the check read it.
-		check.DecidedOnDisk = true
+		check = check.WithCause(state.Message, state.Cause)
+		// The file's presence made the gap this one and not a missing policy to author, so the check read it. It did not
+		// read what the index holds for the path, and a staged copy or a conflict there stays among the changes unread.
+		check.DecidedOnDisk = !state.HeldByTheIndex
 	}
 	return check, roots, err
 }

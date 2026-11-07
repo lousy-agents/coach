@@ -74,6 +74,12 @@ committed policy, an unmerged entry for it, or a staged entry for a policy that
 was never committed, is the exception: nothing read it, so the path stays in
 `dirty_worktree`, and Coach offers no restore over an edit.
 
+The index decides this whether or not the file is on disk. A file that is there and not committed, and that the index
+holds as an unresolved merge conflict, is `policy_missing` with the cause `merge_conflict` and not `not_committed`: git
+refuses to commit while the path is unmerged, so the message says to resolve the conflict, mark it resolved, and commit it.
+A staged copy of it keeps `not_committed`, because committing it is the way out. In both the path stays in
+`dirty_worktree`, with the file on disk or gone.
+
 A policy gap that names neither `author_policy` nor `restore_policy` says why in a
 `cause` on the gap, and the text prints the same word after the code
 (`policy_missing cause=not_committed`). The field is absent from every other gap,
