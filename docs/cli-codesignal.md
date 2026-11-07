@@ -125,7 +125,7 @@ holds, and what to do follows from that:
   `not_committed`. The printed move commands run at the repository root, which they find themselves, so they work when
   pasted from a subdirectory. `git add` cannot do that: on a repository that ignores case it records nothing for a
   rename that changes only the case of a name, and the commit says there is nothing to commit. `git mv` refuses to
-  rename a directory in case only, so a directory is renamed back and no `git mv` is offered. When the rename is
+  rename a directory in case only, so a directory is renamed back and no `git mv` is offered. A `git mv` is printed only where nothing else stands at the destination, or what stands there is the committed file seen through a disk that folds case: with `core.ignorecase` set on a disk that tells cases apart (a repository cloned on macOS or Windows and then copied to Linux), `git mv` skips its check that the destination exists and would overwrite an untracked file there for good, so the message says that a different file stands at the destination and prints no command, in the explicit and the discovered forms and in the several-spellings refusal alike; it says that git is set to ignore case, not that the disk ignores it. When the rename is
   already staged with `git mv`, the index holds the spelling on disk and the move would fail, so none is offered: the
   policy is plainly `not_committed`, and the way out is to commit the staged rename.
 - The revision holds neither spelling: the message says so and gives no advice,

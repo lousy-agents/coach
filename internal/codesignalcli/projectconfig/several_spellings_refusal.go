@@ -14,7 +14,7 @@ import (
 // index. They leave the index only because where a file system folds case they name the file just moved. With
 // more spellings than are named, or one that cannot be shown to a terminal, no command is printed: it would
 // leave a spelling committed or print a name it cannot show.
-func severalSpellingsReason(spellings []string, truncated bool, repoPath string) string {
+func severalSpellingsReason(spellings []string, truncated bool, repoPath string, mayMove moveGuard) string {
 	listed := slices.Sorted(slices.Values(spellings))
 	named := quotedList(listed)
 	if truncated {
@@ -26,6 +26,9 @@ func severalSpellingsReason(spellings []string, truncated bool, repoPath string)
 	others := slices.DeleteFunc(slices.Clone(listed), func(spelling string) bool { return spelling == keep })
 	if truncated || !movable {
 		return reason
+	}
+	if !mayMove(keep, repoPath) {
+		return fmt.Sprintf("%s; a different file stands at %q, and a move could overwrite it, so no command is printed: move that file aside first", reason, repoPath)
 	}
 	quoted := make([]string, len(others))
 	for i, other := range others {

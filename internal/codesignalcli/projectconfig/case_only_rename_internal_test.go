@@ -35,7 +35,7 @@ func TestAnUncommittedPolicyTheRevisionHoldsInAnotherCaseIsToldHowToRecordTheRen
 
 func assertRenameAdvice(t *testing.T, revision revisionEntries, repoPath string, want, avoid []string) {
 	t.Helper()
-	verdict := caseOnlyRename(revision, repoPath)
+	verdict := caseOnlyRename(revision, repoPath, anyMove)
 
 	if verdict == nil {
 		t.Fatalf("caseOnlyRename(%q) = nil; want a refusal", repoPath)
@@ -62,7 +62,7 @@ func TestAnUncommittedPolicyIsLeftAloneWhenTheRevisionHoldsNoOtherCaseOfIt(t *te
 
 func assertPlainlyUncommitted(t *testing.T, revision revisionEntries, repoPath string) {
 	t.Helper()
-	if got := caseOnlyRename(revision, repoPath); got != nil {
+	if got := caseOnlyRename(revision, repoPath, anyMove); got != nil {
 		t.Errorf("caseOnlyRename(%q) = %v; want nothing, so the policy is plainly uncommitted", repoPath, got)
 	}
 }
@@ -137,7 +137,7 @@ func assertGitMoveCommand(t *testing.T, from, to, want string) {
 }
 
 func TestTheRefusalCarriesTheCauseThatNamesACaseDifference(t *testing.T) {
-	verdict := caseOnlyRename(fakeRevision{"": {"policies"}, "policies": {"p.json"}}.entries, "policies/P.json")
+	verdict := caseOnlyRename(fakeRevision{"": {"policies"}, "policies": {"p.json"}}.entries, "policies/P.json", anyMove)
 
 	var got *ConfigError
 	if !errors.As(verdict, &got) || !strings.Contains(string(got.PolicyCause), "name_case_differs") {

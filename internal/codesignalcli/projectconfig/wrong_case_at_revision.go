@@ -22,10 +22,10 @@ import (
 //
 // It is for a policy Coach found. A path the user named is told in its own words, since the user typed it.
 func WrongCaseAtRevision(run gitrepo.Runner, dir, revision, repoPath string) error {
-	return wrongCaseOf(entriesThrough(run, dir, revision), repoPath)
+	return wrongCaseOf(entriesThrough(run, dir, revision), repoPath, moveGuardFor(run, dir))
 }
 
-func wrongCaseOf(entries revisionEntries, repoPath string) error {
+func wrongCaseOf(entries revisionEntries, repoPath string, mayMove moveGuard) error {
 	spellings, truncated, err := spellingsInRevision(entries, strings.Split(repoPath, "/"))
 	if err != nil {
 		return unansweredListing(fmt.Sprintf("nothing is committed at %q, the path Coach reads for the policy", repoPath), err)
@@ -35,9 +35,9 @@ func wrongCaseOf(entries revisionEntries, repoPath string) error {
 	case 0:
 		return nil
 	case 1:
-		return wrongCaseRefusal(fmt.Sprintf("the policy is committed as %q, but Coach reads %q, so it is not read: %s", spellings[0], repoPath, moveAdvice(spellings[0], repoPath)))
+		return wrongCaseRefusal(fmt.Sprintf("the policy is committed as %q, but Coach reads %q, so it is not read: %s", spellings[0], repoPath, moveAdvice(spellings[0], repoPath, mayMove)))
 	}
-	return wrongCaseRefusal(severalSpellingsReason(spellings, truncated, repoPath))
+	return wrongCaseRefusal(severalSpellingsReason(spellings, truncated, repoPath, mayMove))
 }
 
 func wrongCaseRefusal(reason string) *ConfigError {
@@ -49,10 +49,13 @@ func wrongCaseRefusal(reason string) *ConfigError {
 // create it; where the file system folds case, mkdir -p finds the old one and changes nothing. Both run at
 // the repository root, found once: the variable keeps a failure to find it from becoming a mkdir at the
 // root of the file system, because the && stops the chain.
-func moveAdvice(from, to string) string {
+func moveAdvice(from, to string, mayMove moveGuard) string {
 	command, ok := moveCommand(from, to)
 	if !ok {
 		return "move it to that path and commit the rename"
+	}
+	if !mayMove(from, to) {
+		return fmt.Sprintf("a different file stands at %q, and a move could overwrite it, so no command is printed: move that file aside, then move the committed one to that path and commit the rename", to)
 	}
 	return "rename it with " + command + " and commit the rename"
 }

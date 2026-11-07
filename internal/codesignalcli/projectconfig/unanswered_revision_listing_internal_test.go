@@ -42,7 +42,7 @@ func TestAPolicyMissingFromDiskIsNotCalledPlainlyMissingWhenTheRevisionCannotBeL
 }
 
 func TestADiscoveredPolicyIsNotCalledPlainlyMissingWhenTheRevisionCannotBeListed(t *testing.T) {
-	got := wrongCaseOf(listingFailsWithGitsWords, ".lousy-agents/coach.json")
+	got := wrongCaseOf(listingFailsWithGitsWords, ".lousy-agents/coach.json", anyMove)
 
 	assertUnansweredListing(t, configErrorOf(t, got), `nothing is committed at ".lousy-agents/coach.json"`)
 }

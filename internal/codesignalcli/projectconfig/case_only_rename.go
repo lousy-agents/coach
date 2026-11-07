@@ -32,10 +32,10 @@ func caseOnlyRenameRefusalWith(run gitrepo.Runner, dir string, entries revisionE
 	if !ignores {
 		return nil
 	}
-	return unlessTheRenameIsStaged(run, dir, repoPath, caseOnlyRename(entries, repoPath))
+	return unlessTheRenameIsStaged(run, dir, repoPath, caseOnlyRename(entries, repoPath, moveGuardFor(run, dir)))
 }
 
-func caseOnlyRename(entries revisionEntries, repoPath string) error {
+func caseOnlyRename(entries revisionEntries, repoPath string, mayMove moveGuard) error {
 	parts := strings.Split(repoPath, "/")
 	spelled, ambiguous, changed, err := spellingInRevision(entries, parts)
 	if err != nil {
@@ -45,14 +45,14 @@ func caseOnlyRename(entries revisionEntries, repoPath string) error {
 		return nil
 	}
 	held := strings.Join(spelled, "/")
-	reason := fmt.Sprintf("exists on disk, but the analyzed revision holds the path as %q, and this file system ignores case, so git add records nothing for the difference%s", held, renameAdvice(parts, spelled))
+	reason := fmt.Sprintf("exists on disk, but the analyzed revision holds the path as %q, and git is set to ignore case (core.ignorecase), so git add records nothing for the difference%s", held, renameAdvice(parts, spelled, mayMove))
 	return newUnusableOnDisk(repoPath, projectreadiness.CauseNameCaseDiffers, reason)
 }
 
 // renameAdvice follows from the first component that differs. A file can be renamed in the index with
 // git mv, which records a change of case where git add does not; a directory cannot, because git mv
 // refuses to rename a directory in case only, so it is renamed back.
-func renameAdvice(typed, held []string) string {
+func renameAdvice(typed, held []string, mayMove moveGuard) string {
 	index := firstDifference(typed, held)
 	pass := passClause(" and pass", strings.Join(held, "/"))
 	if index < len(typed)-1 {
@@ -62,6 +62,9 @@ func renameAdvice(typed, held []string) string {
 	command, ok := gitMoveCommand(from, to)
 	if !ok {
 		return fmt.Sprintf("; rename %q back to %q%s", to, from, pass)
+	}
+	if !mayMove(from, to) {
+		return fmt.Sprintf("; a different file stands at %q (the committed file is %q), and git mv could overwrite it, so no command is printed: move your file aside, or rename the committed one yourself, then run again", to, from)
 	}
 	return fmt.Sprintf("; record the rename with %s and commit it, or rename the file back%s", command, pass)
 }

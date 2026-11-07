@@ -36,7 +36,7 @@ func TestADiscoveredPolicyCommittedInAnotherCaseIsToldWhereToMoveIt(t *testing.T
 
 func assertWrongCaseAdvice(t *testing.T, revision revisionEntries, repoPath string, want, avoid []string) {
 	t.Helper()
-	verdict := wrongCaseOf(revision, repoPath)
+	verdict := wrongCaseOf(revision, repoPath, anyMove)
 
 	if verdict == nil {
 		t.Fatalf("no refusal for %q; want one", repoPath)
@@ -67,7 +67,7 @@ func TestADiscoveredPolicyIsLeftAloneWhenTheRevisionHoldsNothingLikeIt(t *testin
 
 func assertNoWrongCase(t *testing.T, revision revisionEntries) {
 	t.Helper()
-	if got := wrongCaseOf(revision, ".lousy-agents/coach.json"); got != nil {
+	if got := wrongCaseOf(revision, ".lousy-agents/coach.json", anyMove); got != nil {
 		t.Errorf("refusal %v; want none, so the policy is plainly missing", got)
 	}
 }
