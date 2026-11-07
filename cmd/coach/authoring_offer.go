@@ -25,9 +25,16 @@ const (
 // offered follows from that and from who can answer: a TypeScript scan with a person to answer opens the
 // session, and anything else gets the command to run on a terminal. A gate that opens the session and the line
 // that prints the command both ask this, so a terminal cannot remove the only way out.
+//
+// The exception is a TypeScript policy that exists and cannot be used: the only session TypeScript has ends by asking
+// the user to save a candidate over that file, since a scan cannot pass --output, so it is offered neither as a
+// session nor as a line. Go has no session and gets a candidate written beside the policy.
 func offerAuthoring(err error, language string, interactive bool) authoringOffer {
 	var configErr *projectconfig.ConfigError
 	if !errors.As(err, &configErr) || !configErr.OffersAuthoring() {
+		return authoringNotOffered
+	}
+	if language == "typescript" && configErr.ReplacesPolicy() {
 		return authoringNotOffered
 	}
 	if language == "typescript" && interactive {
@@ -50,16 +57,14 @@ func authoringInteractive(noInteractive bool) bool {
 // authoringRemediation is the appended line that offers a new policy as a command to run on a terminal, and
 // nothing when authoring cannot fix the error (the policy is committed and only needs restoring, or its path cannot
 // be created) or when a guided session runs instead. It writes the policy the user named when nothing is at that
-// path, so it names that path; for a document that exists and cannot be used it names the scan, which can replace it, or
-// for Go the candidate that is written beside it and the move that replaces it.
+// path, so it names that path. For a document that exists and cannot be used, Go gets the candidate that is written
+// beside it, with words that say to replace the policy with it; TypeScript is not offered authoring at all
+// (offerAuthoring), so it gets nothing.
 func authoringRemediation(configErr *projectconfig.ConfigError, policy policyref.Ref, language string, interactive bool, dir string) string {
 	if offerAuthoring(configErr, language, interactive) != authoringCommand {
 		return ""
 	}
-	switch {
-	case configErr.ReplacesPolicy() && language == "typescript":
-		return tssetup.ReplacePolicyRemediation(policy)
-	case configErr.ReplacesPolicy():
+	if configErr.ReplacesPolicy() {
 		return goReplaceRemediation(dir, policy)
 	}
 	return tssetup.SuggestProjectConfigRemediation(language, authoringTargetPolicy(configErr, policy))

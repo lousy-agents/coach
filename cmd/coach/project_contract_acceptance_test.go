@@ -62,7 +62,7 @@ var _ = Describe("coach project-analysis failure reports", func() {
 		remediation := lines[len(lines)-1]
 		Expect(remediation).NotTo(ContainSubstring("--project-language typescript"), "a --project-language go scan must never be offered the TypeScript-only guided-authoring command; stderr: %s", stderr)
 
-		suggest, _ := replaceCommandsIn(remediation)
+		suggest := suggestCommandIn(remediation)
 		fields := strings.Fields(suggest)
 		Expect(fields).NotTo(BeEmpty(), "the line names the authoring command: %s", remediation)
 		Expect(fields[0]).To(Equal("coach"))
@@ -110,8 +110,11 @@ var _ = Describe("coach project-analysis failure reports", func() {
 		Expect(tsLines[0]).To(Equal(goLines[0]), "the underlying class-2 config message must stay language-independent")
 		Expect(goLines[len(goLines)-1]).To(HavePrefix("coach codesignal --baseline --suggest-project-config --output project.candidate.json"), "go's appended remediation must be a command go actually supports, not the TypeScript-only guided-authoring invocation (AC-2)")
 		Expect(goLines[len(goLines)-1]).NotTo(ContainSubstring("--project-language typescript"))
-		Expect(tsLines[len(tsLines)-1]).To(Equal("on a terminal: coach codesignal --baseline --project-config project.json --project-language typescript -- guided authoring opens there and prints a replacement for the invalid document; save it over the file, have a human review and commit it, then rerun"), "typescript's appended remediation must name its own guided-authoring invocation: for a document that exists it is the scan, because authoring creates files and refuses a target that exists")
-		Expect(len(tsLines)).To(BeNumerically(">=", len(goLines)), "TypeScript may additionally carry AC-SET-13's readiness-gap line; it must never carry fewer lines than go's report")
+		for _, line := range tsLines {
+			Expect(line).NotTo(ContainSubstring("guided authoring opens there"), "typescript: a document that exists is not offered a session that ends by saving over it")
+			Expect(line).NotTo(HavePrefix("on a terminal:"), "typescript: no appended line leads to guided authoring where the file exists")
+		}
+		Expect(len(tsLines)).To(BeNumerically(">=", 1), "TypeScript carries the class-2 config message, and may carry AC-SET-13's readiness-gap line")
 	})
 
 	// "go" and "typescript" both have registered backends now, so no real

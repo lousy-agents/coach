@@ -5,21 +5,18 @@ import (
 	"testing"
 )
 
-// The line for a Go policy to replace writes the candidate beside it and gives the move over it, quoted and anchored
-// at the top of the repository, as the tail of the line.
-func TestReplaceGoPolicyNamesTheCandidateAndAMoveThatWorksFromAnyDirectory(t *testing.T) {
+// The line for a Go policy to replace writes the candidate beside it, with Coach's own command, and describes the rest in
+// words: where the candidate is, which file to compare it with, and that the user replaces the policy with it and commits.
+// It prints no command that moves or stages a file. Equality holds the whole line, so nothing rides along with the words.
+func TestReplaceGoPolicyNamesTheCandidateAndDescribesTheStepInWords(t *testing.T) {
 	line := ReplaceGoPolicy("cfg/my policy.json", "cfg/my policy.candidate.json")
 
-	for _, want := range []string{
-		"--suggest-project-config --output 'cfg/my policy.candidate.json'",
-		`top="$(git rev-parse --show-toplevel)" && mv -f -- "$top"/'cfg/my policy.candidate.json' "$top"/'cfg/my policy.json'`,
-	} {
-		if !strings.Contains(line, want) {
-			t.Errorf("line %q; want it to contain %q", line, want)
-		}
+	const want = ` -- writes a candidate to "cfg/my policy.candidate.json" beside the policy, because authoring refuses a path that exists; compare it with "cfg/my policy.json", replace the policy with it, commit, and rerun`
+	if line != BatchAuthoring("cfg/my policy.candidate.json")+want {
+		t.Errorf("line %q; want Coach's authoring command followed by %q", line, want)
 	}
-	if !strings.HasSuffix(line, `&& git -C "$top" add -- ':(literal)cfg/my policy.json'`) {
-		t.Errorf("line %q; want the stage of the policy as a literal pathspec at the end", line)
+	if !strings.Contains(line, "--suggest-project-config --output 'cfg/my policy.candidate.json'") {
+		t.Errorf("line %q; want the authoring command with the candidate quoted for a shell", line)
 	}
 }
 

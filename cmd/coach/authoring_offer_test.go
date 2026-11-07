@@ -13,7 +13,9 @@ import (
 
 // Whether a new policy is offered is decided once, from the remedy the error names. How it reaches the user is
 // chosen afterwards: a guided session when a person can answer a TypeScript scan, a command to run on a terminal
-// otherwise. The two cannot disagree, so a terminal never removes the only way out.
+// otherwise. The two cannot disagree, so a terminal never removes the only way out. A document that exists and cannot
+// be used is the exception for TypeScript: its only session ends by saving a replacement over the user's file, so it is
+// offered neither as a session nor as a line.
 func TestAuthoringIsOfferedWhereTheRemedyIsANewPolicy(t *testing.T) {
 	author := projectreadiness.RemedyAuthor
 	cases := map[string]struct {
@@ -25,17 +27,18 @@ func TestAuthoringIsOfferedWhereTheRemedyIsANewPolicy(t *testing.T) {
 		"a missing policy, on a terminal":                                  {configError(projectconfig.KindMissing, author), "typescript", true, authoringSession},
 		"a missing policy, with nobody to answer":                          {configError(projectconfig.KindMissing, author), "typescript", false, authoringCommand},
 		"a policy found nowhere, on a terminal":                            {configError(projectconfig.KindNotFound, author), "typescript", true, authoringSession},
-		"a committed policy whose document is not valid, on a terminal":    {configError(projectconfig.KindInvalid, author), "typescript", true, authoringSession},
-		"a committed policy whose document is not valid, nobody to answer": {configError(projectconfig.KindInvalid, author), "typescript", false, authoringCommand},
-		"the same, wrapped": {fmt.Errorf("wrapped: %w", configError(projectconfig.KindInvalid, author)), "typescript", true, authoringSession},
-		"a Go scan has no session, whatever the terminal": {configError(projectconfig.KindMissing, author), "go", true, authoringCommand},
-		"a policy committed as a link":                    {&projectconfig.ConfigError{Kind: projectconfig.KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseCommittedAsLink}, "typescript", true, authoringNotOffered},
-		"a policy committed as a directory":               {&projectconfig.ConfigError{Kind: projectconfig.KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseDirectory}, "typescript", true, authoringNotOffered},
-		"a restore over an empty index entry":             {configError(projectconfig.KindMissing, projectreadiness.RemedyRestoreOverEmptyEntry), "typescript", true, authoringNotOffered},
-		"a policy a restore fixes":                        {configError(projectconfig.KindMissing, projectreadiness.RemedyRestore), "typescript", true, authoringNotOffered},
-		"a policy no remedy fixes":                        {configError(projectconfig.KindInvalid, projectreadiness.RemedyNone), "typescript", true, authoringNotOffered},
-		"an error whose remedy nobody set":                {configError(projectconfig.KindMissing, 0), "typescript", true, authoringNotOffered},
-		"an error that is not about a policy":             {errors.New("boom"), "typescript", true, authoringNotOffered},
+		"a committed policy whose document is not valid, on a terminal":    {configError(projectconfig.KindInvalid, author), "typescript", true, authoringNotOffered},
+		"a committed policy whose document is not valid, nobody to answer": {configError(projectconfig.KindInvalid, author), "typescript", false, authoringNotOffered},
+		"the same, wrapped": {fmt.Errorf("wrapped: %w", configError(projectconfig.KindInvalid, author)), "typescript", true, authoringNotOffered},
+		"a committed policy whose document is not valid, in a Go scan": {configError(projectconfig.KindInvalid, author), "go", true, authoringCommand},
+		"a Go scan has no session, whatever the terminal":              {configError(projectconfig.KindMissing, author), "go", true, authoringCommand},
+		"a policy committed as a link":                                 {&projectconfig.ConfigError{Kind: projectconfig.KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseCommittedAsLink}, "typescript", true, authoringNotOffered},
+		"a policy committed as a directory":                            {&projectconfig.ConfigError{Kind: projectconfig.KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseDirectory}, "typescript", true, authoringNotOffered},
+		"a restore over an empty index entry":                          {configError(projectconfig.KindMissing, projectreadiness.RemedyRestoreOverEmptyEntry), "typescript", true, authoringNotOffered},
+		"a policy a restore fixes":                                     {configError(projectconfig.KindMissing, projectreadiness.RemedyRestore), "typescript", true, authoringNotOffered},
+		"a policy no remedy fixes":                                     {configError(projectconfig.KindInvalid, projectreadiness.RemedyNone), "typescript", true, authoringNotOffered},
+		"an error whose remedy nobody set":                             {configError(projectconfig.KindMissing, 0), "typescript", true, authoringNotOffered},
+		"an error that is not about a policy":                          {errors.New("boom"), "typescript", true, authoringNotOffered},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) { requireAuthoringOffer(t, c.err, c.language, c.interactive, c.want) })
@@ -53,26 +56,25 @@ func requireAuthoringOffer(t *testing.T, err error, language string, interactive
 	}
 }
 
-// A document that exists and is not valid is replaced, not created: the closing instruction of a session says to
-// save the candidate over the file, and one for a path with nothing at it says to save it there.
+// The closing instruction of a session says where the candidate goes: at the path the user named, or at the default
+// path, when nothing is there yet. A session is never opened for a document that exists and cannot be used, so the
+// instruction never says to save a candidate over a file.
 func TestTheClosingInstructionSaysWhereTheCandidateGoes(t *testing.T) {
 	cases := map[string]struct {
-		err    error
 		flags  codesignalFlags
 		expect string
 	}{
-		"a named policy whose document is not valid":      {configError(projectconfig.KindInvalid, projectreadiness.RemedyAuthor), namedPolicyFlags("pol.json"), `save it as "pol.json" replacing the current file`},
-		"a discovered policy whose document is not valid": {configError(projectconfig.KindInvalid, projectreadiness.RemedyAuthor), codesignalFlags{}, `save it as ".lousy-agents/coach.json" replacing the current file`},
-		"a named policy missing from disk":                {configError(projectconfig.KindMissing, projectreadiness.RemedyAuthor), namedPolicyFlags("pol.json"), `save it to "pol.json" at the repository root`},
+		"a named policy":     {namedPolicyFlags("pol.json"), `save it to "pol.json" at the repository root`},
+		"the default policy": {codesignalFlags{}, `save it to ".lousy-agents/coach.json" at the repository root`},
 	}
 	for name, c := range cases {
-		t.Run(name, func(t *testing.T) { requireTheClosingInstruction(t, c.err, c.flags, c.expect) })
+		t.Run(name, func(t *testing.T) { requireTheClosingInstruction(t, c.flags, c.expect) })
 	}
 }
 
-func requireTheClosingInstruction(t *testing.T, err error, flags codesignalFlags, expect string) {
+func requireTheClosingInstruction(t *testing.T, flags codesignalFlags, expect string) {
 	t.Helper()
-	if got := candidateClosingInstruction(err, flags); !strings.Contains(got, expect) {
+	if got := candidateClosingInstruction(flags); !strings.Contains(got, expect) {
 		t.Errorf("candidateClosingInstruction = %q; want it to say %q", got, expect)
 	}
 }
@@ -81,10 +83,10 @@ func namedPolicyFlags(path string) codesignalFlags {
 	return codesignalFlags{namedPolicy: policyref.Named(path)}
 }
 
-// The command printed for a document that exists and is not valid is the scan, which on a terminal opens the
-// session that can replace it. Authoring creates files and refuses a target that exists, so the authoring command
-// would leave the invalid file as it was; for a path with nothing at it that command is the one that works.
-func TestThePrintedCommandCanReplaceTheFileItIsPrintedFor(t *testing.T) {
+// Authoring creates files and refuses a target that exists. For a path with nothing at it the line is the authoring
+// command that works; for a TypeScript document that exists and cannot be used there is no line, because the only
+// session it could name ends by saving a replacement over the user's file.
+func TestTypeScriptPrintsNoLineForADocumentThatExistsAndTheAuthoringCommandForOneThatDoesNot(t *testing.T) {
 	invalid := configError(projectconfig.KindInvalid, projectreadiness.RemedyAuthor)
 	missing := configError(projectconfig.KindMissing, projectreadiness.RemedyAuthor)
 
@@ -92,11 +94,11 @@ func TestThePrintedCommandCanReplaceTheFileItIsPrintedFor(t *testing.T) {
 	create := authoringRemediation(missing, policyref.Named("pol.json"), "typescript", false, "")
 	discovered := authoringRemediation(invalid, policyref.Ref{}, "typescript", false, "")
 
-	if !strings.Contains(replace, "coach codesignal --baseline --project-config pol.json --project-language typescript") || strings.Contains(replace, "--suggest-project-config") {
-		t.Errorf("remediation for an invalid named policy = %q; want the scan, not authoring", replace)
+	if replace != "" {
+		t.Errorf("remediation for an invalid named policy = %q; want none", replace)
 	}
-	if !strings.Contains(discovered, "coach codesignal --baseline --project-language typescript") || strings.Contains(discovered, "--suggest-project-config") || strings.Contains(discovered, "--project-config") {
-		t.Errorf("remediation for an invalid discovered policy = %q; want the scan without --project-config, and not authoring", discovered)
+	if discovered != "" {
+		t.Errorf("remediation for an invalid discovered policy = %q; want none", discovered)
 	}
 	if !strings.Contains(create, "--suggest-project-config") || !strings.Contains(create, "--output pol.json") {
 		t.Errorf("remediation for a missing named policy = %q; want authoring into the named path", create)

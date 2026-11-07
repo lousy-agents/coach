@@ -12,8 +12,8 @@ import (
 // The way out for a committed policy that cannot be used is a new document at its path, and it is offered only
 // where it loses nothing: the copy in the working tree is the committed copy, and the index holds no edit and no
 // conflict for it. Otherwise there is work in the file, and Coach says to review it and commit it, whichever
-// language the scan is for. Every command Coach prints is pasted, because the line that overwrites a user's fix
-// looks the same as a good one in the text.
+// language the scan is for. Every command Coach prints is pasted, and the replacement is told in words, because a
+// line that overwrites a user's fix looks the same as a good one in the text.
 const (
 	validPolicyWithLayers = `{"schema_version":"1","roots":["."],"layers":[{"name":"core","prefixes":["core"]}]}` + "\n"
 	conflictedMarkers     = "<<<<<<< ours\n{\"schema_version\":\"1\",\"roots\":[\"a\"]}\n=======\n{\"schema_version\":\"1\",\"roots\":[\"b\"]}\n>>>>>>> theirs\n"
@@ -27,11 +27,8 @@ type usersWork struct {
 
 func pasteWhatCoachPrints(repo string, stderr []byte) {
 	GinkgoHelper()
-	suggest, move := replaceCommandsIn(lastLine(stderr))
-	for _, command := range []string{strings.Replace(suggest, "coach ", commandPath+" ", 1), move} {
-		if command != "" {
-			runInShell(repo, command)
-		}
+	if suggest := suggestCommandIn(lastLine(stderr)); suggest != "" {
+		runInShell(repo, strings.Replace(suggest, "coach ", commandPath+" ", 1))
 	}
 }
 
@@ -102,9 +99,9 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid, wit
 
 		_, stderr := scanExpectingRefusal(repo, "--project-config", policy)
 
-		suggest, move := replaceCommandsIn(lastLine(stderr))
-		Expect(suggest).NotTo(BeEmpty(), "stderr:\n%s", stderr)
-		Expect(move).NotTo(BeEmpty(), "stderr:\n%s", stderr)
+		Expect(suggestCommandIn(lastLine(stderr))).NotTo(BeEmpty(), "stderr:\n%s", stderr)
+		Expect(lastLine(stderr)).To(ContainSubstring("replace the policy with it, commit, and rerun"), "stderr:\n%s", stderr)
+		expectNoRunnableCommand(lastLine(stderr))
 	})
 })
 
@@ -145,7 +142,7 @@ var _ = Describe("coach codesignal (TypeScript, no terminal): a committed policy
 			stdout, stderr, exitCode := runCoachBinary(commandPath, repo, stubToolchainEnv(pathWithStubNode("v24.9.9")), args...)
 
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
-			Expect(string(stderr)).NotTo(ContainSubstring("guided authoring opens there"), "that scan prints a candidate to save over the file:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("guided authoring"), "that session ends by saving a candidate over the file:\n%s", stderr)
 			for _, words := range work.wantWords {
 				Expect(string(stderr)).To(ContainSubstring(words), "stderr:\n%s", stderr)
 			}

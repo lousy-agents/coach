@@ -90,7 +90,8 @@ func TestTheGoReplacementLineIsForTheDefaultPolicyWhenNoneIsNamed(t *testing.T) 
 
 	line := goReplaceRemediation(repo, policyref.Ref{})
 
-	if !strings.Contains(line, "--output .lousy-agents/coach.candidate.json") || !strings.HasSuffix(line, "add -- ':(literal).lousy-agents/coach.json'") {
-		t.Errorf("goReplaceRemediation = %q; want the candidate beside the default policy and the move over it", line)
+	const words = ` -- writes a candidate to ".lousy-agents/coach.candidate.json" beside the policy, because authoring refuses a path that exists; compare it with ".lousy-agents/coach.json", replace the policy with it, commit, and rerun`
+	if !strings.Contains(line, "--output .lousy-agents/coach.candidate.json") || !strings.HasSuffix(line, words) {
+		t.Errorf("goReplaceRemediation = %q; want the candidate beside the default policy and the words that say to replace the policy with it", line)
 	}
 }

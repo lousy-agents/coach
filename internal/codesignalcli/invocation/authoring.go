@@ -1,6 +1,7 @@
 package invocation
 
 import (
+	"fmt"
 	"path"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/shellword"
@@ -45,17 +46,16 @@ func outputFlag(target string) string {
 }
 
 // ReplaceGoPolicy is the line for a Go policy that exists and cannot be used as one. Authoring creates files and
-// refuses one that exists, so it writes a candidate beside the policy, at candidate, and the line gives the move that
-// puts it over the policy and stages it. The move runs git at the repository root, so it works from any directory,
-// quotes both paths for a shell, and stages the policy as a literal pathspec so that a glob character in its name
-// matches that file and no other. It is the tail of the line, because a caller pastes everything after the lead-in.
-// Nothing is printed when either path cannot be shown: a command that names another path writes somewhere else.
+// refuses one that exists, so it writes a candidate beside the policy, at candidate, with Coach's own command, and the
+// rest of the line is words: where the candidate is, which file to compare it with, and that the user replaces the policy
+// with it, commits, and reruns. No command that moves or stages a file is printed, because the step overwrites the user's
+// file and the user is the one to carry it out. Nothing is printed when either path cannot be shown: a line that names
+// another path leads somewhere else.
 func ReplaceGoPolicy(policyPath, candidate string) string {
 	if !shellword.Printable(policyPath) || !shellword.Printable(candidate) {
 		return ""
 	}
-	return BatchAuthoring(candidate) +
-		" -- writes a candidate beside the policy, because authoring refuses a path that exists; review it, then replace the policy with it, commit, and rerun. To replace it: " +
-		`top="$(git rev-parse --show-toplevel)" && mv -f -- "$top"/` + shellword.Word(candidate) + ` "$top"/` + shellword.Word(policyPath) +
-		` && git -C "$top" add -- ` + shellword.Word(":(literal)"+policyPath)
+	return BatchAuthoring(candidate) + fmt.Sprintf(
+		" -- writes a candidate to %q beside the policy, because authoring refuses a path that exists; compare it with %q, replace the policy with it, commit, and rerun",
+		candidate, policyPath)
 }

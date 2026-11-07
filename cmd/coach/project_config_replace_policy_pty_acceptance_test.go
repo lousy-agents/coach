@@ -3,8 +3,6 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -12,11 +10,11 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// A committed policy over the size budget is fixed by a new document as one that is not valid is, so a TypeScript scan
-// on a terminal opens guided authoring for it, prints the candidate, and says which file to save it over. The
-// closing instruction must not say to create the file: it exists, and authoring would refuse a target that does.
+// A committed policy over the size budget is fixed by a new document as one that is not valid is, and a TypeScript scan
+// on a terminal opens no guided authoring for it either: the only session it has ends by asking the user to save a
+// candidate over the file. It prints the config error, no candidate, and nothing about saving over the file.
 var _ = Describe("coach codesignal (TypeScript, controlling terminal): a committed policy over the size budget", func() {
-	DescribeTable("opens guided authoring, prints the candidate and names the file to replace",
+	DescribeTable("opens no guided authoring and prints no candidate",
 		func(policyPath string, scanArgs ...string) {
 			repo := commitStubToolchainTypeScriptRepo(policyPath, bigPolicy())
 			args := append([]string{"codesignal", "--baseline", "--project-language", "typescript", "--format=json"}, scanArgs...)
@@ -24,10 +22,9 @@ var _ = Describe("coach codesignal (TypeScript, controlling terminal): a committ
 			stdout, stderr, _, exitCode := runCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(pathWithStubNode("v24.9.9")), discoveredAuthoringSessionAnswers, args...)
 
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
-			var candidate map[string]any
-			Expect(json.Unmarshal(stdout, &candidate)).To(Succeed(), "stdout must be the candidate policy document; stdout: %s", stdout)
-			Expect(candidate).To(HaveKey("roots"), "stdout must be the candidate, not a report")
-			Expect(string(stderr)).To(ContainSubstring(fmt.Sprintf("save it as %q replacing the current file", policyPath)), "stderr: %s", stderr)
+			Expect(string(stdout)).To(BeEmpty(), "no candidate is printed to save over the file; stdout: %s", stdout)
+			Expect(string(stderr)).NotTo(ContainSubstring("replacing the current file"), "stderr: %s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("guided authoring"), "stderr: %s", stderr)
 		},
 		Entry("found at the canonical path", ".lousy-agents/coach.json"),
 		Entry("named with --project-config", "pol.json", "--project-config", "pol.json"),

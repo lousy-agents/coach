@@ -82,16 +82,6 @@ func SuggestProjectConfigRemediation(language string, policy policyref.Ref) stri
 	return invocation.BatchAuthoring(target)
 }
 
-// ReplacePolicyRemediation is the appended line for a policy that exists and whose document is not valid. The
-// authoring command creates files and refuses a target that exists, and written elsewhere its candidate would
-// leave this file as it was, so the command is the scan itself: on a terminal it opens guided authoring and prints
-// a replacement to save over the file. Like every appended authoring command it needs a terminal, which the
-// prefix says.
-func ReplacePolicyRemediation(policy policyref.Ref) string {
-	return onATerminal(invocation.Command{Mode: invocation.Scan, Policy: policy}.Phrase("")) +
-		" -- guided authoring opens there and prints a replacement for the invalid document; save it over the file, have a human review and commit it, then rerun"
-}
-
 // ReplaceGoPolicyRemediation is the appended line for a Go scan whose policy exists and cannot be used as one (its
 // document is not valid, or is over the size budget): the candidate written beside it and the move that replaces it
 // (invocation.ReplaceGoPolicy). A path the policy check refuses gets no line, since it names nothing authoring could use.

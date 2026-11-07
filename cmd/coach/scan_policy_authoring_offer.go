@@ -42,21 +42,18 @@ func runScanProjectConfigAuthoring(dir string, f codesignalFlags, scanErr error,
 	if exitCode != 0 {
 		return exitCode
 	}
-	fmt.Fprintln(stderr, candidateClosingInstruction(scanErr, f))
+	fmt.Fprintln(stderr, candidateClosingInstruction(f))
 	return 2
 }
 
-// candidateClosingInstruction says where the approved candidate goes: over the file that exists when its document
-// is not valid, and at the path the user named when nothing is there yet.
-func candidateClosingInstruction(scanErr error, f codesignalFlags) string {
+// candidateClosingInstruction says where the approved candidate goes: at the path the user named, or at the default
+// path, which nothing holds yet. A session is never opened for a document that exists and cannot be used (offerAuthoring),
+// so the candidate is never one to save over a file.
+func candidateClosingInstruction(f codesignalFlags) string {
 	const written = "coach codesignal: the approved TypeScript project-config candidate was written to stdout and no file was created; "
 	path := projectconfig.CanonicalPath
 	if f.namedPolicy.Explicit {
 		path = f.namedPolicy.Path
-	}
-	var configErr *projectconfig.ConfigError
-	if errors.As(scanErr, &configErr) && configErr.ReplacesPolicy() {
-		return fmt.Sprintf(written+"review it, save it as %q replacing the current file, commit it, then rerun this scan once it is committed.", path)
 	}
 	return fmt.Sprintf(written+"save it to %q at the repository root, review it, commit it, then rerun this scan once it is committed.", path)
 }

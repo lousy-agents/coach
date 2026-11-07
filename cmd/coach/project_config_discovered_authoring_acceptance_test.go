@@ -5,7 +5,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -97,50 +96,10 @@ func envWithout(name string) []string {
 }
 
 var _ = Describe("coach codesignal guided policy authoring on a discovered .lousy-agents/coach.json (coach#510)", func() {
-	When("no --project-config is set, the committed canonical policy is schema-invalid, and a controlling terminal is available", func() {
-		It("replaces the scan with guided authoring: exits 2, prints the candidate on stdout, and names .lousy-agents/coach.json as the file to replace", func() {
-			repo := commitStubToolchainTypeScriptRepo(coachConfigPath, invalidPolicyText)
-			path := pathWithStubNode("v24.9.9")
-
-			stdout, stderr, _, exitCode := runCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path), discoveredAuthoringSessionAnswers,
-				"codesignal", "--baseline", "--project-language", "typescript", "--format=json")
-
-			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
-
-			var candidate map[string]any
-			Expect(json.Unmarshal(stdout, &candidate)).To(Succeed(), "stdout must carry the candidate document; stdout: %s stderr: %s", stdout, stderr)
-			Expect(candidate).To(HaveKeyWithValue("schema_version", "1"))
-			Expect(candidate).To(HaveKeyWithValue("roots", []any{"."}), "answer 1 selects the repository root")
-			Expect(candidate).NotTo(HaveKey("signals"), "no scan report may be produced on this path")
-
-			Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), "the invalid file must still be reported before the session opens; stderr: %s", stderr)
-			Expect(string(stderr)).To(ContainSubstring(coachConfigPath), "stderr: %s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("no file was created"), "a scan writes no repository file; stderr: %s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("replacing"), "the closing instruction must say the candidate replaces the existing file; stderr: %s", stderr)
-
-			onDisk, err := os.ReadFile(filepath.Join(repo, coachConfigPath))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(string(onDisk)).To(Equal(invalidPolicyText), "the existing file must never be touched")
-		})
-
-		It("exits 2 with empty stdout and leaves the file untouched when the session is declined", func() {
-			repo := commitStubToolchainTypeScriptRepo(coachConfigPath, invalidPolicyText)
-			path := pathWithStubNode("v24.9.9")
-
-			stdout, stderr, _, exitCode := runCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path), "1\n\n\n\nno\n",
-				"codesignal", "--baseline", "--project-language", "typescript", "--format=json")
-
-			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
-			Expect(stdout).To(BeEmpty(), "declining must never emit a candidate or a report; stdout: %s", stdout)
-			Expect(string(stderr)).To(ContainSubstring("authoring was cancelled or not approved"), "stderr: %s", stderr)
-
-			onDisk, err := os.ReadFile(filepath.Join(repo, coachConfigPath))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(string(onDisk)).To(Equal(invalidPolicyText))
-		})
-	})
-
-	DescribeTable("the invalid canonical policy never opens an offer when prompts are off, and stays exit 2 with empty stdout",
+	// The only session a TypeScript scan has ends by asking the user to save a candidate over the file, since a scan
+	// cannot pass --output. So a committed policy that exists and is invalid opens no session, whether prompts are on or
+	// off: the scan reports the invalid file, prints no candidate, and leaves the user's bytes alone.
+	DescribeTable("the invalid canonical policy never opens an offer, with prompts on or off, and stays exit 2 with empty stdout",
 		func(env func(path string) []string, args []string, withTerminal bool) {
 			repo := commitStubToolchainTypeScriptRepo(coachConfigPath, invalidPolicyText)
 			path := pathWithStubNode("v24.9.9")
@@ -159,7 +118,12 @@ var _ = Describe("coach codesignal guided policy authoring on a discovered .lous
 			Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), "stderr: %s", stderr)
 			Expect(string(stderr)).To(ContainSubstring(coachConfigPath), "stderr: %s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("Discovered TypeScript roots"), "no authoring session may open; stderr: %s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("replacing"), "nothing says to save a candidate over the file; stderr: %s", stderr)
+			onDisk, err := os.ReadFile(filepath.Join(repo, coachConfigPath))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(onDisk)).To(Equal(invalidPolicyText), "the existing file must never be touched")
 		},
+		Entry("a controlling terminal with prompts on", func(path string) []string { return stubToolchainEnv(path) }, []string{}, true),
 		Entry("no controlling terminal", func(path string) []string { return stubToolchainEnv(path) }, []string{}, false),
 		Entry("a controlling terminal under a non-empty CI variable", func(path string) []string { return append(stubToolchainEnv(path), "CI=1") }, []string{}, true),
 		Entry("a controlling terminal with --no-interactive", func(path string) []string { return stubToolchainEnv(path) }, []string{"--no-interactive"}, true),

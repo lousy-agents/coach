@@ -3,22 +3,22 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
+	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-// A policy committed with a document that is not valid is fixed by a new document, so a TypeScript scan on a
-// terminal opens guided authoring for it, whether the policy was found at the canonical path or named with
-// --project-config. The session cannot write over the file (a scan cannot pass --output), so it prints the
-// candidate and says which file to save it over. The printed command and the guided session are two ways to
-// present one offer: a terminal must never remove the only way out.
+// A policy committed with a document that is not valid is fixed by a new document, and the only guided session a
+// TypeScript scan has ends by asking the user to save a candidate over the file, since a scan cannot pass --output. So
+// a scan on a terminal opens no session for it, whether the policy was found at the canonical path or named with
+// --project-config: it prints the config error and nothing else, and leaves the user's file alone. A policy that does
+// not exist keeps its session, which creates the file.
 var _ = Describe("coach codesignal (TypeScript, controlling terminal): a committed policy whose document is not valid", func() {
 	const brokenPolicy = "this is not a policy document\n"
 
-	DescribeTable("opens guided authoring, prints the candidate and names the file to replace",
+	DescribeTable("opens no guided authoring, prints no candidate and says nothing about saving over the file",
 		func(policyPath string, scanArgs ...string) {
 			repo := commitStubToolchainTypeScriptRepo(policyPath, brokenPolicy)
 			args := append([]string{"codesignal", "--baseline", "--project-language", "typescript", "--format=json"}, scanArgs...)
@@ -26,10 +26,12 @@ var _ = Describe("coach codesignal (TypeScript, controlling terminal): a committ
 			stdout, stderr, _, exitCode := runCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(pathWithStubNode("v24.9.9")), discoveredAuthoringSessionAnswers, args...)
 
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
-			var candidate map[string]any
-			Expect(json.Unmarshal(stdout, &candidate)).To(Succeed(), "stdout must be the candidate policy document; stdout: %s", stdout)
-			Expect(candidate).To(HaveKey("roots"), "stdout must be the candidate, not a report")
-			Expect(string(stderr)).To(ContainSubstring(fmt.Sprintf("save it as %q replacing the current file", policyPath)), "stderr: %s", stderr)
+			Expect(string(stdout)).To(BeEmpty(), "no candidate is printed to save over the file; stdout: %s", stdout)
+			Expect(string(stderr)).NotTo(ContainSubstring("replacing the current file"), "stderr: %s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("guided authoring"), "stderr: %s", stderr)
+			content, err := os.ReadFile(filepath.Join(repo, policyPath))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(content)).To(Equal(brokenPolicy), "the user's file is untouched")
 		},
 		Entry("found at the canonical path", ".lousy-agents/coach.json"),
 		Entry("named with --project-config", "pol.json", "--project-config", "pol.json"),

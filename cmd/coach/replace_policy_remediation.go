@@ -19,7 +19,7 @@ import (
 const maxCandidateSuffix = 99
 
 // goReplaceRemediation is the line for a Go scan whose policy exists and cannot be used: authoring writes a candidate
-// at a free path beside it, and the line names the move that replaces the policy. It is empty when the repository
+// at a free path beside it, and the line says in words to replace the policy with it. It is empty when the repository
 // cannot be found or no free name is left, because a command that authoring refuses is worse than none.
 func goReplaceRemediation(dir string, policy policyref.Ref) string {
 	policyPath, named := policy.NamedPath()
