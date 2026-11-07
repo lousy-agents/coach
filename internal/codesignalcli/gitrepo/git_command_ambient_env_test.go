@@ -11,28 +11,41 @@ func presentIn(env []string, key string) bool {
 	return slices.ContainsFunc(env, func(entry string) bool { return strings.HasPrefix(entry, key+"=") })
 }
 
-// Each of these, set by whatever started Coach, changes what git reads or which repository it reads. Coach
-// asks git about one repository, `-C dir`, with literal pathspecs, so its answers must not depend on them.
-// The list is spelled out here and not taken from the code, so a variable removed from the code fails this.
-var settingsThatChangeWhatGitReads = []string{
+// Each of these, set by whatever started Coach, changes what the pathspecs Coach builds mean, or which file
+// `git config` reads, and Coach's answers must not depend on them. The list is spelled out here and not taken
+// from the code, so a variable removed from the code fails this.
+var settingsThatChangeWhatCoachAsks = []string{
 	// how every pathspec is read, including the literal ones Coach builds
 	"GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS",
-	// which repository, work tree and index git reads, and how it finds them
-	"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_NAMESPACE",
-	"GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM",
-	// which objects git reads
-	"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-	// the one file `git config` reads when it is set, and no other git command does: the partial-clone check
-	// reads the repository's configuration with git config, so it would answer from a different file than the
-	// reads it protects
+	// the one file `git config` reads when it is set, and no other git command does
 	"GIT_CONFIG",
 }
 
-func TestGitCommandDropsEverySettingOfTheCallerThatChangesWhatGitReads(t *testing.T) {
-	for _, key := range settingsThatChangeWhatGitReads {
+func TestGitCommandDropsEverySettingOfTheCallerThatChangesWhatCoachAsks(t *testing.T) {
+	for _, key := range settingsThatChangeWhatCoachAsks {
 		t.Run(key, func(t *testing.T) {
 			assertDropped(t, key)
 		})
+	}
+}
+
+// Where the repository, its work tree, its index and its objects are belongs to whatever started Coach.
+func TestGitCommandLeavesTheVariablesThatLocateTheRepository(t *testing.T) {
+	locating := []string{
+		"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_NAMESPACE",
+		"GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+		"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	}
+	for _, key := range locating {
+		t.Setenv(key, "somewhere")
+	}
+
+	env := gitCommand(context.Background(), "repo", "status").Env
+
+	for _, key := range locating {
+		if got := effectiveValue(env, key); got != "somewhere" {
+			t.Errorf("%s = %q, want %q: it says where the repository is, and the caller set it", key, got, "somewhere")
+		}
 	}
 }
 
@@ -43,7 +56,7 @@ func assertDropped(t *testing.T, key string) {
 	env := gitCommand(context.Background(), "repo", "status").Env
 
 	if presentIn(env, key) {
-		t.Errorf("%s reaches git from the caller's environment: it changes what git reads, and Coach's answers would depend on it", key)
+		t.Errorf("%s reaches git from the caller's environment: it changes what Coach asks git, and its answers would depend on it", key)
 	}
 }
 

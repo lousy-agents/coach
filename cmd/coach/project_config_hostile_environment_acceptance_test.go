@@ -98,37 +98,31 @@ var _ = Describe("coach codesignal: a hostile git configuration or environment e
 		Entry("GIT_EDITOR", func(_, program string, _ func(string)) []string { return []string{"GIT_EDITOR=" + program} }, "GIT_EDITOR"),
 	)
 
-	// The variables that point git at another work tree, index or repository are removed before git starts, so
-	// a scan reports on the repository it was run in whatever its environment says. Honoring them would have
-	// it read one repository's history against another's working tree.
-	It("ignores GIT_WORK_TREE, GIT_INDEX_FILE and GIT_DIR, and reports on the repository it was run in", func() {
+	It("fails closed, with no report, when GIT_WORK_TREE and GIT_INDEX_FILE point elsewhere, or GIT_DIR is a bare repository seen from a worktree subdirectory", func() {
 		repo := commitExplicitPolicyRepo()
+		stdout, stderr, exitCode := runCoachBinary(commandPath, repo, append(os.Environ(), "GIT_WORK_TREE="+GinkgoT().TempDir(), "GIT_INDEX_FILE=/nonexistent/index"), "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
+		Expect(exitCode).To(Equal(1), "an operational failure, not a crash and not a report: stderr: %s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("is not inside a Git worktree"))
+		Expect(stdout).To(BeEmpty())
+
 		bare := repo + ".bare"
 		Expect(exec.Command("git", "clone", "-q", "--bare", repo, bare).Run()).To(Succeed())
 		DeferCleanup(func() { _ = os.RemoveAll(bare) })
-		args := []string{"codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json"}
-
-		wantOut, wantErr, wantExit := runCoachBinary(commandPath, repo, os.Environ(), args...)
-		pointedElsewhere, errElsewhere, exitElsewhere := runCoachBinary(commandPath, repo, append(os.Environ(), "GIT_WORK_TREE="+GinkgoT().TempDir(), "GIT_INDEX_FILE=/nonexistent/index"), args...)
-		viaBare, errBare, exitBare := runCoachBinary(commandPath, filepath.Join(repo, "policies"), append(os.Environ(), "GIT_DIR="+bare), args...)
-		fromSubdirectory, _, exitSubdirectory := runCoachBinary(commandPath, filepath.Join(repo, "policies"), os.Environ(), args...)
-
-		Expect(exitElsewhere).To(Equal(wantExit), "stderr: %s", errElsewhere)
-		Expect(pointedElsewhere).To(Equal(wantOut), "a different work tree or index changed the report")
-		Expect(string(errElsewhere)).To(Equal(string(wantErr)))
-		Expect(exitBare).To(Equal(exitSubdirectory), "stderr: %s", errBare)
-		Expect(viaBare).To(Equal(fromSubdirectory), "a bare repository named by GIT_DIR changed the report")
+		subdirectory := filepath.Join(repo, "policies")
+		stdout, stderr, exitCode = runCoachBinary(commandPath, subdirectory, append(os.Environ(), "GIT_DIR="+bare), "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
+		Expect(exitCode).To(Equal(1), "an operational failure, not a crash and not a report: stderr: %s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("is not inside a Git worktree"))
+		Expect(stdout).To(BeEmpty())
 	})
 
-	It("ignores GIT_DIR naming a different repository, and fails closed when a .git file points at one", func() {
+	It("fails closed, with no report, when GIT_DIR or a .git file points at a different repository", func() {
 		repo := commitExplicitPolicyRepo()
 		other := commitScannableGoRepo()
-		args := []string{"codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json"}
 
-		wantOut, _, wantExit := runCoachBinary(commandPath, repo, os.Environ(), args...)
-		viaEnvOut, stderr, viaEnv := runCoachBinary(commandPath, repo, append(os.Environ(), "GIT_DIR="+filepath.Join(other, ".git")), args...)
-		Expect(viaEnv).To(Equal(wantExit), "stderr: %s", stderr)
-		Expect(viaEnvOut).To(Equal(wantOut), "a scan read one repository's history against another's working tree")
+		stdout, stderr, viaEnv := runCoachBinary(commandPath, repo, append(os.Environ(), "GIT_DIR="+filepath.Join(other, ".git")), "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
+		Expect(viaEnv).To(Equal(2), "a scan read a policy from the working tree of one repository and the history of another: stderr: %s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("exists in the worktree but is not committed"))
+		Expect(stdout).To(BeEmpty())
 
 		Expect(os.RemoveAll(filepath.Join(repo, ".git"))).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(repo, ".git"), []byte("gitdir: "+filepath.Join(other, ".git")+"\n"), 0o644)).To(Succeed())
