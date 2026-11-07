@@ -45,11 +45,9 @@ func requireDiscoveryRefuses(t *testing.T, commit func(t *testing.T, repo string
 // canonical path is not assumed to be absent. Here only the question about the entry fails.
 func TestDiscoverFailsClosedWhenItCannotTellWhatTheRevisionHoldsAtTheCanonicalPath(t *testing.T) {
 	repo := committedRepository(t)
-	original := runProjectConfigGit
-	t.Cleanup(func() { runProjectConfigGit = original })
-	runProjectConfigGit = onlyTheEntryKindFails(repo)
+	fake := onlyTheEntryKindFails(repo)
 
-	if selection, err := Discover(repo, "HEAD"); err == nil {
+	if selection, err := discoverThrough(fake, repo, "HEAD"); err == nil {
 		t.Errorf("Discover = %+v, nil; want the failed git question", selection)
 	}
 }

@@ -6,21 +6,21 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
-func selectLegacy(dir, root, revision string) (Selection, error) {
+func selectLegacy(run gitrepo.Runner, dir, root, revision string) (Selection, error) {
 	selection, err := canonicalOnDisk(root)
 	if err != nil {
 		return Selection{}, err
 	}
-	selection, err = inTheSubmodule(runProjectConfigGit, dir, selection)
+	selection, err = inTheSubmodule(run, dir, selection)
 	if err != nil {
 		return Selection{}, err
 	}
-	if _, err := Load(dir, revision, DefaultPath); err != nil {
+	if _, err := loadThrough(run, dir, revision, DefaultPath); err != nil {
 		return legacyLoadFailure(selection, asDefaultPolicyError(err, DefaultPath))
 	}
 	selection.Path = DefaultPath
 	selection.Deprecated = true
-	return heldByTheIndex(runProjectConfigGit, dir, revision, selection)
+	return heldByTheIndex(run, dir, revision, selection)
 }
 
 // heldByTheIndex is selection with the default policy's path set aside when nothing is on disk there and the index

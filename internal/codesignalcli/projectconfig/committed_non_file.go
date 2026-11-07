@@ -47,11 +47,11 @@ func NonFileAtRevision(run gitrepo.Runner, dir, revision, repoPath string) (*Con
 // refuseBeforeReading is the error a read of repoPath at revision stops at before any content is
 // read: a path that cannot name a policy, or an entry that is not a regular file. A question git
 // cannot answer is not guessed at; unanswered words it for the caller.
-func refuseBeforeReading(dir, revision, repoPath string, unanswered func(error) error) error {
+func refuseBeforeReading(run gitrepo.Runner, dir, revision, repoPath string, unanswered func(error) error) error {
 	if err := ValidatePath(repoPath); err != nil {
 		return invalidPathError(repoPath, revision, err.Error())
 	}
-	refusal, err := NonFileAtRevision(runProjectConfigGit, dir, revision, repoPath)
+	refusal, err := NonFileAtRevision(run, dir, revision, repoPath)
 	if err != nil {
 		return unanswered(err)
 	}
@@ -62,13 +62,13 @@ func refuseBeforeReading(dir, revision, repoPath string, unanswered func(error) 
 }
 
 // refuseScanRead is refuseBeforeReading for a scan, which says it could not check and offers nothing.
-func refuseScanRead(dir, revision, repoPath string) error {
-	return refuseBeforeReading(dir, revision, repoPath, func(err error) error {
+func refuseScanRead(run gitrepo.Runner, dir, revision, repoPath string) error {
+	return refuseBeforeReading(run, dir, revision, repoPath, func(err error) error {
 		return unansweredRead(repoPath, revision, newGitFailure("what the revision holds at the path", err))
 	})
 }
 
 // refuseReadinessRead is refuseBeforeReading for readiness, which fails closed with git's own error.
-func refuseReadinessRead(dir, revision, repoPath string) error {
-	return refuseBeforeReading(dir, revision, repoPath, func(err error) error { return err })
+func refuseReadinessRead(run gitrepo.Runner, dir, revision, repoPath string) error {
+	return refuseBeforeReading(run, dir, revision, repoPath, func(err error) error { return err })
 }

@@ -16,19 +16,18 @@ type readLimits struct {
 }
 
 // The snapshot's listing and file reads take their limits from gitrepo's budget table, which is the one place
-// that holds them; the numbers are written out here so that a change to one is a decision.
+// that holds them; the numbers are written out here so that a change to one is a decision. The runner that sees the
+// limits is handed to the file system, as a caller would hand its own; no package variable is replaced.
 func TestTheListingAndTheFileReadAreHeldToTheNumbersOfTheBudgetTable(t *testing.T) {
 	dir := gitfixture.Init(t)
 	sha := gitfixture.CommitFile(t, dir, "main.go", "package main\n")
 	asked := map[string]readLimits{}
-	original := runSnapshotGit
-	t.Cleanup(func() { runSnapshotGit = original })
-	runSnapshotGit = func(d string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
+	run := func(d string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
 		asked[args[0]] = readLimits{stdout: maxStdout, stderr: maxStderr, timeout: timeout}
-		return original(d, maxStdout, maxStderr, timeout, args...)
+		return runSnapshotGit(d, maxStdout, maxStderr, timeout, args...)
 	}
 
-	fsys, err := New(dir, sha)
+	fsys, err := newThrough(run, dir, sha)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

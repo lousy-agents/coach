@@ -148,14 +148,12 @@ func visitsEveryTrackedFileExactlyOnceLexical(dir string, sha string) {
 
 func statsFilesSizeWithoutEverRunningGit(dir string, sha string) {
 	var invokedArgs [][]string
-	originalRunner := runSnapshotGit
-	DeferCleanup(func() { runSnapshotGit = originalRunner })
-	runSnapshotGit = func(d string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
+	run := func(d string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
 		invokedArgs = append(invokedArgs, append([]string(nil), args...))
-		return originalRunner(d, maxStdout, maxStderr, timeout, args...)
+		return runSnapshotGit(d, maxStdout, maxStderr, timeout, args...)
 	}
 
-	fsys, err := New(dir, sha)
+	fsys, err := newThrough(run, dir, sha)
 	Expect(err).NotTo(HaveOccurred())
 	invokedArgs = nil // discard construction's own ls-tree call; this spec only cares about Stat
 

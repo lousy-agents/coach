@@ -17,20 +17,32 @@ var rootLookup = []string{"rev-parse", "--show-toplevel"}
 func TestTheRepositoryRootIsFoundThroughTheRunnerTheCallerInjected(t *testing.T) {
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
-	lookups := 0
-	run := func(dir string, args ...string) ([]byte, error) {
-		if slices.Equal(args, rootLookup) {
-			lookups++
-		}
-		return gitrepo.RunBytes(dir, args...)
-	}
+	counting := &rootCounter{}
 
-	status, err := ExplicitOnDiskStatus(run, repo, "HEAD", "cfg/p.json")
+	status, err := ExplicitOnDiskStatus(counting.run, repo, "HEAD", "cfg/p.json")
 
 	if err != nil || status == nil {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want a missing-policy error", status, err)
 	}
-	if lookups == 0 {
+	counting.requireTheRootWasAsked(t)
+}
+
+// rootCounter is a runner handed to the code under test, as a caller hands its own: it counts the questions for the repository
+// root and answers every question with real git. It is passed in; no package variable is replaced.
+type rootCounter struct {
+	lookups int
+}
+
+func (c *rootCounter) run(dir string, args ...string) ([]byte, error) {
+	if slices.Equal(args, rootLookup) {
+		c.lookups++
+	}
+	return gitrepo.RunBytes(dir, args...)
+}
+
+func (c *rootCounter) requireTheRootWasAsked(t *testing.T) {
+	t.Helper()
+	if c.lookups == 0 {
 		t.Error("the repository root was never asked of the injected runner: the lookup ran outside the limits the caller set")
 	}
 }
@@ -46,22 +58,6 @@ func TestARunnerThatCannotFindTheRepositoryRootFailsTheCheckInsteadOfJudgingAPol
 	}
 }
 
-// recordRootLookups replaces the seam Load reads with and counts how often the
-// repository root is asked of it.
-func recordRootLookups(t *testing.T) *int {
-	t.Helper()
-	lookups := new(int)
-	original := runProjectConfigGit
-	t.Cleanup(func() { runProjectConfigGit = original })
-	runProjectConfigGit = func(dir string, args ...string) ([]byte, error) {
-		if slices.Equal(args, rootLookup) {
-			*lookups++
-		}
-		return original(dir, args...)
-	}
-	return lookups
-}
-
 func committedRepository(t *testing.T) string {
 	t.Helper()
 	repo := gitfixture.Init(t)
@@ -69,27 +65,23 @@ func committedRepository(t *testing.T) string {
 	return repo
 }
 
-// Discover and the not-found message look the root up too. They go through the
-// seam Load reads with, which a test replaces to see what it is asked.
-func TestDiscoverFindsTheRepositoryRootThroughTheLoadSeam(t *testing.T) {
+// Discover and the not-found message look the root up too. They ask the runner they are given, which Discover and Load take from
+// the package's own seam, so the limits of the seam apply to the lookup as they do to every other read.
+func TestDiscoverFindsTheRepositoryRootThroughTheRunnerItIsGiven(t *testing.T) {
 	repo := committedRepository(t)
 	gitfixture.CommitFile(t, repo, CanonicalPath, `{"schema_version":"1","roots":["."]}`)
-	lookups := recordRootLookups(t)
+	counting := &rootCounter{}
 
-	_, _ = Discover(repo, "HEAD")
+	_, _ = discoverThrough(counting.run, repo, "HEAD")
 
-	if *lookups == 0 {
-		t.Error("the repository root was never asked of the seam: the lookup ran outside the limits the seam sets")
-	}
+	counting.requireTheRootWasAsked(t)
 }
 
-func TestTheNotFoundMessageFindsTheRepositoryRootThroughTheLoadSeam(t *testing.T) {
+func TestTheNotFoundMessageFindsTheRepositoryRootThroughTheRunnerItIsGiven(t *testing.T) {
 	repo := committedRepository(t)
-	lookups := recordRootLookups(t)
+	counting := &rootCounter{}
 
-	_, _ = Load(repo, "HEAD", "absent.json")
+	_, _ = loadThrough(counting.run, repo, "HEAD", "absent.json")
 
-	if *lookups == 0 {
-		t.Error("the repository root was never asked of the seam: the lookup ran outside the limits the seam sets")
-	}
+	counting.requireTheRootWasAsked(t)
 }

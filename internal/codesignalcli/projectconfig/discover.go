@@ -9,18 +9,23 @@ import (
 // started in a subdirectory still sees CanonicalPath. Git failures
 // are returned; they are not treated as a file-local scan.
 func Discover(dir, revision string) (Selection, error) {
-	root, err := gitrepo.RepositoryRootWith(runProjectConfigGit, dir)
+	return discoverThrough(runProjectConfigGit, dir, revision)
+}
+
+// discoverThrough is Discover with every git question asked of run.
+func discoverThrough(run gitrepo.Runner, dir, revision string) (Selection, error) {
+	root, err := gitrepo.RepositoryRootWith(run, dir)
 	if err != nil {
 		return Selection{}, err
 	}
-	exists, err := gitrepo.FileExistsAtRevision(runProjectConfigGit, dir, revision, CanonicalPath)
+	exists, err := gitrepo.FileExistsAtRevision(run, dir, revision, CanonicalPath)
 	if err != nil {
 		return Selection{}, err
 	}
 	if exists {
-		return loadCanonical(dir, revision)
+		return loadCanonical(run, dir, revision)
 	}
-	return selectWhereNoBlobIsCommitted(dir, root, revision)
+	return selectWhereNoBlobIsCommitted(run, dir, root, revision)
 }
 
 // selectWhereNoBlobIsCommitted is discovery for a canonical path that holds no blob at revision. A
@@ -29,25 +34,25 @@ func Discover(dir, revision string) (Selection, error) {
 // uncommitted. A policy the revision holds at the same path in another case is refused too, with the
 // commands that move it, since falling back would run the scan without a policy that is committed.
 // Only a path with nothing like it falls back.
-func selectWhereNoBlobIsCommitted(dir, root, revision string) (Selection, error) {
-	refusal, err := NonFileAtRevision(runProjectConfigGit, dir, revision, CanonicalPath)
+func selectWhereNoBlobIsCommitted(run gitrepo.Runner, dir, root, revision string) (Selection, error) {
+	refusal, err := NonFileAtRevision(run, dir, revision, CanonicalPath)
 	if err != nil {
 		return Selection{}, err
 	}
 	if refusal != nil {
 		return Selection{Fatal: asDefaultPolicyError(refusal, CanonicalPath)}, nil
 	}
-	if renamed := WrongCaseAtRevision(runProjectConfigGit, dir, revision, CanonicalPath); renamed != nil {
+	if renamed := WrongCaseAtRevision(run, dir, revision, CanonicalPath); renamed != nil {
 		if silence := GitSilence(renamed, "coach codesignal", CanonicalPath); silence != nil {
 			return Selection{}, silence
 		}
 		return Selection{Fatal: renamed}, nil
 	}
-	return selectLegacy(dir, root, revision)
+	return selectLegacy(run, dir, root, revision)
 }
 
-func loadCanonical(dir, revision string) (Selection, error) {
-	if _, err := Load(dir, revision, CanonicalPath); err != nil {
+func loadCanonical(run gitrepo.Runner, dir, revision string) (Selection, error) {
+	if _, err := loadThrough(run, dir, revision, CanonicalPath); err != nil {
 		return Selection{Fatal: asDefaultPolicyError(err, CanonicalPath)}, nil
 	}
 	return Selection{Path: CanonicalPath}, nil

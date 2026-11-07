@@ -15,11 +15,9 @@ import (
 // about either.
 func TestDiscoverStopsWithAnOperationalErrorWhenGitCannotListTheRevisionsTree(t *testing.T) {
 	repo := committedRepository(t)
-	original := runProjectConfigGit
-	t.Cleanup(func() { runProjectConfigGit = original })
-	runProjectConfigGit = onlyTheListingFails(repo)
+	fake := onlyTheListingFails(repo)
 
-	selection, err := Discover(repo, "HEAD")
+	selection, err := discoverThrough(fake, repo, "HEAD")
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) || selection.Fatal != nil {

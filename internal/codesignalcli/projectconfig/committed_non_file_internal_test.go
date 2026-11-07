@@ -94,29 +94,23 @@ func TestAPolicyCommittedAsAFileIsReadAsOneAndAnEmptyPathIsNotFound(t *testing.T
 func TestAnUnanswerableEntryKindIsNotGuessedAtByEitherRead(t *testing.T) {
 	repo := committedRepository(t)
 	gitfixture.CommitFile(t, repo, nonFilePath, `{"schema_version":"1","roots":["."]}`)
-	gitAnswersNothing(t)
 
 	var found *ConfigError
-	if _, err := Load(repo, "HEAD", nonFilePath); !errors.As(err, &found) ||
+	if _, err := loadThrough(gitAnswersNothing, repo, "HEAD", nonFilePath); !errors.As(err, &found) ||
 		found.Remedy != projectreadiness.RemedyNone || found.PolicyCause != projectreadiness.CauseGitUnreadable ||
 		!strings.Contains(found.Message, "what the revision holds at the path") {
 		t.Errorf("Load = %v, want a read that could not check what the revision holds and offers nothing", err)
 	}
 	var operational *gitrepo.OperationalError
-	if _, err := LoadForReadiness(repo, "HEAD", nonFilePath); !errors.As(err, &operational) ||
+	if _, err := loadForReadinessThrough(gitAnswersNothing, repo, "HEAD", nonFilePath); !errors.As(err, &operational) ||
 		!strings.Contains(operational.Message, "could not be resolved") {
-		t.Errorf("LoadForReadiness = %v (%T), want an *OperationalError for the question about the entry", err, err)
+		t.Errorf("loadForReadinessThrough = %v (%T), want an *OperationalError for the question about the entry", err, err)
 	}
 }
 
-// gitAnswersNothing makes every git read through the Load seam fail, so what a read reports is
-// what it said about the first question it asked.
-func gitAnswersNothing(t *testing.T) {
-	t.Helper()
-	original := runProjectConfigGit
-	t.Cleanup(func() { runProjectConfigGit = original })
-	runProjectConfigGit = func(string, ...string) ([]byte, error) { return nil, errBoom }
-}
+// gitAnswersNothing is a git that fails every question, so what a read reports is what it said about the first
+// question it asked.
+func gitAnswersNothing(string, ...string) ([]byte, error) { return nil, errBoom }
 
 // An entry of a kind git records but this version has no name for is still not a file, so it is
 // refused as one rather than read.

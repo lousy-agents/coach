@@ -10,9 +10,12 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
-// runProjectConfigGit is the Git seam used by Load. Tests may
-// replace it to exercise timeout and bound failures without hanging.
-var runProjectConfigGit = NewGitRunner()
+// runProjectConfigGit is the bounded git read behind Load, Discover and the readiness reads. Each of them has a
+// variant that takes the runner it asks (loadThrough, discoverThrough, loadForReadinessThrough), so that a test
+// exercises a timeout or a bound failure by handing in a runner; nothing is replaced.
+func runProjectConfigGit(dir string, args ...string) ([]byte, error) {
+	return NewGitRunner()(dir, args...)
+}
 
 // LoadForReadiness reads and validates repoPath at revision
 // like Load, but keeps a git-read failure distinct from a
@@ -33,16 +36,21 @@ var runProjectConfigGit = NewGitRunner()
 // or stderr-budget failure still reports *gitrepo.OperationalError: those indicate a
 // resource/environment condition, not a defect in the file's content.
 func LoadForReadiness(dir, revision, repoPath string) (Config, error) {
-	config, err := loadForReadiness(dir, revision, repoPath)
-	return config, settledByTheWorkingCopy(runProjectConfigGit, dir, revision, repoPath, err)
+	return loadForReadinessThrough(runProjectConfigGit, dir, revision, repoPath)
 }
 
-func loadForReadiness(dir, revision, repoPath string) (Config, error) {
-	if err := refuseReadinessRead(dir, revision, repoPath); err != nil {
+// loadForReadinessThrough is LoadForReadiness with every git question asked of run.
+func loadForReadinessThrough(run gitrepo.Runner, dir, revision, repoPath string) (Config, error) {
+	config, err := loadForReadiness(run, dir, revision, repoPath)
+	return config, settledByTheWorkingCopy(run, dir, revision, repoPath, err)
+}
+
+func loadForReadiness(run gitrepo.Runner, dir, revision, repoPath string) (Config, error) {
+	if err := refuseReadinessRead(run, dir, revision, repoPath); err != nil {
 		return Config{}, err
 	}
 
-	data, err := runProjectConfigGit(dir, "show", revision+":"+repoPath)
+	data, err := run(dir, "show", revision+":"+repoPath)
 	if err != nil {
 		var boundErr *gitrepo.BoundError
 		if errors.As(err, &boundErr) && boundErr.Kind == gitrepo.BoundStdout {
@@ -64,18 +72,24 @@ func loadForReadiness(dir, revision, repoPath string) (Config, error) {
 // configuration. Git stdout/stderr, wall time, document size, and JSON
 // nesting are bounded at this boundary.
 func Load(dir, revision, repoPath string) (json.RawMessage, error) {
-	data, err := loadCommittedCopy(dir, revision, repoPath)
-	return data, settledByTheWorkingCopy(runProjectConfigGit, dir, revision, repoPath, err)
+	return loadThrough(runProjectConfigGit, dir, revision, repoPath)
 }
 
-func loadCommittedCopy(dir, revision, repoPath string) (json.RawMessage, error) {
-	if err := refuseScanRead(dir, revision, repoPath); err != nil {
+// loadThrough is Load with every git question, the repository root of the not-found message included, asked of run. A
+// caller that must see or bound those questions passes its own runner; no package variable is replaced.
+func loadThrough(run gitrepo.Runner, dir, revision, repoPath string) (json.RawMessage, error) {
+	data, err := loadCommittedCopy(run, dir, revision, repoPath)
+	return data, settledByTheWorkingCopy(run, dir, revision, repoPath, err)
+}
+
+func loadCommittedCopy(run gitrepo.Runner, dir, revision, repoPath string) (json.RawMessage, error) {
+	if err := refuseScanRead(run, dir, revision, repoPath); err != nil {
 		return nil, err
 	}
 
-	data, err := runProjectConfigGit(dir, "show", revision+":"+repoPath)
+	data, err := run(dir, "show", revision+":"+repoPath)
 	if err != nil {
-		return nil, readError(runProjectConfigGit, dir, revision, repoPath, err)
+		return nil, readError(run, dir, revision, repoPath, err)
 	}
 	if err := validateJSON(data); err != nil {
 		return nil, invalidError(repoPath, revision, err.Error())

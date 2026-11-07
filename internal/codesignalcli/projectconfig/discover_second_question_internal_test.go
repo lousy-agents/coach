@@ -42,11 +42,9 @@ func aRepositoryWhoseSecondTreeEntryQuestionFails(repo string, failure error) fu
 // would go on without a policy, or fall back to the legacy one, over a path it could not read.
 func TestDiscoverFailsWhenOnlyTheSecondQuestionAboutTheEntryCannotBeAnswered(t *testing.T) {
 	repo := committedRepository(t)
-	original := runProjectConfigGit
-	t.Cleanup(func() { runProjectConfigGit = original })
-	runProjectConfigGit = aRepositoryWhoseSecondTreeEntryQuestionFails(repo, errBoom)
+	fake := aRepositoryWhoseSecondTreeEntryQuestionFails(repo, errBoom)
 
-	selection, err := Discover(repo, "HEAD")
+	selection, err := discoverThrough(fake, repo, "HEAD")
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) || selection.Fatal != nil || selection.Path != "" {

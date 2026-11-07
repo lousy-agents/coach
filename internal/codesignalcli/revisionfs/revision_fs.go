@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
@@ -18,6 +19,7 @@ import (
 // gitrepo.RevisionFileReader) if per-file `git show` latency becomes
 // a measured problem; that is out of scope here.
 type revisionFS struct {
+	run      snapshotRunner
 	dir      string
 	revision string
 	isDir    map[string]bool
@@ -71,16 +73,26 @@ func (e *ListError) Unwrap() error { return e.Err }
 // message from Unwrap() alone instead of scrubbing dir out of formatted
 // text via substring match.
 func New(dir, revision string) (fs.FS, error) {
+	return newThrough(runSnapshotGit, dir, revision)
+}
+
+// snapshotRunner is one bounded git read: the directory, the limits on stdout, stderr and wall time, and the arguments.
+type snapshotRunner func(dir string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error)
+
+// newThrough is New with the runner its reads go through held by the file system it returns, so a caller
+// that must see or replace those reads passes its own and no package variable is swapped.
+func newThrough(run snapshotRunner, dir, revision string) (fs.FS, error) {
 	if revision == "" {
 		return nil, fmt.Errorf("coach: revision must be a non-empty Git revision")
 	}
 
-	output, err := runSnapshotGit(dir, MaxListBytes, maxSnapshotGitStderr, snapshotGitTimeout, "ls-tree", "-r", "-z", "-l", revision)
+	output, err := run(dir, MaxListBytes, maxSnapshotGitStderr, snapshotGitTimeout, "ls-tree", "-r", "-z", "-l", revision)
 	if err != nil {
 		return nil, &ListError{Revision: revision, Dir: dir, Err: err}
 	}
 
 	fsys := &revisionFS{
+		run:      run,
 		dir:      dir,
 		revision: revision,
 		isFile:   map[string]bool{},
