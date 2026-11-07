@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestRefuseUnsafeLazyFetchRefusesAnOldGitWhenARevisionItReadsLacksObjects(t *testing.T) {
+func TestRefuseMissingObjectsRefusesAnOldGitWhenARevisionItReadsLacksObjects(t *testing.T) {
 	cases := []struct {
 		name       string
 		repository fakeRepository
@@ -41,11 +41,11 @@ func assertRefusedFor(t *testing.T, repository fakeRepository, base string, word
 	t.Helper()
 	repository.version, repository.promisors = oldGit, promisorOrigin
 
-	err := RefuseUnsafeLazyFetch(repository.run, "repo", base)
+	err := RefuseMissingObjects(repository.run, "repo", base)
 
 	var refusal *OperationalError
 	if !errors.As(err, &refusal) {
-		t.Fatalf("RefuseUnsafeLazyFetch = %v; want a refusal", err)
+		t.Fatalf("RefuseMissingObjects = %v; want a refusal", err)
 	}
 	for _, word := range words {
 		if !strings.Contains(err.Error(), word) {
@@ -54,23 +54,23 @@ func assertRefusedFor(t *testing.T, repository fakeRepository, base string, word
 	}
 }
 
-func TestRefuseUnsafeLazyFetchProbesAGitWhoseVersionCannotBeRead(t *testing.T) {
+func TestRefuseMissingObjectsProbesAGitWhoseVersionCannotBeRead(t *testing.T) {
 	repository := fakeRepository{version: "something else", promisors: promisorOrigin, probes: map[string]probeAnswer{"HEAD": {output: missingIDs(firstMissing)}}}
 
-	err := RefuseUnsafeLazyFetch(repository.run, "repo", "")
+	err := RefuseMissingObjects(repository.run, "repo", "")
 
 	if err == nil || !strings.Contains(err.Error(), "HEAD has 1 object that is not in it") {
-		t.Errorf("RefuseUnsafeLazyFetch = %v; a git whose version cannot be read is treated as one that cannot be told, and probed", err)
+		t.Errorf("RefuseMissingObjects = %v; a git whose version cannot be read is treated as one that cannot be told, and probed", err)
 	}
 }
 
 func TestTheRefusalOffersNoFetchCommandForARemoteNameThatCannotBePastedSafely(t *testing.T) {
 	repository := fakeRepository{version: oldGit, promisors: "remote.origin\x1b[31m.promisor true\n", probes: map[string]probeAnswer{"HEAD": {output: missingIDs(firstMissing)}}}
 
-	err := RefuseUnsafeLazyFetch(repository.run, "repo", "")
+	err := RefuseMissingObjects(repository.run, "repo", "")
 
 	if err == nil || strings.Contains(err.Error(), "git fetch") || !strings.Contains(err.Error(), "git 2.44 or later") {
-		t.Errorf("RefuseUnsafeLazyFetch = %v; want the way out that is safe to paste, and no command built from a remote name that is not", err)
+		t.Errorf("RefuseMissingObjects = %v; want the way out that is safe to paste, and no command built from a remote name that is not", err)
 	}
 }
 
@@ -78,9 +78,9 @@ func TestTheRefusalOffersNoFetchCommandForARemoteNameThatCannotBePastedSafely(t 
 func TestTheRefusalDoesNotPrintABaseThatHoldsAControlCharacter(t *testing.T) {
 	repository := fakeRepository{version: oldGit, promisors: promisorOrigin, mergeBase: mergeBaseSHA, probes: map[string]probeAnswer{mergeBaseSHA: {output: missingIDs(firstMissing)}}}
 
-	err := RefuseUnsafeLazyFetch(repository.run, "repo", "ba\x1b[31md")
+	err := RefuseMissingObjects(repository.run, "repo", "ba\x1b[31md")
 
 	if err == nil || strings.Contains(err.Error(), "\x1b") || !strings.Contains(err.Error(), "the merge base of --base and HEAD") {
-		t.Errorf("RefuseUnsafeLazyFetch = %q; want the merge base named without the base's own text", err)
+		t.Errorf("RefuseMissingObjects = %q; want the merge base named without the base's own text", err)
 	}
 }

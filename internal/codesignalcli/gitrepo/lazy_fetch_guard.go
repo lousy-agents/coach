@@ -43,15 +43,18 @@ func ConfigHasNoValue(err error) bool {
 	return errors.As(err, &exit) && exit.ExitCode() == 1
 }
 
-// RefuseUnsafeLazyFetch is nil unless a read would fetch. A git that can be told not to fetch never does,
-// and an ordinary clone has nothing to fetch; a repository that cannot be told apart from an ordinary one
-// is refused, because reading it could run its remote's transport.
+// RefuseMissingObjects is nil unless the scan would read an object a partial clone lacks. An ordinary clone
+// has every object; a repository that cannot be told apart from an ordinary one is refused, because reading it
+// could run its remote's transport.
+//
+// A git that can be told not to fetch never does, but a diff reads the merge base's version of every changed
+// file, which the clone may lack: that is refused too, with the command that brings the objects in.
 //
 // On an older git, which ignores the instruction, a partial clone is read when every object of the
 // revisions the scan reads is already here: base is empty for a baseline, which reads HEAD, and otherwise
 // the scan reads HEAD and the merge base of base and HEAD. A revision that lacks objects is refused, and so
 // is a question the probe cannot answer, because a read that might fetch is not made on a guess.
-func RefuseUnsafeLazyFetch(run Runner, dir, base string) error {
+func RefuseMissingObjects(run Runner, dir, base string) error {
 	partial, err := IsPartialClone(run, dir)
 	if errors.Is(err, exec.ErrNotFound) {
 		return gitNotFoundError()
@@ -64,7 +67,7 @@ func RefuseUnsafeLazyFetch(run Runner, dir, base string) error {
 	}
 	supported, version := noLazyFetchSupported(run, dir)
 	if supported {
-		return nil
+		return refuseWhenTheMergeBaseLacksObjects(run, dir, base)
 	}
 	return refuseWhenReadRevisionsLackObjects(run, dir, base, version)
 }

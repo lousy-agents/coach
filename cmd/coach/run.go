@@ -51,7 +51,7 @@ func runCodesignal(args []string, stdout, stderr *os.File, ports scanPorts) int 
 		return 1
 	}
 
-	if err := gitrepo.RefuseUnsafeLazyFetch(gitrepo.RunBytes, dir, parsed.base); err != nil {
+	if err := gitrepo.RefuseMissingObjects(gitrepo.RunBytes, dir, parsed.base); err != nil {
 		fmt.Fprintf(stderr, "coach codesignal: %s\n", err)
 		return 1
 	}

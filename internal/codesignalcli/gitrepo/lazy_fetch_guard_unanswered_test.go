@@ -8,7 +8,7 @@ import (
 
 // A probe that fails says nothing about what is missing, and a read that might run the remote's transport
 // is not made on a guess.
-func TestRefuseUnsafeLazyFetchRefusesWhenItCannotTellWhatIsMissing(t *testing.T) {
+func TestRefuseMissingObjectsRefusesWhenItCannotTellWhatIsMissing(t *testing.T) {
 	cases := []struct {
 		name       string
 		repository fakeRepository
@@ -35,11 +35,11 @@ func assertRefusedForWantOfAnAnswer(t *testing.T, repository fakeRepository, bas
 	t.Helper()
 	repository.version, repository.promisors = oldGit, promisorOrigin
 
-	err := RefuseUnsafeLazyFetch(repository.run, "repo", base)
+	err := RefuseMissingObjects(repository.run, "repo", base)
 
 	var refusal *OperationalError
 	if !errors.As(err, &refusal) || refusal.Cause == nil {
-		t.Fatalf("RefuseUnsafeLazyFetch = %v; want a refusal that keeps the cause", err)
+		t.Fatalf("RefuseMissingObjects = %v; want a refusal that keeps the cause", err)
 	}
 	for _, word := range []string{"could not tell whether", "partial clone", "git 2.43.0", "git 2.44 or later", cause} {
 		if !strings.Contains(err.Error(), word) {

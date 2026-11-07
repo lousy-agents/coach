@@ -30,19 +30,19 @@ func TestGitWaitErrorKeepsOrdinaryGitWordsReadable(t *testing.T) {
 	}
 }
 
-func TestRefuseUnsafeLazyFetchQuotesWhatGitSaid(t *testing.T) {
+func TestRefuseMissingObjectsQuotesWhatGitSaid(t *testing.T) {
 	run := func(string, ...string) ([]byte, error) {
 		return nil, errors.New("fatal: bad " + rightToLeftOverride + "name " + eightBitCSI + "2J")
 	}
 
-	err := RefuseUnsafeLazyFetch(run, "repo", "")
+	err := RefuseMissingObjects(run, "repo", "")
 
 	if err == nil || strings.Contains(err.Error(), rightToLeftOverride) || strings.Contains(err.Error(), eightBitCSI) {
-		t.Errorf("RefuseUnsafeLazyFetch = %v, want a refusal that shows git's control characters as escapes", err)
+		t.Errorf("RefuseMissingObjects = %v, want a refusal that shows git's control characters as escapes", err)
 	}
 }
 
-func TestRefuseUnsafeLazyFetchQuotesWhatGitSaidWhenItCannotListWhatIsMissing(t *testing.T) {
+func TestRefuseMissingObjectsQuotesWhatGitSaidWhenItCannotListWhatIsMissing(t *testing.T) {
 	run := func(_ string, args ...string) ([]byte, error) {
 		switch args[0] {
 		case "config":
@@ -53,10 +53,22 @@ func TestRefuseUnsafeLazyFetchQuotesWhatGitSaidWhenItCannotListWhatIsMissing(t *
 		return nil, errors.New("fatal: bad " + rightToLeftOverride + "name " + eightBitCSI + "2J")
 	}
 
-	err := RefuseUnsafeLazyFetch(run, "repo", "")
+	err := RefuseMissingObjects(run, "repo", "")
 
 	if err == nil || strings.Contains(err.Error(), rightToLeftOverride) || strings.Contains(err.Error(), eightBitCSI) {
-		t.Errorf("RefuseUnsafeLazyFetch = %v, want a refusal that shows git's control characters as escapes", err)
+		t.Errorf("RefuseMissingObjects = %v, want a refusal that shows git's control characters as escapes", err)
+	}
+}
+
+// The merge base is asked about on every git for a diff, so its refusals show git's words the same way.
+func TestRefuseMissingObjectsQuotesWhatGitSaidWhenItCannotListWhatTheMergeBaseLacks(t *testing.T) {
+	repository := modernGitPartialClone()
+	repository.probes = map[string]probeAnswer{mergeBaseSHA: {err: errors.New("fatal: bad " + rightToLeftOverride + "name " + eightBitCSI + "2J")}}
+
+	err := RefuseMissingObjects(repository.run, "repo", "origin/main")
+
+	if err == nil || strings.Contains(err.Error(), rightToLeftOverride) || strings.Contains(err.Error(), eightBitCSI) || !strings.Contains(err.Error(), "\\u202e") {
+		t.Errorf("RefuseMissingObjects = %v, want a refusal that shows git's control characters as escapes", err)
 	}
 }
 

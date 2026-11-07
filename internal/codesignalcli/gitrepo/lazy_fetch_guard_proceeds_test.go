@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestRefuseUnsafeLazyFetchLeavesAReadAloneWhenNothingCanBeFetched(t *testing.T) {
+func TestRefuseMissingObjectsLeavesAReadAloneWhenNothingCanBeFetched(t *testing.T) {
 	cases := []struct {
 		name       string
 		repository fakeRepository
@@ -25,12 +25,12 @@ func TestRefuseUnsafeLazyFetchLeavesAReadAloneWhenNothingCanBeFetched(t *testing
 func assertNotRefused(t *testing.T, repository fakeRepository) {
 	t.Helper()
 
-	if err := RefuseUnsafeLazyFetch(repository.run, "repo", ""); err != nil {
-		t.Errorf("RefuseUnsafeLazyFetch = %v; want a read that fetches nothing to go ahead", err)
+	if err := RefuseMissingObjects(repository.run, "repo", ""); err != nil {
+		t.Errorf("RefuseMissingObjects = %v; want a read that fetches nothing to go ahead", err)
 	}
 }
 
-func TestRefuseUnsafeLazyFetchAsksNoQuestionOfGitWhenTheAnswerIsAlreadyKnown(t *testing.T) {
+func TestRefuseMissingObjectsAsksNoQuestionOfGitWhenTheAnswerIsAlreadyKnown(t *testing.T) {
 	cases := []struct {
 		name       string
 		repository fakeRepository
@@ -48,7 +48,7 @@ func TestRefuseUnsafeLazyFetchAsksNoQuestionOfGitWhenTheAnswerIsAlreadyKnown(t *
 func assertNothingProbed(t *testing.T, repository fakeRepository) {
 	t.Helper()
 
-	_ = RefuseUnsafeLazyFetch(repository.run, "repo", "origin/main")
+	_ = RefuseMissingObjects(repository.run, "repo", "")
 
 	if len(repository.probed) != 0 {
 		t.Errorf("probed %v; a read that cannot fetch has no objects to look for", repository.probed)
@@ -58,7 +58,7 @@ func assertNothingProbed(t *testing.T, repository fakeRepository) {
 // The probe is what makes the refusal depend on the objects a read needs: it lists the objects of each
 // revision's own tree, and prints only the ones that are not local. --no-walk keeps it to that tree
 // instead of every object in history, and --quiet keeps it to the missing ones.
-func TestRefuseUnsafeLazyFetchProbesTheTreesTheScanReads(t *testing.T) {
+func TestRefuseMissingObjectsProbesTheTreesTheScanReads(t *testing.T) {
 	cases := []struct {
 		name string
 		base string
@@ -81,8 +81,8 @@ func assertProbed(t *testing.T, base string, want []string) {
 	t.Helper()
 	repository := fakeRepository{version: oldGit, promisors: promisorOrigin, mergeBase: mergeBaseSHA}
 
-	if err := RefuseUnsafeLazyFetch(repository.run, "repo", base); err != nil {
-		t.Fatalf("RefuseUnsafeLazyFetch = %v; want every object here to be read", err)
+	if err := RefuseMissingObjects(repository.run, "repo", base); err != nil {
+		t.Fatalf("RefuseMissingObjects = %v; want every object here to be read", err)
 	}
 
 	if !reflect.DeepEqual(repository.probed, want) {
