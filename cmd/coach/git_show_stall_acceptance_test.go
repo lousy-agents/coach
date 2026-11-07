@@ -25,20 +25,6 @@ var _ = Describe("coach codesignal --base: a git that does not answer when it is
 		ceiling = readLimit + 25*time.Second
 	)
 
-	// gitThatNeverAnswers is a git that answers every question, the reads of the policy included, but not
-	// the one the rule names. The rule is the body of a sh case over each argument; shows is set once git
-	// show has been seen.
-	gitThatNeverAnswers := func(rule string) string {
-		realGit, err := exec.LookPath("git")
-		Expect(err).NotTo(HaveOccurred())
-		dir, err := os.MkdirTemp("", "coach-acceptance-stalled-git-*")
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(os.RemoveAll, dir)
-		script := "#!/bin/sh\nshows=\nfor argument in \"$@\"; do\n  case \"$argument\" in\n    " + rule + "\n  esac\ndone\nexec " + realGit + " \"$@\"\n"
-		Expect(os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755)).To(Succeed())
-		return dir
-	}
-
 	// three Go files are committed and then each changed: --base HEAD~3 is the revision before the changes.
 	threeChangedGoFiles := func() string {
 		repo := newTempGitRepo()
@@ -85,3 +71,17 @@ var _ = Describe("coach codesignal --base: a git that does not answer when it is
 		Entry("the base content of a removed file", oneRemovedGoFile, anyRevision, "HEAD~1", "git show"),
 	)
 })
+
+// gitThatNeverAnswers is a git that answers every question, the reads of the policy included, but not the
+// one the rule names. The rule is the body of a sh case over each argument; shows is set once git show has
+// been seen. It returns the directory that holds the git, to put first on PATH.
+func gitThatNeverAnswers(rule string) string {
+	realGit, err := exec.LookPath("git")
+	Expect(err).NotTo(HaveOccurred())
+	dir, err := os.MkdirTemp("", "coach-acceptance-stalled-git-*")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(os.RemoveAll, dir)
+	script := "#!/bin/sh\nshows=\nfor argument in \"$@\"; do\n  case \"$argument\" in\n    " + rule + "\n  esac\ndone\nexec " + realGit + " \"$@\"\n"
+	Expect(os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755)).To(Succeed())
+	return dir
+}

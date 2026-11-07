@@ -28,7 +28,11 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []gitre
 	for _, sf := range files {
 		headBytes, err := reader.Next(sf.Path)
 		if err != nil {
-			diagnostics = append(diagnostics, readFailedDiagnostic(sf.Path, "head", err))
+			failure, stalled := baselineReadFailure(sf.Path, err)
+			if stalled != nil {
+				return nil, stalled
+			}
+			diagnostics = append(diagnostics, failure...)
 			coverage.FilesUnanalyzable++
 			continue
 		}

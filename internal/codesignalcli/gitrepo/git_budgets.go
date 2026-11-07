@@ -59,6 +59,21 @@ const (
 // to a small total; production code never assigns it.
 var snapshotTotal int64 = SnapshotTotalBytes
 
+// fileStreamBudget is what the --baseline reader (one long-lived `git cat-file --batch -Z` for the whole
+// run) may use: a wall time for one request, so that the analysis between two requests is not counted, and
+// the most bytes of one file it will hold. An object past the limit is discarded from the stream and
+// reported as too large for that file; it is never allocated. The numbers are those of every other read of
+// one file (the show row, revisionfs): the analyzers refuse source past 2 MiB and a policy past 1 MiB, so a
+// file past 32 MiB is never one they read.
+type fileStreamBudget struct {
+	wall   time.Duration
+	object int64
+}
+
+// fileReadBudget is a variable so that a test can hold the reader to a small one; production code never
+// assigns it.
+var fileReadBudget = fileStreamBudget{wall: metadataTimeout, object: fileBytes}
+
 // snapshotBudget is the wall time of the git process that reads a snapshot's objects, and the most bytes of
 // content one object may have.
 type snapshotBudget struct {

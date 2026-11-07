@@ -120,3 +120,10 @@ func TestTheSnapshotStreamHasAWallTimeAnObjectSizeAndATotal(t *testing.T) {
 		t.Errorf("the default snapshot budget = %+v, want the wall time and object size above", defaultSnapshotBudget)
 	}
 }
+
+// The --baseline reader is held to the numbers of every other read of one file.
+func TestTheBaselineReaderIsHeldToTheNumbersOfEveryOtherFileRead(t *testing.T) {
+	if fileReadBudget.wall != 30*time.Second || fileReadBudget.object != 32<<20 {
+		t.Errorf("fileReadBudget = %+v, want 30s and 32 MiB, as the show row has", fileReadBudget)
+	}
+}

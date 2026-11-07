@@ -3,7 +3,9 @@ package codesignalcli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,5 +53,33 @@ func TestReadFailureKeepsTheScanGoingForAFileGitAnsweredNoFor(t *testing.T) {
 
 	if stalled != nil || len(diagnostics) != 1 || diagnostics[0].Kind != "base_read_failed" {
 		t.Errorf("readFailure = %v, %v; want one base_read_failed diagnostic and no error", diagnostics, stalled)
+	}
+}
+
+func TestBaselineReadFailureNamesAFileTooLargeLikeTheAnalyzerDoes(t *testing.T) {
+	err := fmt.Errorf("reading: %w", &gitrepo.ObjectTooLargeError{Path: "big.go", Size: 100, Limit: 50})
+
+	diagnostics, stalled := baselineReadFailure("big.go", err)
+
+	if stalled != nil || len(diagnostics) != 1 || diagnostics[0].Kind != "file_too_large" || diagnostics[0].Path != "big.go" || !strings.Contains(diagnostics[0].Message, "100 bytes, exceeds max 50") {
+		t.Errorf("baselineReadFailure = %v, %v; want one file_too_large diagnostic for big.go and no error", diagnostics, stalled)
+	}
+}
+
+func TestBaselineReadFailureEndsTheScanWhenGitDoesNotAnswer(t *testing.T) {
+	timedOut := boundedRead(t, func(ctx context.Context) *exec.Cmd { return exec.CommandContext(ctx, "sleep", "30") }, 1<<10, 200*time.Millisecond)
+
+	diagnostics, stalled := baselineReadFailure("a.go", timedOut)
+
+	if stalled == nil || diagnostics != nil {
+		t.Errorf("baselineReadFailure = %v, %v; want the operational error and no diagnostics", diagnostics, stalled)
+	}
+}
+
+func TestBaselineReadFailureKeepsTheScanGoingForAFileGitCouldNotGive(t *testing.T) {
+	diagnostics, stalled := baselineReadFailure("a.go", errors.New(`"a.go" is missing at abc`))
+
+	if stalled != nil || len(diagnostics) != 1 || diagnostics[0].Kind != "head_read_failed" {
+		t.Errorf("baselineReadFailure = %v, %v; want one head_read_failed diagnostic and no error", diagnostics, stalled)
 	}
 }
