@@ -60,7 +60,7 @@ func readObjects(dir string, oids []string, budget snapshotBudget, visit func(oi
 		outcome.record(oid, response)
 	}
 	if err := cmd.Wait(); err != nil {
-		return objectOutcome{}, boundedBy(ctx, budget.wall, fmt.Errorf("git cat-file --batch: %w: %s", err, strings.TrimSpace(stderr.String())))
+		return objectOutcome{}, boundedBy(ctx, budget.wall, fmt.Errorf("git cat-file --batch: %w: %s", err, TerminalSafe(strings.TrimSpace(stderr.String()))))
 	}
 	return outcome, nil
 }
