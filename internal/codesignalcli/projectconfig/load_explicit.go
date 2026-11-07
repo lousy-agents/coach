@@ -38,7 +38,11 @@ func ExplicitOnDiskStatus(run gitrepo.Runner, dir, revision, repoPath string) (*
 	if !errors.As(err, &onDisk) {
 		return nil, err
 	}
-	found, err := namedByTheRevision(run, dir, revision, repoPath, onDisk)
+	named, err := namedByTheRevision(run, dir, revision, repoPath, onDisk)
+	if err != nil {
+		return nil, err
+	}
+	found, err := namedForACommittedBlocker(run, dir, revision, repoPath, named)
 	if err != nil {
 		return nil, err
 	}

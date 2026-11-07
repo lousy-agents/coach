@@ -88,12 +88,25 @@ var _ = Describe("coach codesignal: the next step offered after an explicit --pr
 	Describe("a path that runs through a file where a directory would be", func() {
 		It("names the cause and offers no authoring, since a policy cannot be saved there", func() {
 			repo := commitScannableGoRepo()
+			Expect(os.WriteFile(filepath.Join(repo, "notes"), []byte("untracked\n"), 0o644)).To(Succeed())
+
+			_, stderr := runScan(repo, "", "notes/p.json")
+
+			Expect(string(stderr)).To(ContainSubstring("a parent path component is not a directory"))
+			Expect(string(stderr)).To(ContainSubstring(`"notes"`), "the blocking component is named:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("move or remove it"), "a file nothing commits can be moved:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring(suggestCommand), "stderr:\n%s", stderr)
+		})
+
+		It("does not advise removing a file the analyzed revision commits, which is where the path is wrong", func() {
+			repo := commitScannableGoRepo()
 
 			_, stderr := runScan(repo, "", "a.go/p.json")
 
 			Expect(string(stderr)).To(ContainSubstring("a parent path component is not a directory"))
 			Expect(string(stderr)).To(ContainSubstring(`"a.go"`), "the blocking component is named:\n%s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("move or remove it"))
+			Expect(string(stderr)).To(ContainSubstring("a file the analyzed revision commits, so the path is probably wrong"), "stderr:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("move or remove it"), "a committed file is not advised away:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring(suggestCommand), "stderr:\n%s", stderr)
 		})
 
