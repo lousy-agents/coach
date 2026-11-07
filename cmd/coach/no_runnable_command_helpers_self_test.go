@@ -14,6 +14,8 @@ func TestTheHelperCatchesTheCommandsThatCarryOutAStep(t *testing.T) {
 		"git  mv a A", "git\tmv a A", "git \\\n  mv a A", "git\nmv a A", "git reset --hard", "git stash",
 		"GIT MV a A", "/usr/bin/git mv a A", "git rm --cached p.json", "git checkout --ours -- p.json", "top=\"$(git rev-parse --show-toplevel)\"",
 		"git --work-tree=. restore p.json", "\x1b[31mgit rm p.json\x1b[0m", "gi\x1b[1mt mv a A", "git \x1b[1mmv a A",
+		"git --git-dir /x mv a A", "git --work-tree /x restore p.json", "git --git-dir=/x --work-tree /y add p.json",
+		"git --namespace ns commit -m x", "git -C \"my dir\" commit -m x", "git -c \"core.x=y z\" add p.json", "git -C 'my dir' restore p.json", "git --no-pager --git-dir /x\n  checkout p.json",
 	}
 	for _, command := range commands {
 		t.Run(command, func(t *testing.T) { requireTheCommandCaught(t, command) })
@@ -38,6 +40,8 @@ func TestTheHelperLeavesTheWordsOfTheAdviceAlone(t *testing.T) {
 		`coach codesignal: the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one.`,
 		`install the Go version the go.mod names, or put it first on PATH; Coach does not download it`,
 		`the index also holds a staged edit to it, which clearing the mark leaves alone, and the next run then offers to keep it or to drop it`,
+		`git --git-dir names the repository to look at and git --work-tree the tree to compare it with, and neither is a step to carry out`,
+		`ask git --git-dir /x what it holds, and then commit what is staged by hand`,
 	}
 	for _, text := range words {
 		t.Run(text[:40], func(t *testing.T) { requireTheWordsLeftAlone(t, text) })

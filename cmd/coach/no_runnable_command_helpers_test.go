@@ -12,10 +12,15 @@ import (
 // with options between git and its subcommand, with another run of whitespace between its words, or as a bare mv, cp or rm is
 // caught as well as the commands the advice used to print. The clear-a-flag command (`git update-index`) is not among them: it
 // only clears a flag, and the advice may print it.
+// anOptionValue is the value of an option: a word, or a quoted run of words.
+const anOptionValue = `(?:"[^"]*"|'[^']*'|\S+)`
+
 var (
 	// gitThatChangesFiles is git, any options before the subcommand, and a subcommand that moves, restores, stages, commits or
-	// discards files. Case-insensitive, and any whitespace, newlines included, may separate the words.
-	gitThatChangesFiles = regexp.MustCompile(`(?i)\bgit\b(?:\s+(?:-[cC]\s+\S+|--[\w-]+(?:=\S+)?))*\s+(?:mv|checkout|restore|rm|add|commit|reset|stash|switch|clean|apply|merge|rebase|cherry-pick)\b`)
+	// discards files. Case-insensitive, and any whitespace, newlines included, may separate the words. An option before the
+	// subcommand is -c or -C with its value, one of git's long options that takes its value as the next word (--git-dir /x,
+	// --work-tree /x), or any other long option with its value joined by = or none; a value may be quoted.
+	gitThatChangesFiles = regexp.MustCompile(`(?i)\bgit\b(?:\s+(?:-[cC]\s+` + anOptionValue + `|--(?:git-dir|work-tree|namespace|super-prefix|config-env|attr-source|exec-path)\s+` + anOptionValue + `|--[\w-]+(?:=\S+)?))*\s+(?:mv|checkout|restore|rm|add|commit|reset|stash|switch|clean|apply|merge|rebase|cherry-pick)\b`)
 	// aFileMovingProgram is mv, cp or rm run on an argument.
 	aFileMovingProgram = regexp.MustCompile(`(?i)(?:^|[\s;&|(` + "`" + `'"])(?:mv|cp|rm)\s+\S`)
 	// aShellExpansionOrAMergeFlag is what a pasted command carries to find the repository root or to pick a side of a conflict.
