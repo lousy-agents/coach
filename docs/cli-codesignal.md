@@ -112,8 +112,9 @@ holds, and what to do follows from that:
   revision already holds that spelling.
 - The revision holds the spelling the user typed and the disk was renamed without a
   commit: rename the entry on disk back to the spelling the revision holds. For a file,
-  the other way out is to record the rename with `git mv '<revision spelling>' '<spelling
-  on disk>'`, commit it, and pass the spelling on disk. `git add` cannot do that: on a
+  the other way out is to record the rename with `git -C "$(git rev-parse --show-toplevel)" mv -- '<revision
+  spelling>' '<spelling on disk>'`, commit it, and pass the spelling on disk. The printed move commands run
+  at the repository root, which they find themselves, so they work when pasted from a subdirectory. `git add` cannot do that: on a
   repository that ignores case it records nothing for a rename that changes only the case
   of a name, and the commit says there is nothing to commit. `git mv` refuses to rename a
   directory in case only, so a directory is renamed back and no `git mv` is offered.
@@ -126,7 +127,7 @@ holds, and what to do follows from that:
   because no spelling is the right one to move to. It gives none either when git cannot
   answer.
 
-A policy that Coach discovers, with no `--project-config`, is read only at `.lousy-agents/coach.json`. When nothing is committed there and the analyzed revision holds the same path in another case (`.Lousy-Agents/Coach.json`, say), the scan is refused with `project_config_invalid`, and `--check-project` reports a policy gap with the cause `name_case_differs` and no `author_policy`, because a new policy cannot be written over the one that is committed. Before, the scan ran without the policy and said nothing, which dropped its layer checks. The message names the spelling that is committed and the commands that move it, `mkdir -p '.lousy-agents' && git mv '.Lousy-Agents/Coach.json' '.lousy-agents/coach.json'`, to be committed (the `mkdir` is for a file system that tells cases apart, where the directory does not exist under the new spelling). It holds on any file system, since the committed names are what differ. With several spellings committed the message lists them and asks for one at the path Coach reads.
+A policy that Coach discovers, with no `--project-config`, is read only at `.lousy-agents/coach.json`. When nothing is committed there and the analyzed revision holds the same path in another case (`.Lousy-Agents/Coach.json`, say), the scan is refused with `project_config_invalid`, and `--check-project` reports a policy gap with the cause `name_case_differs` and no `author_policy`, because a new policy cannot be written over the one that is committed. Before, the scan ran without the policy and said nothing, which dropped its layer checks. The message names the spelling that is committed and the commands that move it, `top="$(git rev-parse --show-toplevel)" && mkdir -p "$top"/'.lousy-agents' && git -C "$top" mv -- '.Lousy-Agents/Coach.json' '.lousy-agents/coach.json'`, to be committed (the `mkdir` is for a file system that tells cases apart, where the directory does not exist under the new spelling; both run at the repository root, so they work from a subdirectory too). It holds on any file system, since the committed names are what differ. With several spellings committed the message lists them and asks for one at the path Coach reads.
 
 The check covers every component of the path, and the advice is about the first component
 that differs. It also applies when the file is missing: a missing policy under a parent

@@ -46,7 +46,7 @@ var _ = Describe("coach codesignal: the advice for a policy path spelled in anot
 
 			stderr := scanExplicitPolicy(repo, "cfg/p.json")
 
-			Expect(string(stderr)).To(ContainSubstring(`it holds "cfg/p.json"; rename "cfg/P.JSON" back to "cfg/p.json", or record the rename with git mv 'cfg/p.json' 'cfg/P.JSON', commit it, and pass --project-config cfg/P.JSON`), "stderr:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring(`it holds "cfg/p.json"; rename "cfg/P.JSON" back to "cfg/p.json", or record the rename with git -C "$(git rev-parse --show-toplevel)" mv -- 'cfg/p.json' 'cfg/P.JSON', commit it, and pass --project-config cfg/P.JSON`), "stderr:\n%s", stderr)
 		})
 
 		It("tells the user to rename the directory back, which is the only way out for a directory, for a directory", func() {

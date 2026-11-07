@@ -16,7 +16,7 @@ func TestAnUncommittedPolicyTheRevisionHoldsInAnotherCaseIsToldHowToRecordTheRen
 		avoid    []string
 	}{
 		{"a file", "policies/P.json", policies,
-			[]string{`the analyzed revision holds the path as "policies/p.json"`, "git mv 'policies/p.json' 'policies/P.json' and commit it, or rename the file back and pass --project-config policies/p.json"}, []string{"commit the file"}},
+			[]string{`the analyzed revision holds the path as "policies/p.json"`, gitAtTheRoot + " mv -- 'policies/p.json' 'policies/P.json' and commit it, or rename the file back and pass --project-config policies/p.json"}, []string{"commit the file"}},
 		{"a directory", "Policies/p.json", policies,
 			[]string{`holds the path as "policies/p.json"`, `rename "Policies" back to "policies" and pass --project-config policies/p.json`}, []string{"git mv"}},
 		{"a directory above a file that differs too", "Policies/P.json", policies,
@@ -104,10 +104,13 @@ func TestTheGitMoveCommandIsShownOnlyForNamesThatCanBePrintedAndPasted(t *testin
 		from, to string
 		want     string
 	}{
-		{"plain names", "policies/p.json", "policies/P.json", "git mv 'policies/p.json' 'policies/P.json'"},
-		{"a name with an apostrophe", "it's.json", "It's.json", `git mv 'it'\''s.json' 'It'\''s.json'`},
+		{"plain names", "policies/p.json", "policies/P.json", gitAtTheRoot + " mv -- 'policies/p.json' 'policies/P.json'"},
+		{"a name with an apostrophe", "it's.json", "It's.json", gitAtTheRoot + ` mv -- 'it'\''s.json' 'It'\''s.json'`},
 		{"a control byte", "a\x1b.json", "A\x1b.json", ""},
 		{"a path outside the repository", "../p.json", "../P.json", ""},
+		{"only the source outside the repository", "../p.json", "P.json", ""},
+		{"only the destination outside the repository", "p.json", "../P.json", ""},
+		{"only the destination with a control byte", "p.json", "P\x1b.json", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

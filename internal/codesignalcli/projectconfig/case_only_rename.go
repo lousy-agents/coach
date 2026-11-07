@@ -73,11 +73,21 @@ func firstDifference(a, b []string) int {
 	return len(a)
 }
 
+// atTheRepositoryRoot is the git a command is run with so that it works from any directory. The paths Coach
+// prints are repository-relative, like --project-config, and git mv reads its paths against the working
+// directory, so the same command fails from a subdirectory with "bad source". If the root cannot be found
+// the -C is empty, which leaves git where it is, and the move fails there for want of a repository.
+const atTheRepositoryRoot = `git -C "$(git rev-parse --show-toplevel)"`
+
 // gitMoveCommand is the command that moves a tracked file to the name on disk and so records the
 // rename. It reports false for a name that cannot be shown to a terminal as it is.
 func gitMoveCommand(from, to string) (string, bool) {
-	if ValidatePath(from) != nil || ValidatePath(to) != nil || !shellword.Printable(from) || !shellword.Printable(to) {
+	if !movable(from, to) {
 		return "", false
 	}
-	return "git mv " + shellword.Quote(from) + " " + shellword.Quote(to), true
+	return atTheRepositoryRoot + " mv -- " + shellword.Quote(from) + " " + shellword.Quote(to), true
+}
+
+func movable(from, to string) bool {
+	return ValidatePath(from) == nil && ValidatePath(to) == nil && shellword.Printable(from) && shellword.Printable(to)
 }

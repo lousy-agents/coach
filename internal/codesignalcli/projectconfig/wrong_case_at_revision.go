@@ -45,14 +45,16 @@ func wrongCaseRefusal(reason string) *ConfigError {
 
 // moveAdvice is how to move the committed file to the path Coach reads. The directory is made first because
 // on a file system that tells cases apart it does not exist under the new spelling, and git mv does not
-// create it; where the file system folds case, mkdir -p finds the old one and changes nothing.
+// create it; where the file system folds case, mkdir -p finds the old one and changes nothing. Both run at
+// the repository root, found once: the variable keeps a failure to find it from becoming a mkdir at the
+// root of the file system, because the && stops the chain.
 func moveAdvice(from, to string) string {
-	command, ok := gitMoveCommand(from, to)
-	if !ok {
+	if !movable(from, to) {
 		return "move it to that path and commit the rename"
 	}
+	move := `git -C "$top" mv -- ` + shellword.Quote(from) + " " + shellword.Quote(to)
 	if directory := path.Dir(to); directory != "." {
-		command = "mkdir -p " + shellword.Quote(directory) + " && " + command
+		move = `mkdir -p "$top"/` + shellword.Quote(directory) + " && " + move
 	}
-	return "rename it with " + command + " and commit the rename"
+	return "rename it with " + `top="$(git rev-parse --show-toplevel)" && ` + move + " and commit the rename"
 }
