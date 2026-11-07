@@ -27,15 +27,28 @@ func revisionsRead(run Runner, dir, base string) ([]readRevision, error) {
 	if base == "" {
 		return []readRevision{head}, nil
 	}
-	output, err := run(dir, "merge-base", "--", base, "HEAD")
+	mergeBase, err := mergeBaseOf(run, dir, base)
 	if err != nil {
 		return nil, err
 	}
+	return []readRevision{head, mergeBaseRevision(base, mergeBase)}, nil
+}
+
+// mergeBaseOf is the object id of the merge base of base and HEAD.
+func mergeBaseOf(run Runner, dir, base string) (string, error) {
+	output, err := run(dir, "merge-base", "--", base, "HEAD")
+	if err != nil {
+		return "", err
+	}
 	mergeBase := strings.TrimSpace(string(output))
 	if !objectID.MatchString(mergeBase) {
-		return nil, fmt.Errorf("git printed %q where the merge base's object id was expected", mergeBase)
+		return "", fmt.Errorf("git printed %q where the merge base's object id was expected", mergeBase)
 	}
-	return []readRevision{head, {name: mergeBase, label: "the merge base of " + displayed(base) + " and HEAD"}}, nil
+	return mergeBase, nil
+}
+
+func mergeBaseRevision(base, mergeBase string) readRevision {
+	return readRevision{name: mergeBase, label: "the merge base of " + displayed(base) + " and HEAD"}
 }
 
 func displayed(base string) string {

@@ -74,29 +74,29 @@ func requireUnanswered(t *testing.T, failure error) {
 	}
 }
 
-func TestRefuseUnsafeLazyFetchRefusesARepositoryItCannotTellIsAPartialClone(t *testing.T) {
+func TestRefuseMissingObjectsRefusesARepositoryItCannotTellIsAPartialClone(t *testing.T) {
 	run := func(string, ...string) ([]byte, error) {
 		return nil, errors.New("exit status 128: fatal: bad config line 1 in file .git/config")
 	}
 
-	err := RefuseUnsafeLazyFetch(run, "repo", "")
+	err := RefuseMissingObjects(run, "repo", "")
 
 	var refusal *OperationalError
 	if !errors.As(err, &refusal) || !strings.Contains(refusal.Message, "could not tell whether this repository is a partial clone") || refusal.Cause == nil {
-		t.Errorf("RefuseUnsafeLazyFetch = %v; want a refusal that says it could not tell whether the repository is a partial clone, and keeps git's error", err)
+		t.Errorf("RefuseMissingObjects = %v; want a refusal that says it could not tell whether the repository is a partial clone, and keeps git's error", err)
 	}
 }
 
 // A git that is not installed is said so in the words every other read of it uses, not as a question about
 // partial clones.
-func TestRefuseUnsafeLazyFetchSaysWhenGitIsNotInstalled(t *testing.T) {
+func TestRefuseMissingObjectsSaysWhenGitIsNotInstalled(t *testing.T) {
 	missing := &exec.Error{Name: "git", Err: exec.ErrNotFound}
 	run := func(string, ...string) ([]byte, error) { return nil, missing }
 
-	err := RefuseUnsafeLazyFetch(run, "repo", "")
+	err := RefuseMissingObjects(run, "repo", "")
 
 	var refusal *OperationalError
 	if !errors.As(err, &refusal) || !strings.Contains(refusal.Message, "git executable not found") {
-		t.Errorf("RefuseUnsafeLazyFetch = %v; want the message every read uses when git is not installed", err)
+		t.Errorf("RefuseMissingObjects = %v; want the message every read uses when git is not installed", err)
 	}
 }
