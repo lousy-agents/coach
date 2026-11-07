@@ -12,7 +12,7 @@ import (
 // analyzeAddedOrModifiedFile reads and analyzes one changed file. Its error is a git that did not answer in
 // time (see readFailure); every other problem with the file is a diagnostic.
 func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, headSHA, mergeBaseSHA string, sf gitrepo.SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic, error) {
-	headBytes, err := gitrepo.RunBytes(dir, "show", headSHA+":"+sf.Path)
+	headBytes, err := runGit(dir, "show", headSHA+":"+sf.Path)
 	if err != nil {
 		diagnostics, stalled := readFailure(sf.Path, "head", err)
 		return nil, diagnostics, stalled

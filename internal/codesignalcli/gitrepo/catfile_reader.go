@@ -61,7 +61,7 @@ func (e *ObjectTooLargeError) Error() string {
 // returned as a plain error; callers in this package wrap it into an
 // *OperationalError the same way other git-executable-missing failures are.
 func NewRevisionFileReader(dir, revisionSHA string) (*RevisionFileReader, error) {
-	cmd := gitCommand(context.Background(), dir, "cat-file", "--batch", "-Z")
+	cmd := commandContext(context.Background(), dir, "cat-file", "--batch", "-Z")
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

@@ -1,14 +1,16 @@
 package gitrepo
 
 import (
+	"context"
 	"errors"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+// The reader of a --baseline scan is one long-lived git for the whole run, fed one request at a time. Each
+// request is held to a wall time. The git here is a fake child that is the whole of git for the test.
 
 func withFileReadBudget(t *testing.T, replacement fileStreamBudget) {
 	t.Helper()
@@ -17,38 +19,20 @@ func withFileReadBudget(t *testing.T, replacement fileStreamBudget) {
 	fileReadBudget = replacement
 }
 
-// gitThatStallsOnTheBatchReader is a git that answers every question but the --batch -Z reader, which it
-// never answers.
-func gitThatStallsOnTheBatchReader(t *testing.T) string {
+func readerOver(t *testing.T, child func(ctx context.Context) *exec.Cmd) *RevisionFileReader {
 	t.Helper()
-	return gitThatStallsOnTheBatchReaderBy(t, "exec sleep 120")
-}
-
-// gitThatStallsOnTheBatchReaderBy is that git, stalling by the given command: "sleep 120 & wait" leaves a child
-// of git that holds the pipe after git is killed.
-func gitThatStallsOnTheBatchReaderBy(t *testing.T, stall string) string {
-	t.Helper()
-	real, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatalf("find git: %v", err)
-	}
-	directory := t.TempDir()
-	script := "#!/bin/sh\nfor argument in \"$@\"; do\n  if [ \"$argument\" = -Z ]; then " + stall + "; fi\ndone\nexec '" + real + "' \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(directory, "git"), []byte(script), 0o755); err != nil {
-		t.Fatalf("write the git that stalls: %v", err)
-	}
-	return directory
-}
-
-func TestRevisionFileReaderEndsARequestGitDoesNotAnswerAndStaysEnded(t *testing.T) {
-	repository, _ := committedBlobs(t, "x")
-	t.Setenv("PATH", gitThatStallsOnTheBatchReader(t)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	withStreamChild(t, child)
 	withFileReadBudget(t, fileStreamBudget{wall: 300 * time.Millisecond, object: 1 << 20})
-	reader, err := NewRevisionFileReader(repository, "HEAD")
+	reader, err := NewRevisionFileReader("", "HEAD")
 	if err != nil {
 		t.Fatalf("NewRevisionFileReader: %v", err)
 	}
-	defer func() { _ = reader.Close() }()
+	t.Cleanup(func() { _ = reader.Close() })
+	return reader
+}
+
+func TestRevisionFileReaderEndsARequestGitDoesNotAnswerAndStaysEnded(t *testing.T) {
+	reader := readerOver(t, func(ctx context.Context) *exec.Cmd { return exec.CommandContext(ctx, "sleep", "120") })
 
 	started := time.Now()
 	_, first := reader.Next("fa.txt")
@@ -70,14 +54,9 @@ func TestRevisionFileReaderEndsARequestGitDoesNotAnswerAndStaysEnded(t *testing.
 
 // A child of git that keeps the pipe open after git is killed must not keep the request waiting.
 func TestRevisionFileReaderEndsARequestWhenAChildOfGitHoldsThePipe(t *testing.T) {
-	repository, _ := committedBlobs(t, "x")
-	t.Setenv("PATH", gitThatStallsOnTheBatchReaderBy(t, "sleep 20 & wait; exit")+string(os.PathListSeparator)+os.Getenv("PATH"))
-	withFileReadBudget(t, fileStreamBudget{wall: 300 * time.Millisecond, object: 1 << 20})
-	reader, err := NewRevisionFileReader(repository, "HEAD")
-	if err != nil {
-		t.Fatalf("NewRevisionFileReader: %v", err)
-	}
-	defer func() { _ = reader.Close() }()
+	reader := readerOver(t, func(ctx context.Context) *exec.Cmd {
+		return exec.CommandContext(ctx, "sh", "-c", "sleep 20 & wait; exit")
+	})
 
 	started := time.Now()
 	_, readErr := reader.Next("fa.txt")

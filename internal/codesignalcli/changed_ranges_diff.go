@@ -13,7 +13,7 @@ func computeChangedRanges(dir, mergeBaseSHA, path string) ([]codesignal.LineRang
 	// A patch is where git runs the programs a repository or the environment names for one: an external
 	// diff program (--no-ext-diff) and a textconv driver that .gitattributes selects (--no-textconv). The
 	// hunk headers this reads do not need either, and a read-only scan must not execute them.
-	output, err := gitrepo.RunBytes(dir, "diff", "--unified=0", "--no-ext-diff", "--no-textconv", mergeBaseSHA, "HEAD", "--", path)
+	output, err := runGit(dir, "diff", "--unified=0", "--no-ext-diff", "--no-textconv", mergeBaseSHA, "HEAD", "--", path)
 	if stalled := gitrepo.TimedOut(err); stalled != nil {
 		return nil, nil, stalled
 	}

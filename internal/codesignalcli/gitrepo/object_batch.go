@@ -25,7 +25,7 @@ type objectOutcome struct {
 func readObjects(dir string, oids []string, budget snapshotBudget, visit func(oid string, content []byte) error) (outcome objectOutcome, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), budget.wall)
 	defer cancel()
-	cmd := gitCommand(ctx, dir, "cat-file", "--batch")
+	cmd := commandContext(ctx, dir, "cat-file", "--batch")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	// Killing git when the context ends does not end a child of git, and a child keeps the pipes open. exec

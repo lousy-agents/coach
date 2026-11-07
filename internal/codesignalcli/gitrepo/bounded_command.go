@@ -36,8 +36,10 @@ func ReadCommandContext(ctx context.Context, dir string, args ...string) *exec.C
 	return gitCommand(ctx, dir, args...)
 }
 
-// commandContext builds the git child used by bounded reads. Tests may
-// replace it to simulate hung or oversized children.
+// commandContext builds the git child used by bounded reads and by the two streams (the snapshot's
+// cat-file --batch and the --baseline reader's cat-file --batch -Z). Tests replace it with a child that is
+// the whole of git for the test (a stalled one, an oversized one, a failing one), so no test runs a git that
+// is partly real and partly pretended.
 var commandContext = ReadCommandContext
 
 // RunBytesBoundedWith is the shared bounded-git-read implementation
