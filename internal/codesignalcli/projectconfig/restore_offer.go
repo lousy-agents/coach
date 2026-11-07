@@ -290,6 +290,8 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 		return mergeConflictOffer(repoPath, judgment.conflictSides, blocked), true
 	case verdict == restoreDiscardsStagedEdit:
 		return stagedEditOffer(revision, repoPath, blocked), true
+	case verdict == restoreStagedNonFileOverCommitted:
+		return stagedNonFileOverCommittedOffer(revision, repoPath, blocked), true
 	case verdict == restoreSkipWorktreeMarked:
 		return skipWorktreeOffer(repoPath, judgment.indexEntryUnread), true
 	case verdict == restoreRecreatesLink:

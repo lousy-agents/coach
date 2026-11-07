@@ -36,7 +36,10 @@ type indexFacts struct {
 // the path out, comes before a staged edit: git refuses the restore that keeps the edit for
 // such a path and runs the one that drops it, so naming the edit first would leave the
 // destructive command as the only one that works. The offer for the mark says that the index
-// also holds a staged edit, and the edit is reached once the mark is cleared.
+// also holds a staged edit, and the edit is reached once the mark is cleared. A staged entry that
+// is not a regular file (a symbolic link, a submodule entry) comes before a plain staged edit: the
+// restore that keeps it writes the link back, which the scan refuses, so only the restore that
+// drops it is told.
 func verdictFor(committed gitrepo.TreeEntry, found bool, facts indexFacts) restoreVerdict {
 	if !found {
 		return verdictForUncommitted(facts.entries, facts.sparse)
@@ -50,6 +53,8 @@ func verdictFor(committed gitrepo.TreeEntry, found bool, facts indexFacts) resto
 		return restoreSkippedBySparseCheckout
 	case skippedBySparseCheckout(facts.entries):
 		return restoreSkipWorktreeMarked
+	case stagedAsNonRegularFile(facts.entries):
+		return restoreStagedNonFileOverCommitted
 	case facts.unread:
 		return restoreDiscardsStagedEdit
 	case facts.setAsideEmpty:

@@ -29,6 +29,7 @@ const (
 	restoreEmptySkipWorktreeNotCommitted
 	restoreEmptySparseNotCommitted
 	restoreCommittedInvalid
+	restoreStagedNonFileOverCommitted
 	// restoreVerdictCount is the number of verdicts above, for a test that walks all of them.
 	restoreVerdictCount
 )
@@ -144,5 +145,5 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 // offersRestoreCommand is whether a verdict ends in a printed restore command, which is what a
 // locked index makes fail.
 func offersRestoreCommand(verdict restoreVerdict) bool {
-	return verdict == restoreOverwritesNothing || verdict == restoreOverwritesEmptyEntry || verdict == restoreStagedNotCommitted || verdict == restoreDiscardsStagedEdit
+	return verdict == restoreOverwritesNothing || verdict == restoreOverwritesEmptyEntry || verdict == restoreStagedNotCommitted || verdict == restoreDiscardsStagedEdit || verdict == restoreStagedNonFileOverCommitted
 }

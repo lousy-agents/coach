@@ -24,8 +24,8 @@ const (
 	CauseChangedOnDisk PolicyCause = "changed_on_disk"
 	// CauseStagedCopy is a policy that is not committed and whose index holds a copy.
 	CauseStagedCopy PolicyCause = "staged_copy"
-	// CauseStagedNotAFile is a policy that is not committed and is staged as a link
-	// or another entry that is not a regular file.
+	// CauseStagedNotAFile is a policy that is staged as a link or another entry that is not a regular file,
+	// whether the analyzed revision holds the policy (a link staged over it) or does not.
 	CauseStagedNotAFile PolicyCause = "staged_not_a_file"
 	// CauseMergeConflict is an unmerged index entry for the policy.
 	CauseMergeConflict PolicyCause = "merge_conflict"

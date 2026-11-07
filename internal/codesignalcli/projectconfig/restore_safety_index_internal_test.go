@@ -127,6 +127,7 @@ func TestJudgeRestoreFromWhatTheIndexHolds(t *testing.T) {
 		{"an entry marked skip-worktree by hand, with a staged edit", indexFake{lsFiles: skippedIndexLine("100644", otherBlob, "0")}, restoreSkipWorktreeMarked, true},
 		{"a staged mode change on the committed object", indexFake{lsFiles: indexLine("100755", committedBlob, "0")}, restoreDiscardsStagedEdit, true},
 		{"a staged edit to the content", indexFake{lsFiles: indexLine("100644", otherBlob, "0")}, restoreDiscardsStagedEdit, true},
+		{"a symbolic link staged over the committed policy", indexFake{lsFiles: indexLine("120000", otherBlob, "0")}, restoreStagedNonFileOverCommitted, true},
 		{"a lone entry at merge stage 2 that equals the commit", indexFake{lsFiles: indexLine("100644", committedBlob, "2")}, restoreMergeConflict, true},
 		{"entries at merge stages 1, 2 and 3", indexFake{lsFiles: indexLine("100644", committedBlob, "1") + indexLine("100644", committedBlob, "2") + indexLine("100644", committedBlob, "3")}, restoreMergeConflict, true},
 	}

@@ -90,6 +90,8 @@ func verdictCases() []verdictCase {
 	merge1, merge2 := bothWays(projectreadiness.PolicyCause("merge_conflict"), "unresolved merge conflict")
 	mark1, mark2 := bothWays(projectreadiness.PolicyCause("skip_worktree"), "update-index --no-skip-worktree")
 	nonFile1, nonFile2 := bothWays(projectreadiness.PolicyCause("staged_not_a_file"), "not a regular file")
+	linkOver1 := offerWant{true, projectreadiness.RemedyNone, projectreadiness.PolicyCause("staged_not_a_file"), []string{"not a regular file", "no keep step is offered", "git diff --cached", "restore it with " + restoreSource}, true}
+	linkOver2 := offerWant{true, projectreadiness.RemedyNone, projectreadiness.PolicyCause("staged_not_a_file"), []string{"no keep step is offered", "move the file that blocks the path, then restore it with " + restoreSource}, true}
 	stagedMark1, stagedMark2 := bothWays(projectreadiness.PolicyCause("skip_worktree"), "marked skip-worktree")
 	stagedSparse1, stagedSparse2 := bothWays(projectreadiness.PolicyCause("sparse_checkout"), "staged copy of it that this sparse checkout leaves out")
 	emptyMark1, emptyMark2 := bothWays(projectreadiness.PolicyCause("skip_worktree"), "empty entry", "marked skip-worktree", "update-index --no-skip-worktree")
@@ -103,6 +105,7 @@ func verdictCases() []verdictCase {
 		{"a restore that overwrites nothing", restoreOverwritesNothing, restores("restore it with " + restoreSource), moveFirst, false},
 		{"a restore over an empty index entry", restoreOverwritesEmptyEntry, restoresOverEmptyEntry("restoring brings back the committed copy", restoreSource), moveFirst, false},
 		{"a staged edit a restore would discard", restoreDiscardsStagedEdit, staged1, staged2, false},
+		{"a link or another entry that is not a file staged over a committed policy", restoreStagedNonFileOverCommitted, linkOver1, linkOver2, false},
 		{"a committed link", restoreRecreatesLink, link1, link2, false},
 		{"a sparse checkout that leaves the policy out", restoreSkippedBySparseCheckout, sparse1, sparse2, false},
 		{"a question git could not answer", restoreUndecidable, cannotRestore(projectreadiness.PolicyCause("git_unreadable"), "could not check"), offerWant{}, true},
