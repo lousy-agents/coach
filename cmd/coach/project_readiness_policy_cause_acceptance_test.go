@@ -126,6 +126,10 @@ var causeRows = []causeRow{
 			Skip("this file system tells cfg/p.json and cfg/P.json apart, so the rename leaves nothing under the committed name")
 		}
 	}},
+	{"a committed policy that is invalid, with a different file on disk", "cfg/p.json", "policy_invalid", "changed_on_disk", func(repo string) {
+		commitFile(repo, "cfg/p.json", invalidPolicyText)
+		writeWorktreeFile(repo, "cfg/p.json", singleRootPolicyJSON)
+	}},
 	{"a policy staged and never committed, then deleted", "cfg/p.json", "policy_missing", "staged_copy", func(repo string) {
 		writeWorktreeFile(repo, "cfg/p.json", singleRootPolicyJSON)
 		gitIn(repo, "add", "cfg/p.json")
