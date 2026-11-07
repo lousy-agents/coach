@@ -27,14 +27,19 @@ var settingsThatChangeWhatGitReads = []string{
 func TestGitCommandDropsEverySettingOfTheCallerThatChangesWhatGitReads(t *testing.T) {
 	for _, key := range settingsThatChangeWhatGitReads {
 		t.Run(key, func(t *testing.T) {
-			t.Setenv(key, "1")
-
-			env := gitCommand(context.Background(), "repo", "status").Env
-
-			if presentIn(env, key) {
-				t.Errorf("%s reaches git from the caller's environment: it changes what git reads, and Coach's answers would depend on it", key)
-			}
+			assertDropped(t, key)
 		})
+	}
+}
+
+func assertDropped(t *testing.T, key string) {
+	t.Helper()
+	t.Setenv(key, "1")
+
+	env := gitCommand(context.Background(), "repo", "status").Env
+
+	if presentIn(env, key) {
+		t.Errorf("%s reaches git from the caller's environment: it changes what git reads, and Coach's answers would depend on it", key)
 	}
 }
 

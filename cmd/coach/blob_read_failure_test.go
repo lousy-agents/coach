@@ -30,12 +30,17 @@ func TestABlobAPartialCloneLacksIsWordedOnceAndPrefixedForTheMode(t *testing.T) 
 	tail := `"cfg/p.json" could not be read at revision "abc123": its content is not in this partial clone, and Coach does not fetch objects; fetch it with git cat-file -e 'abc123:cfg/p.json', or the revision's files with git rev-list --objects --missing=print --no-walk abc123 | sed -n 's/^?//p' | git fetch origin --no-tags --no-write-fetch-head --filter=blob:none --stdin, and run again`
 	for _, prefix := range []string{"coach codesignal --check-project: ", "coach codesignal: "} {
 		t.Run(prefix, func(t *testing.T) {
-			got := wordBlobReadFailure(remoteAnswering(true), "repo", absent, prefix)
-
-			if got == nil || got.Error() != prefix+tail {
-				t.Errorf("worded = %v; want %q", got, prefix+tail)
-			}
+			assertWorded(t, absent, prefix, prefix+tail)
 		})
+	}
+}
+
+func assertWorded(t *testing.T, failure error, prefix, want string) {
+	t.Helper()
+	got := wordBlobReadFailure(remoteAnswering(true), "repo", failure, prefix)
+
+	if got == nil || got.Error() != want {
+		t.Errorf("worded = %v; want %q", got, want)
 	}
 }
 
@@ -68,10 +73,15 @@ func TestAnErrorThatIsNotABlobReadFailureIsLeftAsItIs(t *testing.T) {
 	}
 	for name, original := range cases {
 		t.Run(name, func(t *testing.T) {
-			if got := wordBlobReadFailure(remoteAnswering(true), "repo", original, "coach codesignal: "); got != original || strings.Contains(got.Error(), "coach codesignal:") {
-				t.Errorf("worded = %v; want the error itself, untouched", got)
-			}
+			assertLeftAsItIs(t, original)
 		})
+	}
+}
+
+func assertLeftAsItIs(t *testing.T, original error) {
+	t.Helper()
+	if got := wordBlobReadFailure(remoteAnswering(true), "repo", original, "coach codesignal: "); got != original || strings.Contains(got.Error(), "coach codesignal:") {
+		t.Errorf("worded = %v; want the error itself, untouched", got)
 	}
 }
 
