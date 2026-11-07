@@ -19,7 +19,8 @@ type budget struct {
 const (
 	gitStderrBudget = 64 << 10
 	// A question git answers from a few files under .git: whether this is a worktree, what HEAD is, whether
-	// two commits share a base, how the repository is configured, which version git is. Any of them taking
+	// two commits share a base, how the repository is configured, which version git is, what the index holds
+	// for one policy path. Any of them taking
 	// 30 s means git is stuck, not busy.
 	metadataTimeout = 30 * time.Second
 	metadataBytes   = 1 << 20
@@ -122,7 +123,7 @@ func defaultBudgetFor(args []string) budget {
 		subcommand = args[0]
 	}
 	switch subcommand {
-	case "config", "rev-parse", "merge-base", "version", "cat-file":
+	case "config", "rev-parse", "merge-base", "version", "cat-file", "ls-files":
 		return budget{timeout: metadataTimeout, stdout: metadataBytes, stderr: gitStderrBudget}
 	case "ls-tree":
 		return budget{timeout: metadataTimeout, stdout: listingBytes, stderr: gitStderrBudget}

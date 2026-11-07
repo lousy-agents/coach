@@ -19,6 +19,24 @@ func withGit(t *testing.T, replacement budget, answer func(ctx context.Context, 
 	commandContext = func(ctx context.Context, _ string, args ...string) *exec.Cmd { return answer(ctx, args) }
 }
 
+// withStreamChild replaces the git that a stream starts (the snapshot's `cat-file --batch`, the baseline
+// reader's `cat-file --batch -Z`) with a child that is the whole of git for the test: a stalled one, one that
+// leaves a child behind, one that fails. A command other than a cat-file --batch stream fails the test, so
+// the fake cannot be asked a question it does not answer, and no test runs a git that is partly real and
+// partly pretended.
+func withStreamChild(t *testing.T, child func(ctx context.Context) *exec.Cmd) {
+	t.Helper()
+	original := commandContext
+	t.Cleanup(func() { commandContext = original })
+	commandContext = func(ctx context.Context, _ string, args ...string) *exec.Cmd {
+		if len(args) < 2 || args[0] != "cat-file" || args[1] != "--batch" {
+			t.Errorf("unexpected git command %v: the fake git answers only a cat-file --batch stream", args)
+			return exec.CommandContext(ctx, "false")
+		}
+		return child(ctx)
+	}
+}
+
 func withBudget(t *testing.T, replacement budget, child func(ctx context.Context) *exec.Cmd) {
 	t.Helper()
 	withGit(t, replacement, func(ctx context.Context, _ []string) *exec.Cmd { return child(ctx) })
@@ -94,6 +112,9 @@ func TestEveryGitReadOnTheScanPathHasABudget(t *testing.T) {
 	cases := []budgetCase{
 		{"a metadata read", []string{"rev-parse", "HEAD"}, lookup(30*second, 1<<20)},
 		{"the partial-clone question", []string{"config", "--get-regexp", "x"}, lookup(30*second, 1<<20)},
+		{"the index entries of one path", []string{"ls-files", "--stage", "-z", "--full-name", "--", "x"}, lookup(30*second, 1<<20)},
+		{"the version of git", []string{"version"}, lookup(30*second, 1<<20)},
+		{"one object by name", []string{"cat-file", "-e", "x"}, lookup(30*second, 1<<20)},
 		{"the merge base", []string{"merge-base", "a", "b"}, lookup(30*second, 1<<20)},
 		{"a listing of the tree", []string{"ls-tree", "-r", "-z", "--name-only", "x"}, lookup(30*second, 64<<20)},
 		{"the changed files", []string{"diff", "--name-status", "-z"}, lookup(120*second, 64<<20)},
