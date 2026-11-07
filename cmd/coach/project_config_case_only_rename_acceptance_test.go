@@ -67,6 +67,36 @@ var _ = Describe("coach codesignal: a policy renamed in case only, on a file sys
 		})
 	})
 
+	// git mv already recorded the rename. The index no longer holds the revision's spelling, so the move the refusal
+	// offers for an unrecorded rename fails when pasted ("not under version control"), and there is nothing for
+	// git add to record: the way out is the commit.
+	When("the rename was staged with git mv", func() {
+		BeforeEach(func() {
+			gitIn(repo, "mv", "policies/p.json", "policies/p.json.tmp")
+			gitIn(repo, "mv", "policies/p.json.tmp", "policies/P.json")
+		})
+
+		It("tells the user to commit the staged rename, and offers no move that would fail", func() {
+			stderr := scanExplicitPolicy(repo, "policies/P.json")
+
+			Expect(string(stderr)).To(ContainSubstring("commit the file so it is readable at the analyzed revision"), "stderr:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring(" mv -- "), "the index no longer holds the spelling to move from:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("git add records nothing"), "the index holds the rename already:\n%s", stderr)
+		})
+
+		It("lets the scan read the policy once the staged rename is committed", func() {
+			gitInWithIdentity(repo, "commit", "-q", "-m", "rename the policy")
+
+			Expect(scanExplicitPolicyAccepted(repo, "policies/P.json")).To(ContainSubstring(`"schema_version":"2"`))
+		})
+
+		It("names not_committed in --check-project, not name_case_differs", func() {
+			doc := expectCheckProject(repo, "--project-config", "policies/P.json")
+
+			Expect(causeOfGap(doc, "policy_missing")).To(Equal("not_committed"), "gaps: %+v", doc.Gaps)
+		})
+	})
+
 	When("the directory was renamed", func() {
 		BeforeEach(func() {
 			renameInCaseOnly(filepath.Join(repo, "policies"), filepath.Join(repo, "Policies"))

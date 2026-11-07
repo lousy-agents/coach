@@ -14,7 +14,9 @@ import (
 // name, when the analyzed revision holds the same path in another case and git ignores case. It is nil
 // otherwise, which leaves the policy plainly uncommitted. The user changed only the case of a name, and on
 // such a repository `git add` records nothing for that, so "commit the file" would end in "nothing to
-// commit". The failure is a question git could not answer, which is not "plainly uncommitted" either.
+// commit". The refusal is nil as well when the index already records the typed name (the rename is staged, and
+// the commit that records it is the way out), and the failure is a question git could not answer, which is not
+// "plainly uncommitted" either.
 //
 // What it returns is nil, a *ConfigError for the refusal, or a *gitFailure for the question that went
 // unanswered; a caller tells them apart with errors.As.
@@ -30,7 +32,7 @@ func caseOnlyRenameRefusalWith(run gitrepo.Runner, dir string, entries revisionE
 	if !ignores {
 		return nil
 	}
-	return caseOnlyRename(entries, repoPath)
+	return unlessTheRenameIsStaged(run, dir, repoPath, caseOnlyRename(entries, repoPath))
 }
 
 func caseOnlyRename(entries revisionEntries, repoPath string) error {
