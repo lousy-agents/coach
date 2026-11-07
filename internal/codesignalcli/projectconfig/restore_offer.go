@@ -48,7 +48,9 @@ func undecidableOffer(failure *gitFailure) restoreOffer {
 // kept by restoring from the index: git restore with no source writes what the
 // index holds, the staged content and not the committed copy. It is dropped by
 // the restore from the revision, which brings the committed copy back to both. A
-// file in the way is moved before either.
+// file in the way is moved before either. Both are printed, so the text cannot say
+// that none is offered: the restore from the revision is withheld as the default and
+// named as the way to drop the edit.
 func stagedEditOffer(revision, repoPath string, blocked bool) restoreOffer {
 	keep, drop := RestoreFromIndexAdvice(repoPath), restoreAdvice(revision, repoPath)
 	if blocked {
@@ -57,7 +59,7 @@ func stagedEditOffer(revision, repoPath string, blocked bool) restoreOffer {
 	return restoreOffer{
 		remedy: projectreadiness.RemedyNone,
 		cause:  projectreadiness.CauseStagedEdit,
-		text: ". It is committed at the analyzed revision, and the index holds a staged edit to it that a restore would discard, so none is offered; review the staged edit with git diff --cached, then run again; " +
+		text: ". It is committed at the analyzed revision, and the index holds a staged edit to it that a restore from the revision would discard, so it is not offered as the default; review the staged edit with git diff --cached, then run again; " +
 			"to keep it as it is, which writes the staged content to disk and not the committed copy, " + keep + "; to drop it and bring back the committed copy instead, " + drop,
 	}
 }
