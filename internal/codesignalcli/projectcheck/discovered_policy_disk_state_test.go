@@ -3,7 +3,6 @@ package projectcheck
 import (
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
@@ -33,20 +32,17 @@ func TestACommittedDiscoveredPolicyIsJudgedFromTheRevisionWhateverIsOnDisk(t *te
 
 // What the index holds for a policy missing from disk decides whether a restore is safe. When git cannot say, the
 // check stops with that failure and does not call the policy missing, which would offer to author over a file the
-// index may hold.
-func TestAPolicyWhoseIndexEntryCannotBeListedStopsTheCheck(t *testing.T) {
+// index may hold. The fault is a real one: the index file is overwritten with bytes git cannot read, so every
+// question about the index fails and the questions about objects and refs do not.
+func TestAPolicyWhoseIndexCannotBeReadStopsTheCheck(t *testing.T) {
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
 	if err := os.Remove(filepath.Join(repo, "cfg", "p.json")); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	original := runReadinessGit
-	withReadinessGit(t, func(dir string, args ...string) ([]byte, error) {
-		if args[0] == "ls-files" && slices.Contains(args, "--stage") {
-			return nil, errNoAnswer
-		}
-		return original(dir, args...)
-	})
+	if err := os.WriteFile(filepath.Join(repo, ".git", "index"), []byte("not an index"), 0o644); err != nil {
+		t.Fatalf("corrupt the index: %v", err)
+	}
 
 	check, _, err := checkExplicitPolicy(repo, "HEAD", "cfg/p.json")
 

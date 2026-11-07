@@ -1,6 +1,7 @@
 package projectconfig
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,11 +55,14 @@ func TestAPathThroughAFileWhoseCommitStateCannotBeReadIsAnOperationalFailure(t *
 	if err := os.WriteFile(filepath.Join(repo, "cfg"), []byte("untracked"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	failing := func(dir string, args ...string) ([]byte, error) {
-		if args[0] == "ls-tree" || args[0] == "cat-file" {
+	failing := func(_ string, args ...string) ([]byte, error) {
+		switch args[0] {
+		case "rev-parse":
+			return []byte(repo + "\n"), nil
+		case "cat-file", "ls-tree":
 			return nil, errBoom
 		}
-		return runProjectConfigGit(dir, args...)
+		return nil, errors.New("unexpected git question: " + strings.Join(args, " "))
 	}
 
 	status, err := ExplicitOnDiskStatus(failing, repo, "HEAD", "cfg/p.json")
