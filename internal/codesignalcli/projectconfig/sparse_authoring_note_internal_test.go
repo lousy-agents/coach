@@ -76,7 +76,7 @@ func TestTheSparseNoteIsOnlyForAPolicyNothingCommits(t *testing.T) {
 	missing := &ConfigError{Kind: KindMissing, Missing: MissingAbsent, Remedy: projectreadiness.RemedyAuthor}
 	blocked := &ConfigError{Kind: KindMissing, Missing: MissingBlockedParent, Remedy: projectreadiness.RemedyNone}
 
-	if offer, offered := restoreOfferFor(policyJudgment{verdict: restoreDiscardsStagedEdit, sparseNewPolicy: true}, "HEAD", missing, "cfg/p.json"); !offered || offer != stagedEditOffer("cfg/p.json", false) {
+	if offer, offered := restoreOfferFor(policyJudgment{verdict: restoreDiscardsStagedEdit, sparseNewPolicy: true}, "HEAD", missing, "cfg/p.json"); !offered || offer != stagedEditOffer("HEAD", "cfg/p.json", false) {
 		t.Errorf("a staged edit with the flag set: offer %+v, offered %v; want the staged-edit offer", offer, offered)
 	}
 	if offer, offered := restoreOfferFor(policyJudgment{verdict: restoreNotCommitted, sparseNewPolicy: true}, "HEAD", blocked, "cfg/p.json"); offered {

@@ -160,7 +160,7 @@ func TestABlockedParentWithAStagedEditNamesTheEditInsteadOfAdvisingARestore(t *t
 
 	offer, offered := restoreOfferFor(policyJudgment{verdict: restoreDiscardsStagedEdit}, "HEAD", blocked, "cfg/p.json")
 
-	if !offered || offer != stagedEditOffer("cfg/p.json", true) {
+	if !offered || offer != stagedEditOffer("HEAD", "cfg/p.json", true) {
 		t.Errorf("restoreOfferFor = %q, %v; want the staged-edit offer, because restoring from git after the file is moved would discard the edit", offer.text, offered)
 	}
 }

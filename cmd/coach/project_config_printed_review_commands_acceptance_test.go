@@ -118,6 +118,29 @@ var _ = Describe("coach codesignal: the commands printed for a policy whose inde
 		Expect(string(content)).To(Equal(staged), "the staged edit comes back, and not the committed copy %q", singleRootPolicyJSON)
 	})
 
+	// Next to the review, the message names the way back to the committed copy: git restore from the revision writes
+	// it to the index and the file, so the staged edit is dropped. It is pasted from a subdirectory too.
+	It("brings back the committed copy and drops the staged edit when the printed restore from the revision is run from a subdirectory", func() {
+		repo := commitScannableGoRepo()
+		commitFile(repo, policy, singleRootPolicyJSON)
+		writeWorktreeFile(repo, policy, `{"schema_version":"1","roots":["staged"]}`+"\n")
+		gitIn(repo, "add", policy)
+		removeTree(repo, "cfg")
+		subdirectory := filepath.Join(repo, "docs", "deeper")
+		Expect(os.MkdirAll(subdirectory, 0o755)).To(Succeed())
+
+		stderr := scanExplicitPolicy(repo, policy)
+		command := regexp.MustCompile(`git restore --source=\S+ --staged --worktree -- '[^']+'`).FindString(string(stderr))
+		Expect(command).NotTo(BeEmpty(), "the message says how to drop the staged edit:\n%s", stderr)
+		output, exitCode := runInShell(subdirectory, command)
+
+		Expect(exitCode).To(Equal(0), "the printed command must work when pasted from a subdirectory:\ncommand: %s\noutput: %s", command, output)
+		content, err := os.ReadFile(filepath.Join(repo, policy))
+		Expect(err).NotTo(HaveOccurred(), "the command must write the file")
+		Expect(string(content)).To(Equal(singleRootPolicyJSON), "the committed copy comes back, and not the staged edit")
+		Expect(gitIn(repo, "diff", "--cached", "--name-only")).To(BeEmpty(), "the index holds the committed copy again")
+	})
+
 	// The file is gone from disk (that is why the policy is missing), so a conflict cannot be resolved by editing
 	// it. The command the message prints brings it back with its conflict markers, and both sides' content with
 	// it; git add on the missing file would record a deletion and lose the other side.
