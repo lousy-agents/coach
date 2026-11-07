@@ -57,12 +57,12 @@ func TestRestoreFromIndexAdvice(t *testing.T) {
 
 func TestClearSkipWorktreeAdvice(t *testing.T) {
 	cases := []adviceCase{
-		{"a plain name", "pol.json", `clear the mark with git update-index --no-skip-worktree -- 'pol.json' from the repository root`},
-		{"a nested name, which is relative to the root and not a pathspec", "policies/p.json", `clear the mark with git update-index --no-skip-worktree -- 'policies/p.json' from the repository root`},
-		{"a single quote", "it's.json", `clear the mark with git update-index --no-skip-worktree -- 'it'\''s.json' from the repository root`},
-		{"command substitution", "$(touch PWNED).json", `clear the mark with git update-index --no-skip-worktree -- '$(touch PWNED).json' from the repository root`},
-		{"glob characters", "a[1]*.json", `clear the mark with git update-index --no-skip-worktree -- 'a[1]*.json' from the repository root`},
-		{"spaces", "my policy.json", `clear the mark with git update-index --no-skip-worktree -- 'my policy.json' from the repository root`},
+		{"a plain name", "pol.json", `clear the mark with git -C "$(git rev-parse --show-toplevel)" update-index --no-skip-worktree -- 'pol.json'`},
+		{"a nested name, which is relative to the root and not a pathspec", "policies/p.json", `clear the mark with git -C "$(git rev-parse --show-toplevel)" update-index --no-skip-worktree -- 'policies/p.json'`},
+		{"a single quote", "it's.json", `clear the mark with git -C "$(git rev-parse --show-toplevel)" update-index --no-skip-worktree -- 'it'\''s.json'`},
+		{"command substitution", "$(touch PWNED).json", `clear the mark with git -C "$(git rev-parse --show-toplevel)" update-index --no-skip-worktree -- '$(touch PWNED).json'`},
+		{"glob characters", "a[1]*.json", `clear the mark with git -C "$(git rev-parse --show-toplevel)" update-index --no-skip-worktree -- 'a[1]*.json'`},
+		{"spaces", "my policy.json", `clear the mark with git -C "$(git rev-parse --show-toplevel)" update-index --no-skip-worktree -- 'my policy.json'`},
 	}
 
 	runAdviceCases(t, "clearSkipWorktreeAdvice", clearSkipWorktreeAdvice, append(cases, refusedPathCases(notPrintedClearMark)...))

@@ -14,9 +14,9 @@ func TestAnEmptyIndexEntryThatIsMarkedSkipWorktreeIsNamedForItsMarkNotCalledAnEd
 		fake     indexFake
 		wantText string
 	}{
-		{"over a committed policy", indexFake{lsFiles: skippedIndexLine("100644", emptyBlobSHA1, "0")}, "git update-index --no-skip-worktree"},
+		{"over a committed policy", indexFake{lsFiles: skippedIndexLine("100644", emptyBlobSHA1, "0")}, "update-index --no-skip-worktree"},
 		{"over a committed policy a sparse checkout leaves out", indexFake{sparse: true, lsFiles: skippedIndexLine("100644", emptyBlobSHA1, "0")}, "sparse checkout"},
-		{"over a policy nothing commits", indexFake{uncommitted: true, lsFiles: skippedIndexLine("100644", emptyBlobSHA1, "0")}, "git update-index --no-skip-worktree"},
+		{"over a policy nothing commits", indexFake{uncommitted: true, lsFiles: skippedIndexLine("100644", emptyBlobSHA1, "0")}, "update-index --no-skip-worktree"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

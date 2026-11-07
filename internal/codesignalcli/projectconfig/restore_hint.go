@@ -41,10 +41,11 @@ func RestoreFromIndexAdvice(repoPath string) string {
 }
 
 // clearSkipWorktreeAdvice is the command that clears a skip-worktree bit. It
-// takes a path relative to the repository root, not a pathspec.
+// takes a path relative to the repository root, not a pathspec, so it runs git
+// at the root and works from any directory of the repository.
 func clearSkipWorktreeAdvice(repoPath string) string {
 	if ValidatePath(repoPath) == nil && shellword.Printable(repoPath) {
-		return "clear the mark with git update-index --no-skip-worktree -- " + shellword.Quote(repoPath) + " from the repository root"
+		return "clear the mark with git -C \"$(git rev-parse --show-toplevel)\" update-index --no-skip-worktree -- " + shellword.Quote(repoPath)
 	}
 	return "clear the mark with git update-index --no-skip-worktree (the name has a character that is not printed here)"
 }
