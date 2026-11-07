@@ -275,9 +275,12 @@ except for the policy-candidate document on the guided-authoring path.
   commits as a submodule, naming the submodule: `project_config_invalid` while
   the checkout is there (the file in it, or the submodule itself), and
   `project_config_missing` once it is gone (`git submodule deinit`).
-  `--check-project` names the cause `in_submodule` for all of them. The
-  superproject records a submodule as one commit, so the file can be neither
-  restored nor committed here; name a policy this repository commits. See the
+  `--check-project` names the cause `in_submodule` for all of them, and so for
+  a name below the submodule that differs in case from the checkout's: the
+  superproject holds no spelling of what is inside, so Coach does not report a
+  difference in case there. The superproject records a submodule as one commit,
+  so the file can be neither restored nor committed here; name a policy this
+  repository commits. See the
   [CLI contract](./docs/cli-codesignal.md#commands).
 
 A file that

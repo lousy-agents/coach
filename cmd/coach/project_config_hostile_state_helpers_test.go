@@ -39,6 +39,8 @@ func addSubmoduleAt(repo, path string) {
 	inner := GinkgoT().TempDir()
 	gitIn(inner, "init", "-q")
 	Expect(os.WriteFile(filepath.Join(inner, "coach.json"), []byte(singleRootPolicyJSON), 0o644)).To(Succeed())
+	Expect(os.MkdirAll(filepath.Join(inner, "cfg"), 0o755)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(inner, "cfg", "p.json"), []byte(singleRootPolicyJSON), 0o644)).To(Succeed())
 	gitIn(inner, "add", "-A")
 	innerCommit := exec.Command("git", "commit", "-q", "-m", "inner")
 	innerCommit.Dir, innerCommit.Env = inner, commitEnv
