@@ -63,6 +63,9 @@ type ConfigError struct {
 	// nothing has read, or git could not say it holds none. A report that rests
 	// on this error does not reflect that edit.
 	UnreadStagedEdit bool
+	// Blocker is, for a policy missing because a file stands where a directory of its path should be, that file's
+	// path. It is empty for every other error.
+	Blocker string
 	// Remedy is the way out the tool offers. Every constructor in this file sets
 	// it. The zero value offers nothing, so a constructor that left it unset
 	// would withhold advice, never suggest a new policy where one cannot help.
@@ -177,7 +180,7 @@ func missingError(repoPath string) error {
 // delete the file in the way. It is still missing, never a reason to read
 // another policy.
 func blockedParentError(repoPath, component string) error {
-	return &ConfigError{Kind: KindMissing, Missing: MissingBlockedParent, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseParentNotDirectory, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found on disk at the repository root (project_config_missing): a parent path component is not a directory, %q; move or remove it; the path is repository-relative", repoPath, component)}
+	return &ConfigError{Kind: KindMissing, Missing: MissingBlockedParent, Blocker: component, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseParentNotDirectory, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found on disk at the repository root (project_config_missing): a parent path component is not a directory, %q; move or remove it; the path is repository-relative", repoPath, component)}
 }
 
 // unusableOnDiskError is a policy path the working tree decided is unusable. A
