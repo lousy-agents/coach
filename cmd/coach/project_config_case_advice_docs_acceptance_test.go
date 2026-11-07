@@ -58,6 +58,15 @@ var _ = Describe("the CLI contract: the case rule it describes is the one the sc
 		Expect(rule).To(ContainSubstring("A rename that is already staged is told the same as one that is not, on every file system, because the revision still holds the old spelling until the rename is committed."))
 	})
 
+	It("says a policy the user names is also offered the committed spelling, and Coach's own path is not", func() {
+		Expect(rule).To(ContainSubstring("A policy named with `--project-config` has one more way out, because a name typed in another case is often a slip and renaming the committed policy to match it would break everyone who passes the committed spelling: the message first says to pass the committed spelling, or one of them when several are committed, and then says to make git record the policy at the name given."))
+		Expect(rule).To(ContainSubstring("The path Coach finds has one spelling it can be read at, so for it renaming is the only way out and the message does not offer to pass anything."))
+	})
+
+	It("says a rename that changes a directory's name in case only takes two steps on a file system that folds case", func() {
+		Expect(rule).To(ContainSubstring("When the rename changes the case of a directory's name, the message adds that git cannot do that in one step on a file system that folds case, and says to rename the directory to another name first and then to the one wanted."))
+	})
+
 	It("says what is listed when the revision commits several spellings, and the limit of 16", func() {
 		Expect(rule).To(ContainSubstring("the message lists every one of them (up to 16, then \"and more\"), says to keep one of them at that path and remove the others, names the one to keep and the ones to delete, and gives the same warning; past 16 spellings it names none to keep, and says only to keep one of them at that path and remove the others"))
 	})
@@ -103,6 +112,7 @@ var _ = Describe("the README, ADR-008 and the PRD: the case rule they describe i
 		Expect(text).To(ContainSubstring("says in words to make git record the policy at that path, then commit and run again. It prints no command"))
 		Expect(text).To(ContainSubstring("it always warns that a file already at that path is to be moved aside first, because git can overwrite it with `core.ignorecase` set"))
 		Expect(text).To(ContainSubstring("A rename you have already staged is told the same as one you have not"))
+		Expect(text).To(ContainSubstring("A policy you name is also told to pass the committed spelling, which is the way out for a slip of the case, and a directory renamed in case only is told to take two steps on a file system that folds case"))
 		expectNoRunnableCommand(bullet)
 	})
 
@@ -120,6 +130,7 @@ var _ = Describe("the README, ADR-008 and the PRD: the case rule they describe i
 		Expect(adr).To(ContainSubstring("3. *Which spelling does the path name?* The analyzed revision answers, and only it."))
 		Expect(adr).To(ContainSubstring("An earlier slice of this work also compared the spelling the disk showed with the one written, which made the answer depend on whether the file system folds case; that check is removed."))
 		Expect(adr).To(ContainSubstring("The message names the committed spelling and the path Coach reads and says in words to make git record the policy at that path; it prints no command."))
+		Expect(adr).To(ContainSubstring("A policy that is named is also offered the other way out, which is to pass the committed spelling, because the name may be a slip and renaming the committed policy would break the callers that pass it; the path discovery finds has one spelling and is offered only the rename."))
 		Expect(adr).NotTo(ContainSubstring("both naming the `git mv` that moves it"))
 	})
 
@@ -140,6 +151,6 @@ var _ = Describe("the README, ADR-008 and the PRD: the case rule they describe i
 
 		Expect(prd).To(ContainSubstring("WHERE the analyzed revision does not commit a policy path as written but commits the same path in another case, THE Coach CLI shall exit with status `2`, name `project_config_invalid` and the cause `name_case_differs`"))
 		Expect(prd).To(ContainSubstring("It shall print no `git mv`, `git rm` or other shell command, shall always warn that a file already at the destination is to be moved aside first because git can overwrite it when `core.ignorecase` is set, and shall tell a rename that is already staged the same as one that is not."))
-		Expect(prd).To(ContainSubstring("The message shall be the same for a policy named with `--project-config` and a policy Coach finds, on a file system that folds case and one that does not."))
+		Expect(prd).To(ContainSubstring("The message shall be the same for a policy named with `--project-config` and a policy Coach finds, on a file system that folds case and one that does not, except that for a policy named with `--project-config` it shall first offer passing the committed spelling, or one of them when several are committed, because the name may be a slip. WHERE the rename changes the case of a directory's name, it shall add that git cannot do that in one step on a file system that folds case, and say to rename the directory to another name first."))
 	})
 })

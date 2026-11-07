@@ -280,7 +280,10 @@ except for the policy-candidate document on the guided-authoring path.
   already at that path is to be moved aside first, because git can overwrite it
   with `core.ignorecase` set. A rename you have already staged is told the same
   as one you have not, because the revision still holds the old spelling until
-  you commit. A revision that commits exactly the path as written is read
+  you commit. A policy you name is also told to pass the committed spelling,
+  which is the way out for a slip of the case, and a directory renamed in case
+  only is told to take two steps on a file system that folds case. A revision
+  that commits exactly the path as written is read
   whatever spelling the disk shows. See the [CLI contract](./docs/cli-codesignal.md#commands).
 - A policy inside a submodule checkout, or at a path the analyzed revision
   commits as a submodule, naming the submodule: `project_config_invalid` while
