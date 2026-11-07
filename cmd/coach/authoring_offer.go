@@ -59,8 +59,11 @@ func authoringInteractive(noInteractive bool) bool {
 // be created) or when a guided session runs instead. It writes the policy the user named when nothing is at that
 // path, so it names that path. For a document that exists and cannot be used, Go gets the candidate that is written
 // beside it, with words that say to replace the policy with it; TypeScript is not offered authoring at all
-// (offerAuthoring), so it gets nothing.
+// (offerAuthoring), so it gets the words that say how to get past the policy (unusablePolicyStep), terminal or not.
 func authoringRemediation(configErr *projectconfig.ConfigError, policy policyref.Ref, language string, interactive bool, dir string) string {
+	if language == "typescript" && configErr.ReplacesPolicy() {
+		return "coach codesignal: " + unusablePolicyStep + "."
+	}
 	if offerAuthoring(configErr, language, interactive) != authoringCommand {
 		return ""
 	}

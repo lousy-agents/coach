@@ -114,7 +114,7 @@ var _ = Describe("coach project-analysis failure reports", func() {
 			Expect(line).NotTo(ContainSubstring("guided authoring opens there"), "typescript: a document that exists is not offered a session that ends by saving over it")
 			Expect(line).NotTo(HavePrefix("on a terminal:"), "typescript: no appended line leads to guided authoring where the file exists")
 		}
-		Expect(len(tsLines)).To(BeNumerically(">=", 1), "TypeScript carries the class-2 config message, and may carry AC-SET-13's readiness-gap line")
+		Expect(tsLines).To(ContainElement("coach codesignal: the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one."), "typescript: the scan says in words how to get past a policy that exists and cannot be used")
 	})
 
 	// "go" and "typescript" both have registered backends now, so no real

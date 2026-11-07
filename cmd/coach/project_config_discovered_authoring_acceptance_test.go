@@ -119,6 +119,7 @@ var _ = Describe("coach codesignal guided policy authoring on a discovered .lous
 			Expect(string(stderr)).To(ContainSubstring(coachConfigPath), "stderr: %s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("Discovered TypeScript roots"), "no authoring session may open; stderr: %s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("replacing"), "nothing says to save a candidate over the file; stderr: %s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("coach codesignal: the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one."), "the scan says in words how to get past the policy; stderr: %s", stderr)
 			onDisk, err := os.ReadFile(filepath.Join(repo, coachConfigPath))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(onDisk)).To(Equal(invalidPolicyText), "the existing file must never be touched")

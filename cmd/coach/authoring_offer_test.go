@@ -84,21 +84,24 @@ func namedPolicyFlags(path string) codesignalFlags {
 }
 
 // Authoring creates files and refuses a target that exists. For a path with nothing at it the line is the authoring
-// command that works; for a TypeScript document that exists and cannot be used there is no line, because the only
-// session it could name ends by saving a replacement over the user's file.
-func TestTypeScriptPrintsNoLineForADocumentThatExistsAndTheAuthoringCommandForOneThatDoesNot(t *testing.T) {
+// command that works. For a TypeScript document that exists and cannot be used there is no command and no session, because
+// the only session it could name ends by saving a replacement over the user's file; the line says in words to fix the
+// policy, or to move it aside and commit the move and then run guided policy authoring. That sentence is the one
+// --prepare-compiler prints, from one source.
+func TestTypeScriptSaysInWordsHowToGetPastADocumentThatExistsAndNamesTheAuthoringCommandForOneThatDoesNot(t *testing.T) {
 	invalid := configError(projectconfig.KindInvalid, projectreadiness.RemedyAuthor)
 	missing := configError(projectconfig.KindMissing, projectreadiness.RemedyAuthor)
 
 	replace := authoringRemediation(invalid, policyref.Named("pol.json"), "typescript", false, "")
-	create := authoringRemediation(missing, policyref.Named("pol.json"), "typescript", false, "")
+	onATerminal := authoringRemediation(invalid, policyref.Named("pol.json"), "typescript", true, "")
 	discovered := authoringRemediation(invalid, policyref.Ref{}, "typescript", false, "")
+	create := authoringRemediation(missing, policyref.Named("pol.json"), "typescript", false, "")
 
-	if replace != "" {
-		t.Errorf("remediation for an invalid named policy = %q; want none", replace)
-	}
-	if discovered != "" {
-		t.Errorf("remediation for an invalid discovered policy = %q; want none", discovered)
+	const want = "coach codesignal: the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one."
+	for name, got := range map[string]string{"an invalid named policy": replace, "the same on a terminal": onATerminal, "an invalid discovered policy": discovered} {
+		if got != want {
+			t.Errorf("remediation for %s = %q; want %q", name, got, want)
+		}
 	}
 	if !strings.Contains(create, "--suggest-project-config") || !strings.Contains(create, "--output pol.json") {
 		t.Errorf("remediation for a missing named policy = %q; want authoring into the named path", create)
@@ -106,10 +109,9 @@ func TestTypeScriptPrintsNoLineForADocumentThatExistsAndTheAuthoringCommandForOn
 }
 
 func TestNoCommandIsPrintedWhereASessionRunsOrNothingIsOffered(t *testing.T) {
-	invalid := configError(projectconfig.KindInvalid, projectreadiness.RemedyAuthor)
 	restore := configError(projectconfig.KindMissing, projectreadiness.RemedyRestore)
-
-	if got := authoringRemediation(invalid, policyref.Named("pol.json"), "typescript", true, ""); got != "" {
+	missing := configError(projectconfig.KindMissing, projectreadiness.RemedyAuthor)
+	if got := authoringRemediation(missing, policyref.Named("pol.json"), "typescript", true, ""); got != "" {
 		t.Errorf("remediation while a session runs = %q; want none", got)
 	}
 	if got := authoringRemediation(restore, policyref.Named("pol.json"), "typescript", false, ""); got != "" {

@@ -104,9 +104,9 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid or o
 	It("is described by the CLI contract in words, with no move to paste", func() {
 		text := documentText("docs/cli-codesignal.md")
 
-		Expect(text).To(ContainSubstring("the scan names the way for Go only: a candidate written beside the file with `--suggest-project-config --output`, with words that say to compare it with the file, replace the file with it, commit and rerun, and no command to paste; for TypeScript it appends no line"))
+		Expect(text).To(ContainSubstring("for Go the scan names a candidate written beside the file with `--suggest-project-config --output`, with words that say to compare it with the file, replace the file with it, commit and rerun, and no command to paste; a TypeScript scan opens no session for a policy that exists, with or without a terminal"))
 		Expect(text).NotTo(ContainSubstring("the move that puts it over the file"))
-		Expect(text).To(ContainSubstring("for a TypeScript policy that exists the text of the action is to fix the policy, or move it aside and commit the move, then run guided policy authoring, as `--prepare-compiler` says in its refusal"))
+		Expect(text).To(ContainSubstring("for a TypeScript policy that exists the text of the action is to fix the policy, or move it aside and commit the move, then run guided policy authoring, and the scan and the `--prepare-compiler` refusal say that in the same words"))
 	})
 
 	It("prints no command for a name that cannot be shown", func() {
@@ -131,7 +131,7 @@ func scanExpectingRefusal(repo string, extraArgs ...string) (stdout, stderr []by
 // over the size budget as invalid: the line that named that scan would lead to a session that ends by saving over the user's
 // file, and the authoring command is refused at a path that exists.
 var _ = Describe("coach codesignal (TypeScript, no terminal): a committed policy over the size budget", func() {
-	DescribeTable("appends no line that leads to authoring",
+	DescribeTable("appends the words for getting past it, and no line that leads to a session",
 		func(policy string, scanArgs ...string) {
 			repo := commitStubToolchainTypeScriptRepo(policy, bigPolicy())
 			args := append([]string{"codesignal", "--baseline", "--project-language", "typescript", "--format=json"}, scanArgs...)
@@ -142,6 +142,8 @@ var _ = Describe("coach codesignal (TypeScript, no terminal): a committed policy
 			Expect(string(stderr)).NotTo(ContainSubstring("guided authoring"), "the session ends by saving over the file:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("on a terminal:"), "stderr:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("--suggest-project-config"), "the authoring command is refused where the file exists:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("coach codesignal: the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one."), "the scan says in words how to get past the policy:\n%s", stderr)
+			expectNoRunnableCommand(string(stderr))
 		},
 		Entry("found at the canonical path", ".lousy-agents/coach.json"),
 		Entry("named with --project-config", "pol.json", "--project-config", "pol.json"),

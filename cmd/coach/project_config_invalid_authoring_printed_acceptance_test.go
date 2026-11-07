@@ -12,7 +12,7 @@ import (
 var _ = Describe("coach codesignal (TypeScript, no controlling terminal): a committed policy whose document is not valid", func() {
 	const brokenPolicy = "this is not a policy document\n"
 
-	DescribeTable("prints no line that leads to authoring",
+	DescribeTable("says in words how to get past it, and leads to no session and no command",
 		func(policyPath string, scanArgs ...string) {
 			repo := commitStubToolchainTypeScriptRepo(policyPath, brokenPolicy)
 			args := append([]string{"codesignal", "--baseline", "--project-language", "typescript"}, scanArgs...)
@@ -23,6 +23,8 @@ var _ = Describe("coach codesignal (TypeScript, no controlling terminal): a comm
 			Expect(string(stderr)).NotTo(ContainSubstring("on a terminal:"), "stderr: %s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("guided authoring"), "the session ends by saving over the file:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("--suggest-project-config"), "authoring would create a different file and refuse this one:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("coach codesignal: the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one."), "the scan says in words how to get past the policy:\n%s", stderr)
+			expectNoRunnableCommand(string(stderr))
 		},
 		Entry("found at the canonical path", ".lousy-agents/coach.json"),
 		Entry("named with --project-config", "pol.json", "--project-config", "pol.json"),

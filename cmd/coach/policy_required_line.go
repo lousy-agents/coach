@@ -7,6 +7,12 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
+// unusablePolicyStep is what to do about a committed policy that exists and cannot be used, in words and with no command:
+// guided authoring writes only at a path with nothing at it, and a scan opens no session for a policy that exists, since the
+// only session it has ends by asking the user to save a candidate over the file. The --prepare-compiler refusal and the
+// scan's own report print this one sentence, so they cannot say two things.
+const unusablePolicyStep = "the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one"
+
 // policyRequiredLines is the refusal for compiler setup that is blocked behind a
 // policy gap, as lines. When no remedy fixes the gap, the first line is why, in
 // the words the scan prints for the same policy, because the refusal itself can
@@ -35,7 +41,7 @@ func policyRequiredLine(prefix, code string, remedy projectreadiness.PolicyRemed
 	case action == projectreadiness.NextActionRestorePolicy:
 		return line + projectconfig.RestoreSentence(remedy, revision, policyPath, projectconfig.AsARefusal(action))
 	case code == projectreadiness.GapPolicyInvalid:
-		return line + "; the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one (" + action + ")."
+		return line + "; " + unusablePolicyStep + " (" + action + ")."
 	}
 	return line + "; run guided policy authoring first (" + action + ")."
 }
