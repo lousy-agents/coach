@@ -27,6 +27,13 @@ type ProjectConfigErrorWithReadiness struct {
 
 func (e *ProjectConfigErrorWithReadiness) Unwrap() error { return e.ConfigError }
 
+// AlsoFailingLines are the lines for the gaps readiness reports beside this policy failure. A policy refused
+// for the case of its name is refused again by any rerun that names it as typed, so its other gaps are listed
+// without a command that repeats the spelling just refused.
+func (e *ProjectConfigErrorWithReadiness) AlsoFailingLines() []string {
+	return alsoFailingGapLines(e.Readiness, e.Policy, e.PolicyCause != projectreadiness.CauseNameCaseDiffers)
+}
+
 // CompilerUnresolvedErrorWithReadiness enriches a tstoolchain.CompilerUnresolvedError
 // with the full TypeScript project-readiness snapshot computed for the same
 // dir/revision/policy, so a real scan's controlling-terminal branch can
