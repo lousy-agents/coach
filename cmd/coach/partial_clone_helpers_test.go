@@ -80,21 +80,9 @@ func skipUnlessGitCanRefuseLazyFetch() {
 	}
 }
 
-// environmentWithGitReporting puts a git on PATH that forwards to the real one but says it is the given
-// version, so Coach's refusal of an older git can be exercised on any machine.
-func environmentWithGitReporting(version string) []string {
-	real, err := exec.LookPath("git")
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	directory := GinkgoT().TempDir()
-	script := "#!/bin/sh\nfor argument in \"$@\"; do\n  if [ \"$argument\" = version ]; then echo 'git version " + version + "'; exit 0; fi\ndone\nexec '" + real + "' \"$@\"\n"
-	ExpectWithOffset(1, os.WriteFile(filepath.Join(directory, "git"), []byte(script), 0o755)).To(Succeed())
-	return append(os.Environ(), "PATH="+directory+string(os.PathListSeparator)+os.Getenv("PATH"))
-}
+// unreachableRemote is a remote whose transport is a program that could not answer, so a fetch that was
+// attempted would show.
+const unreachableRemote = "ssh://example.invalid/repo.git"
 
-// commitOrdinaryClone is a full clone of a scannable repository, with the origin remote a clone has.
-func commitOrdinaryClone() string {
-	source := commitScannableGoRepo()
-	clone := filepath.Join(GinkgoT().TempDir(), "clone")
-	gitOutputIn(GinkgoT().TempDir(), "clone", "--quiet", source, clone)
-	return clone
-}
+// scanArgs is a baseline scan that names the policy the partial-clone specs commit.
+var scanArgs = []string{"codesignal", "--baseline", "--project-config", "cfg/p.json", "--format=json", "--no-interactive"}

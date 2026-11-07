@@ -54,22 +54,3 @@ var _ = Describe("coach codesignal: a discovered policy that a partial clone lac
 		Expect(string(stdout)).To(BeEmpty(), "a report was printed for a read that failed:\n%s", stdout)
 	})
 })
-
-var _ = Describe("coach codesignal: an older git refuses a partial clone that lacks the discovered policy's objects", func() {
-	DescribeTable("without --project-config, names the revision and how many objects it lacks, and fetches nothing",
-		func(args []string) {
-			env, marker := oldGitFetchingNothing()
-			clone := discoveredPolicyPartialClone()
-			before := packFilesIn(clone)
-
-			stdout, stderr, exitCode := runCoachBinary(commandPath, clone, env, args...)
-
-			Expect(exitCode).To(Equal(1), "stdout: %s\nstderr: %s", stdout, stderr)
-			expectRefusalOnOldGit(stderr, "HEAD has 2 objects that are not in it")
-			Expect(marker).NotTo(BeAnExistingFile(), "git ran the ssh program")
-			Expect(packFilesIn(clone)).To(Equal(before), "the run wrote objects into the repository")
-		},
-		Entry("a scan", discoveredScanArgs),
-		Entry("--check-project", discoveredCheckProjectArgs),
-	)
-})

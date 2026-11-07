@@ -133,3 +133,15 @@ func TestTheMergeBaseRefusalOffersNoFetchCommandForARemoteNameThatCannotBePasted
 		t.Errorf("RefuseMissingObjects = %v; want the refusal with no command and no trailing separator", err)
 	}
 }
+
+// A base that looks like an option must be a revision to merge-base, not a flag: the -- comes first.
+func TestTheMergeBaseIsAskedForWithDashDashBeforeABaseThatLooksLikeAnOption(t *testing.T) {
+	repository := modernGitPartialClone()
+
+	_ = RefuseMissingObjects(repository.run, "repo", "--help")
+
+	want := [][]string{{"merge-base", "--", "--help", "HEAD"}}
+	if !reflect.DeepEqual(repository.mergeBaseAsked, want) {
+		t.Errorf("merge-base was asked %q; want %q", repository.mergeBaseAsked, want)
+	}
+}

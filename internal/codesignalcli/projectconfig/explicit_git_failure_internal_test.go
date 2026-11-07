@@ -48,6 +48,9 @@ func TestATreeLookupFailureNamesTheCommitQuestionAndGitsError(t *testing.T) {
 		t.Errorf("message %q; want it to carry git's error", status.Message)
 	}
 	requireTheIndexLeftUnread(t, status, "git could not say whether the policy is committed, so the index cannot be judged and a staged edit may be there unread")
+	if strings.Contains(status.Message, "git restore") || status.OffersAuthoring() {
+		t.Errorf("message %q, offers authoring = %v; want neither a restore nor a new policy offered while the answer is unknown", status.Message, status.OffersAuthoring())
+	}
 }
 
 // The revision's own listing says whether a policy missing from disk is committed in another case. When git
