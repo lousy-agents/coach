@@ -25,7 +25,7 @@
 
 ### Accepted
 
-- **Clean filters run on `git status` (row H05).** A repository whose config defines `filter.<name>.clean`, applied by `.gitattributes`, has that program run when `git status` meets a modified tracked file. **ACCEPTED:** the repository's own configuration is the trust boundary, as it is for git itself. Disabling filters would make every git-lfs file read as modified. The fsmonitor, hook, external-diff, textconv, smudge, pager, askpass and ssh channels are closed or were never open (rows H01 to H06); the textconv channel was open for a scan that diffs a changed file until the textconv commit (issue 9). `docs/cli-codesignal.md` names the clean filter as the remaining channel, and the v0.12.0 notes list it as a limit.
+- **Clean filters run on `git status` (row H05).** A repository whose config defines `filter.<name>.clean`, applied by `.gitattributes`, has that program run when `git status` meets a modified tracked file, and when the comparison of a committed policy that cannot be used with its copy in the working tree hashes that one file (`git diff --name-only <revision> -- <policy>`, more than once in a scan). **ACCEPTED:** the repository's own configuration is the trust boundary, as it is for git itself. Disabling filters would make every git-lfs file read as modified. The fsmonitor, hook, external-diff, textconv, smudge, pager, askpass and ssh channels are closed or were never open (rows H01 to H06); the textconv channel was open for a scan that diffs a changed file until the textconv commit (issue 9). `docs/cli-codesignal.md` names the clean filter as the remaining channel, and the v0.12.0 notes list it as a limit.
 
 ### Observations (LOW)
 
