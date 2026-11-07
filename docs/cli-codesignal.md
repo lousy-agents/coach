@@ -234,7 +234,7 @@ A scan reads the repository through git with `core.fsmonitor` disabled and witho
 
 ## Diff-mode caveats
 
-- Dirty / uncommitted files are ignored as analysis input. A TypeScript project scan emits `worktree_report_reflects_committed_head` when relevant worktree changes exist; the report still applies to committed HEAD. Supported-language file-local dirt uses `worktree_changes_not_analyzed`. Unsupported dirt uses `worktree_not_clean`. A status-check failure uses `worktree_status_check_failed`.
+- Dirty / uncommitted files are ignored as analysis input. A TypeScript project scan emits `worktree_report_reflects_committed_head` when relevant worktree changes exist; the report still applies to committed HEAD. Supported-language file-local dirt uses `worktree_changes_not_analyzed`. Unsupported dirt uses `worktree_not_clean`. The status is run without rename detection, so a file renamed in the index (`git mv`) is two paths wherever it is reported: its old path, deleted, and its new path, added, in `dirty_worktree.paths`, in the warning of `--check-project`, and in the count and the names of `worktree_changes_not_analyzed` ("2 staged files"), where v0.11.0 reported the new path alone. A status-check failure uses `worktree_status_check_failed`.
 - Diff mode passes `--find-renames` (default 50% similarity) and
   `--find-copies-harder` (unmodified files are copy-source candidates) to
   `git diff --name-status`. Rename (`R`) and copy (`C`) new paths are
