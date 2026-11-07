@@ -76,13 +76,25 @@ func mergeConflictOffer(repoPath string, sides conflictSides, blocked bool) rest
 
 // skipWorktreeOffer is for a committed policy whose index entry carries a
 // skip-worktree mark but no sparse checkout is on: restoring the file fails
-// until the mark is cleared.
-func skipWorktreeOffer(repoPath string) restoreOffer {
+// until the mark is cleared. When the index also holds a staged edit, the offer
+// says so and prints no restore: the restore that keeps the edit would fail, and
+// the one that works would discard it. Once the mark is cleared the next run
+// offers both.
+func skipWorktreeOffer(repoPath string, stagedEdit bool) restoreOffer {
 	return restoreOffer{
 		remedy: projectreadiness.RemedyNone,
 		cause:  projectreadiness.CauseSkipWorktree,
-		text:   ". It is committed at the analyzed revision, but its index entry is marked skip-worktree, so a restore cannot bring it back; " + clearSkipWorktreeAdvice(repoPath) + ", then run again",
+		text:   ". It is committed at the analyzed revision, but its index entry is marked skip-worktree, so a restore cannot bring it back; " + stagedEditNote(stagedEdit, "which clearing the mark leaves alone, and the next run then offers to keep it or to drop it") + clearSkipWorktreeAdvice(repoPath) + ", then run again",
 	}
+}
+
+// stagedEditNote is the clause that tells the user the index also holds a staged edit, or nothing when it does not. It ends
+// with "; " so that the advice that follows reads as the next clause.
+func stagedEditNote(stagedEdit bool, what string) string {
+	if !stagedEdit {
+		return ""
+	}
+	return "the index also holds a staged edit to it, " + what + "; "
 }
 
 // stagedOnlyOffer is for a policy that is not committed but whose index entry
@@ -217,11 +229,15 @@ var committedLinkOffer = restoreOffer{
 
 // sparseCheckoutOffer is for a committed policy that the sparse checkout leaves
 // out of the working tree. git restore rejects a path the checkout skips, so the
-// command would fail, and the way back is to widen the checkout.
-var sparseCheckoutOffer = restoreOffer{
-	remedy: projectreadiness.RemedyNone,
-	cause:  projectreadiness.CauseSparseCheckout,
-	text:   ". It is committed at the analyzed revision, but this sparse checkout leaves it out of the working tree, so a restore cannot bring it back; add its directory to the sparse checkout, then run again",
+// command would fail, and the way back is to widen the checkout. When the index also
+// holds a staged edit, widening the checkout writes that edit to the file, and the
+// offer says so.
+func sparseCheckoutOffer(stagedEdit bool) restoreOffer {
+	return restoreOffer{
+		remedy: projectreadiness.RemedyNone,
+		cause:  projectreadiness.CauseSparseCheckout,
+		text:   ". It is committed at the analyzed revision, but this sparse checkout leaves it out of the working tree, so a restore cannot bring it back; " + stagedEditNote(stagedEdit, "which widening the checkout writes to the file") + "add its directory to the sparse checkout, then run again",
+	}
 }
 
 // committedBlockedParentOffer names no restore command, because running one
@@ -275,11 +291,11 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 	case verdict == restoreDiscardsStagedEdit:
 		return stagedEditOffer(revision, repoPath, blocked), true
 	case verdict == restoreSkipWorktreeMarked:
-		return skipWorktreeOffer(repoPath), true
+		return skipWorktreeOffer(repoPath, judgment.indexEntryUnread), true
 	case verdict == restoreRecreatesLink:
 		return committedLinkOffer, true
 	case verdict == restoreSkippedBySparseCheckout:
-		return sparseCheckoutOffer, true
+		return sparseCheckoutOffer(judgment.indexEntryUnread), true
 	case verdict == restoreDirectoryInIndex:
 		return directoryInIndexOffer, true
 	case verdict == restoreCommittedInvalid:

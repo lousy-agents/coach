@@ -32,7 +32,11 @@ type indexFacts struct {
 // verdictFor is what a restore of repoPath would do, from what the commit and the
 // index hold for it. A path nothing commits is judged by what the index holds
 // instead. A restore that loses nothing is told apart when it replaces an empty
-// entry, because the message says so.
+// entry, because the message says so. A skip-worktree mark, or a sparse checkout that leaves
+// the path out, comes before a staged edit: git refuses the restore that keeps the edit for
+// such a path and runs the one that drops it, so naming the edit first would leave the
+// destructive command as the only one that works. The offer for the mark says that the index
+// also holds a staged edit, and the edit is reached once the mark is cleared.
 func verdictFor(committed gitrepo.TreeEntry, found bool, facts indexFacts) restoreVerdict {
 	if !found {
 		return verdictForUncommitted(facts.entries, facts.sparse)
@@ -42,12 +46,12 @@ func verdictFor(committed gitrepo.TreeEntry, found bool, facts indexFacts) resto
 		return restoreRecreatesLink
 	case holdsUnmergedEntry(facts.entries):
 		return restoreMergeConflict
-	case facts.unread:
-		return restoreDiscardsStagedEdit
 	case skippedBySparseCheckout(facts.entries) && facts.sparse:
 		return restoreSkippedBySparseCheckout
 	case skippedBySparseCheckout(facts.entries):
 		return restoreSkipWorktreeMarked
+	case facts.unread:
+		return restoreDiscardsStagedEdit
 	case facts.setAsideEmpty:
 		return restoreOverwritesEmptyEntry
 	}
