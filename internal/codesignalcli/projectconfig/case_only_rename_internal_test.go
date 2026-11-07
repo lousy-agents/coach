@@ -88,7 +88,15 @@ func TestTheCaseOnlyRenameIsOnlyAnIssueWhereGitIgnoresCase(t *testing.T) {
 
 func assertRefusedOnlyWhereGitIgnoresCase(t *testing.T, ignoreCase string, err error, revision revisionEntries, want bool) {
 	t.Helper()
-	run := func(string, ...string) ([]byte, error) { return []byte(ignoreCase), err }
+	run := func(_ string, args ...string) ([]byte, error) {
+		switch args[0] {
+		case "config":
+			return []byte(ignoreCase), err
+		case "ls-files":
+			return nil, nil
+		}
+		return nil, errors.New("unexpected git question: " + strings.Join(args, " "))
+	}
 
 	got := caseOnlyRenameRefusalWith(run, "repo", revision, "policies/P.json")
 
