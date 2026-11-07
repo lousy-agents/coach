@@ -34,8 +34,12 @@ func ExplicitOnDiskStatus(run gitrepo.Runner, dir, revision, repoPath string) (*
 	if err == nil {
 		return nil, nil
 	}
-	var found *ConfigError
-	if !errors.As(err, &found) {
+	var onDisk *ConfigError
+	if !errors.As(err, &onDisk) {
+		return nil, err
+	}
+	found, err := namedByTheRevision(run, dir, revision, repoPath, onDisk)
+	if err != nil {
 		return nil, err
 	}
 	judgment := judgeRestore(run, dir, revision, repoPath)

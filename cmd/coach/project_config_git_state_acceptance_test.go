@@ -82,7 +82,7 @@ var _ = Describe("coach codesignal: git states around an explicit --project-conf
 	It("refuses a policy path that is a submodule, and one that runs into a submodule's checkout", func() {
 		repo := commitRepoWithSubmodule()
 
-		expectRefusedWith(repo, "vendor/sub", "project_config_invalid", "is not a regular file")
+		expectRefusedWith(repo, "vendor/sub", "project_config_invalid", "committed as a submodule")
 		expectRefusedWith(repo, "vendor/sub/absent.json", "project_config_missing", "was not found on disk")
 	})
 

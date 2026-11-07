@@ -71,7 +71,7 @@ var _ = Describe("coach codesignal: --project-config path shapes are refused bef
 			repo := commitExplicitPolicyRepo()
 			expectRefusedWith(repo, path, "project_config_invalid", reason)
 		},
-		Entry("a committed directory", ".lousy-agents", "is not a regular file"),
+		Entry("a committed directory", ".lousy-agents", "committed as a directory"),
 	)
 })
 
@@ -185,7 +185,7 @@ var _ = Describe("coach codesignal: an explicit --project-config entry of anothe
 		repo := commitScannableGoRepo()
 		commitFile(repo, explicitPolicyPath+"/inner.json", singleRootPolicyJSON)
 
-		expectRefusedWith(repo, explicitPolicyPath, "project_config_invalid", "is not a regular file")
+		expectRefusedWith(repo, explicitPolicyPath, "project_config_invalid", "committed as a directory")
 	})
 
 	It("refuses a path whose parent directory cannot be searched", func() {

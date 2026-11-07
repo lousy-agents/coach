@@ -99,7 +99,8 @@ through one; name the file it points to), `unreadable_on_disk` (the process cann
 read it; fix the permissions) and `name_case_differs` (rename it to the revision's spelling).
 
 An explicit `--project-config` whose name differs only by case from what is on disk
-is refused with exit `2` and `project_config_invalid`. A file system that folds case
+is refused with exit `2` and `project_config_invalid`; `--check-project` reports the same
+refusal as `policy_invalid` with the cause `name_case_differs`, whichever spelling was typed. A file system that folds case
 resolves `CFG/p.json` for `cfg/p.json`, but the analyzed revision tells the two
 spellings apart, so the scan would read a committed policy the working tree does not hold
 under that name. The message names both spellings and says which of them the revision
