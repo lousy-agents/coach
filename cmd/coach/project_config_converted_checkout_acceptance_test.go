@@ -57,6 +57,19 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid, in 
 		Expect(nextActionKinds(doc)).To(ContainElement("author_policy"))
 	})
 
+	// An eol attribute converts the checkout as the setting does, and no filter and no edit is involved.
+	It("offers the replacement when an eol attribute converted the checkout and nothing else changed", func() {
+		Expect(os.WriteFile(filepath.Join(repo, ".git", "info", "attributes"), []byte(policy+" text eol=crlf\n"), 0o644)).To(Succeed())
+		Expect(os.Remove(filepath.Join(repo, policy))).To(Succeed())
+		gitIn(repo, "checkout", "--", policy)
+		Expect(gitIn(repo, "status", "--porcelain")).To(BeEmpty(), "git itself calls the checkout clean")
+
+		_, stderr := scanExpectingRefusal(repo, "--project-config", policy)
+
+		Expect(string(stderr)).NotTo(ContainSubstring("differs from the committed"), "nothing was edited:\n%s", stderr)
+		Expect(lastLine(stderr)).To(ContainSubstring("replace the policy with it, commit, and rerun"), "stderr:\n%s", stderr)
+	})
+
 	It("keeps the file when it holds a real edit as well as converted line endings", func() {
 		checkOutWithConversion(validPolicyWithLayers)
 
@@ -64,6 +77,17 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid, in 
 
 		Expect(string(stderr)).To(ContainSubstring("differs from the committed"), "stderr:\n%s", stderr)
 		Expect(string(stderr)).NotTo(ContainSubstring("replace the policy with it"), "stderr:\n%s", stderr)
+	})
+
+	// A policy the check calls changed on disk is one git status lists, so the report that names the cause also lists
+	// the file among the changes it did not read.
+	It("lists a policy it calls changed on disk among the changes of the working tree in --check-project", func() {
+		checkOutWithConversion(validPolicyWithLayers)
+
+		doc := expectCheckProject(repo, "--project-config", policy)
+
+		Expect(causeOfGap(doc, "policy_invalid")).To(Equal("changed_on_disk"), "gaps: %+v", doc.Gaps)
+		Expect(doc.DirtyWorktree.Paths).To(ContainElement(policy), "the cause names a file the report does not list as changed: %+v", doc.DirtyWorktree)
 	})
 
 	It("takes a file that a filter attribute selects a program for to have work in it, and never runs the program", func() {

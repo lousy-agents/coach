@@ -12,7 +12,8 @@ var _ = Describe("the CLI contract: changed_on_disk is decided by the file's byt
 	It("says the file is read from the working tree and compared with the committed blob, without asking git for a diff", func() {
 		text := documentText("docs/cli-codesignal.md")
 
-		Expect(text).To(ContainSubstring("whose copy in the working tree differs from the committed one, byte for byte"))
+		Expect(text).To(ContainSubstring("whose copy in the working tree differs from the committed one, once git's own conversion of the file is applied"))
+		Expect(text).NotTo(ContainSubstring("differs from the committed one, byte for byte"), "a converted checkout is the committed copy, so byte for byte is not the rule")
 		Expect(text).To(ContainSubstring("The file is read from the working tree and compared with the committed blob, and git is not asked for a diff, so nothing is written to the index and no hook runs"))
 	})
 
