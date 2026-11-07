@@ -97,62 +97,15 @@ that cannot be a policy has one word for each fix: `not_a_regular_file` (a direc
 or another entry on disk, or an entry of another kind that the analyzed revision commits; name
 a regular file), `symbolic_link` (the policy is a link or is reached
 through one; name the file it points to), `unreadable_on_disk` (the process cannot stat or
-read it; fix the permissions) and `name_case_differs` (rename it to the revision's spelling).
+read it; fix the permissions) and `name_case_differs` (the revision commits the policy in another case than the path Coach reads; make git record it at that path).
 
-The analyzed revision decides what an explicit `--project-config` names. When it holds exactly the path as typed,
-that is the policy that is read, whatever spelling a file system that folds case shows for the file on disk: with
-`cfg/p.json` typed and committed, a disk that shows `CFG/p.json` or `cfg/P.json` (a rename in case only, which `git
-status` does not show there) is no reason to refuse, and v0.11.0 read it. The same holds for the policy a printed
-move left under a differently spelled directory, so a discovered scan and an explicit one of the same committed file
-agree. A name that differs only by case from what is on disk is refused only when the revision does not hold the
-spelling that was typed. The refusal has exit `2` and `project_config_invalid`; `--check-project` reports it as
-`policy_invalid` with the cause `name_case_differs`. A file system that folds case resolves `CFG/p.json` for
-`cfg/p.json`, but the analyzed revision tells the two spellings apart, so the scan would read a committed policy the
-working tree does not hold under that name. The message names both spellings and says which of them the revision
-holds, and what to do follows from that:
+The analyzed revision decides what a policy path names, for a policy named with `--project-config` and for the one Coach finds alike. When the revision commits exactly the path as written, that is the policy that is read, whatever spelling the disk shows for the file and whatever `core.ignorecase` says: with `cfg/p.json` named and committed, a disk that shows `CFG/p.json` or `cfg/P.json` is no reason to refuse, and v0.11.0 read it. The disk is asked only whether a regular file is at the path (a symbolic link, a directory, an unreadable file and a file where a parent directory belongs are refused as before); it is not asked how the name of that file is spelled.
 
-- The revision holds the spelling on disk and the user typed another: pass the spelling
-  on disk, as in `pass --project-config cfg/p.json`. Nothing is renamed, because the
-  revision already holds that spelling. The path passed is the one the revision holds in
-  full, every component resolved, so `CFG/P.json` is advised as `cfg/p.json` and the advice
-  pasted is accepted; where the revision does not hold the rest of the path, or holds it in
-  more than one spelling, no path is named.
-- A file on disk that is not committed under that name, where the user typed its spelling
-  on disk and the revision holds the same path in another case, on a repository that
-  ignores case (the file was renamed in case only and the rename was never recorded): the
-  file can be renamed back, or the rename recorded with `git -C "$(git rev-parse --show-toplevel)" mv -- '<revision
-  spelling>' '<spelling on disk>'`, committed, and the spelling on disk passed, with the cause `name_case_differs`, not
-  `not_committed`. The printed move commands run at the repository root, which they find themselves, so they work when
-  pasted from a subdirectory. `git add` cannot do that: on a repository that ignores case it records nothing for a
-  rename that changes only the case of a name, and the commit says there is nothing to commit. `git mv` refuses to
-  rename a directory in case only, so a directory is renamed back and no `git mv` is offered. A `git mv` is printed only where nothing else stands at the destination, or what stands there is the committed file seen through a disk that folds case: with `core.ignorecase` set on a disk that tells cases apart (a repository cloned on macOS or Windows and then copied to Linux), `git mv` skips its check that the destination exists and would overwrite an untracked file there for good, so the message says that a different file stands at the destination and prints no command, in the explicit and the discovered forms and in the several-spellings refusal alike; it says that git is set to ignore case, not that the disk ignores it. When the rename is
-  already staged with `git mv`, the index holds the spelling on disk and the move would fail, so none is offered: the
-  policy is plainly `not_committed`, and the way out is to commit the staged rename.
-- The revision holds neither spelling: the message says so and gives no advice,
-  because no spelling is the right one to move to. It gives none either when git cannot
-  answer.
+When the revision does not commit the path as written but commits the same path in another case, the policy is not read. The scan exits `2` with `project_config_invalid`, and `--check-project` reports `policy_invalid` with the cause `name_case_differs` and offers no `author_policy`, because a new policy cannot be written over the one that is committed. One message serves a policy named with `--project-config` and a policy Coach finds, in a scan and in `--check-project`, on a file system that folds case and on one that tells cases apart, and whatever `core.ignorecase` says, because the committed names are what differ. With one committed spelling it says that the policy is committed as the spelling it names, but Coach reads the path it names, so it is not read, and that git has to record the policy at that path: rename it in the repository, or commit a rename you have staged, then commit and run again. It states the step in words and prints no command. It always warns that if another file already exists at that path it is to be moved aside first, because with `core.ignorecase` set git can overwrite it. A rename that is already staged is told the same as one that is not, on every file system, because the revision still holds the old spelling until the rename is committed. When the revision commits the policy under several spellings, the message lists every one of them (up to 16, then "and more"), says to keep one of them at that path and remove the others, names the one to keep and the ones to delete, and gives the same warning; past 16 spellings it names none to keep, and says only to keep one of them at that path and remove the others.
 
-A policy that Coach discovers, with no `--project-config`, is read only at `.lousy-agents/coach.json`. When nothing is committed there and the analyzed revision holds the same path in another case (`.Lousy-Agents/Coach.json`, say), the scan is refused with `project_config_invalid`, and `--check-project` reports a policy gap with the cause `name_case_differs` and no `author_policy`, because a new policy cannot be written over the one that is committed. Before, the scan ran without the policy and said nothing, which dropped its layer checks. The message names the spelling that is committed and the commands that move it, `top="$(git rev-parse --show-toplevel)" && mkdir -p "$top"/'.lousy-agents' && git -C "$top" mv -- '.Lousy-Agents/Coach.json' '.lousy-agents/coach.json'`, to be committed (the `mkdir` is for a file system that tells cases apart, where the directory does not exist under the new spelling; both run at the repository root, so they work from a subdirectory too). It holds on any file system, since the committed names are what differ. Once the move has been run and not yet committed, the index holds the spelling Coach reads as one plain file, and the move would fail ("not under version control"): the refusal gives way, the policy is plainly not committed (`not_committed` in `--check-project`, as for a policy named with `--project-config`), and the way out is to commit the staged rename; an index that cannot be asked ends the run as every question git leaves unanswered does. A spelling that only the working tree has is a different matter: with nothing committed at the path in any spelling, a directory a file system that folds case keeps as `.Lousy-Agents/` (untracked, or holding another tool's file) is nothing, and an untracked `.lousy-agents/Coach.json` is a file the scan names in a `name_case_differs` diagnostic and does not read; the run goes on without a policy, exit 0, and `--check-project` reports `policy_missing` with `author_policy`, as it does with nothing on disk. With several spellings committed (`.lousy-agents/Coach.json` and `.LOUSY-AGENTS/coach.json`, say) the message lists every one of them, up to 16, and prints the commands that keep one: it moves the one that needs the fewest components renamed (a file can be renamed in the index with `git mv`, a directory cannot be renamed in case only, so a spelling whose directory is already right is kept first) to the path Coach reads and takes the others out of the index with `git -C "$top" --literal-pathspecs rm --cached -q -- ...`, the index only because on a file system that folds case they name the file just moved. Past 16 spellings, or with a name that cannot be shown to a terminal, it prints no command and asks for one spelling at that path.
+Nothing is refused when the revision commits the path as written, whatever else it commits beside it, or when it commits nothing like it. A policy that is gone from disk while the revision commits it in another case gets the same message, and no restore and no new policy is offered, because either would write into the other spelling. A file in the worktree that the revision commits in no spelling at all is not a case problem: on a file system that folds case it is the file at the path and is not committed (`not_committed`), so a policy named with `--project-config` is refused with `project_config_invalid` and "exists in the worktree but is not committed", and a discovered one is skipped with a diagnostic that says so, while on a file system that tells cases apart a file spelled in another case is not at the path, so the policy is missing and `author_policy` is offered. The same holds for every component of the path: a missing policy under a parent typed in another case that the revision holds no spelling of is simply missing, and is not refused for the parent.
 
-The check covers every component of the path. The message names the first component that differs, and the pass
-clause names the path the revision holds in full, every component resolved against the revision in the same run: with
-`CFG/P.json` typed for a committed `cfg/p.json`, the advice is `pass --project-config cfg/p.json`, and pasting it is
-accepted, with no second correction. A later component is spelled as the revision spells it, whatever the disk shows
-for it. The pass clause names nothing when the revision does not hold the rest of the path, or holds it in more than
-one spelling, because Coach does not guess between them. It also applies when the file is missing, and when a deeper
-directory is missing too: a missing policy under a parent spelled in another case (`Cfg/new/zz.json` where only `cfg`
-exists) is refused for that parent and is not offered a restore or a new policy, because either would write into the
-other spelling.
-
-A policy that is missing from disk has no spelling on disk to compare, so the revision's
-spelling is used instead. When the revision holds the path in another case than the one
-typed, for example `cfg/P.json` typed while `cfg/p.json` is committed and deleted from
-disk, the scan is refused with `project_config_invalid`, the message gives the revision's
-spelling to pass, and no new policy is offered, because writing one there would replace
-the committed policy under its own name. Passing the revision's spelling gets the usual
-restore offer. This holds for any component of the path and on any file system, since it
-asks the revision and not the disk. When the revision holds several spellings the message
-lists them, and when it holds none the policy is plainly missing.
+A policy that Coach discovers, with no `--project-config`, is read only at `.lousy-agents/coach.json`. When the revision does not commit a policy there as written and commits the same path in another case (`.Lousy-Agents/Coach.json`, say), the scan is refused with the message above, and `--check-project` reports a policy gap with the cause `name_case_differs` and no `author_policy`. Before, the scan ran without the policy and said nothing, which dropped its layer checks. It holds on any file system, since the committed names are what differ.
 
 Only the policy's own path leaves `dirty_worktree`. Every other uncommitted path
 the report did not read still counts when it lies under the roots of the policy.

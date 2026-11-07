@@ -61,7 +61,7 @@ var _ = Describe("a Go repository whose go.mod requires a newer Go than the go o
 	})
 
 	It("is told by the CLI contract what happens and the way out", func() {
-		text := normalizedDoc("docs", "cli-codesignal.md")
+		text := documentText("docs/cli-codesignal.md")
 
 		Expect(text).To(ContainSubstring("A repository whose `go.mod` requires a newer Go than the `go` on `PATH` therefore fails, even when the caller sets `GOTOOLCHAIN`"))
 		Expect(text).To(ContainSubstring("`--build-target` exits 1 with go's own message (`go.mod requires go >= X (running go Y; GOTOOLCHAIN=local)`)"))

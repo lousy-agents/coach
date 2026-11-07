@@ -102,7 +102,7 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid or o
 	})
 
 	It("is described by the CLI contract in words, with no move to paste", func() {
-		text := normalizedDoc("docs", "cli-codesignal.md")
+		text := documentText("docs/cli-codesignal.md")
 
 		Expect(text).To(ContainSubstring("the scan names the way for Go only: a candidate written beside the file with `--suggest-project-config --output`, with words that say to compare it with the file, replace the file with it, commit and rerun, and no command to paste; for TypeScript it appends no line"))
 		Expect(text).NotTo(ContainSubstring("the move that puts it over the file"))
