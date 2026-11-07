@@ -39,6 +39,20 @@ func (Loader) Materialize(snapshot fs.FS) (string, func(), error) {
 	return dir, cleanup, nil
 }
 
+// moduleLoadConfig is how the packages of a module in a directory of committed bytes are loaded. The directory
+// is not trusted, so go neither stamps version control information, which runs git there, nor fetches and runs
+// a toolchain that a committed go.mod names. The caller's own GOTOOLCHAIN and GOFLAGS do not change either,
+// since a flag on the command line wins over GOFLAGS and the last value of GOTOOLCHAIN wins.
+func moduleLoadConfig(ctx context.Context, moduleDir string) *packages.Config {
+	return &packages.Config{
+		Context:    ctx,
+		Dir:        moduleDir,
+		Mode:       packages.LoadSyntax,
+		BuildFlags: []string{"-buildvcs=false"},
+		Env:        append(os.Environ(), "GOTOOLCHAIN=local"),
+	}
+}
+
 // LoadModule loads moduleDir's own packages from dir/moduleDir and builds
 // an SSA program for them. The load mode is packages.LoadSyntax: typed
 // syntax for the snapshot's own packages, export data for dependencies.
@@ -46,12 +60,7 @@ func (Loader) Materialize(snapshot fs.FS) (string, func(), error) {
 // (net/http, database/sql, reflect) on every call; StaticCallee and stdlib
 // type identity only need those packages' types, not their syntax.
 func (Loader) LoadModule(ctx context.Context, dir, moduleDir string) ([]*packages.Package, *ssa.Program, map[string]bool, error) {
-	cfg := &packages.Config{
-		Context: ctx,
-		Dir:     filepath.Join(dir, filepath.FromSlash(moduleDir)),
-		Mode:    packages.LoadSyntax,
-	}
-	pkgs, err := packages.Load(cfg, "./...")
+	pkgs, err := packages.Load(moduleLoadConfig(ctx, filepath.Join(dir, filepath.FromSlash(moduleDir))), "./...")
 	if err != nil {
 		return nil, nil, nil, err
 	}
