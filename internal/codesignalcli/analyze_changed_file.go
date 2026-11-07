@@ -11,8 +11,8 @@ import (
 
 // analyzeAddedOrModifiedFile reads and analyzes one changed file. Its error is a git that did not answer in
 // time (see readFailure); every other problem with the file is a diagnostic.
-func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, headSHA, mergeBaseSHA string, sf gitrepo.SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic, error) {
-	headBytes, err := runGit(dir, "show", headSHA+":"+sf.Path)
+func analyzeAddedOrModifiedFile(run gitrepo.Runner, ctx context.Context, analyzer *semantics.Analyzer, dir, headSHA, mergeBaseSHA string, sf gitrepo.SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic, error) {
+	headBytes, err := run(dir, "show", headSHA+":"+sf.Path)
 	if err != nil {
 		diagnostics, stalled := readFailure(sf.Path, headSide, err)
 		return nil, diagnostics, stalled
@@ -27,7 +27,7 @@ func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyze
 	var diagnostics []codesignal.Diagnostic
 
 	if sf.Status == "modified" {
-		base, baseDiagnostics, stalled := analyzeModifiedBase(ctx, analyzer, dir, mergeBaseSHA, sf)
+		base, baseDiagnostics, stalled := analyzeModifiedBase(run, ctx, analyzer, dir, mergeBaseSHA, sf)
 		if stalled != nil {
 			return nil, nil, stalled
 		}
@@ -35,7 +35,7 @@ func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyze
 		diagnostics = append(diagnostics, baseDiagnostics...)
 	}
 
-	ranges, rangeDiagnostic, stalled := computeChangedRanges(dir, mergeBaseSHA, sf.Path)
+	ranges, rangeDiagnostic, stalled := computeChangedRanges(run, dir, mergeBaseSHA, sf.Path)
 	if stalled != nil {
 		return nil, nil, stalled
 	}

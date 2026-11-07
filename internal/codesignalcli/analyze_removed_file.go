@@ -11,8 +11,8 @@ import (
 
 // analyzeRemovedFile reads and analyzes the merge-base side of a removed file. Its error is a git that did not
 // answer in time (see readFailure); every other problem with the file is a diagnostic.
-func analyzeRemovedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, mergeBaseSHA string, sf gitrepo.SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic, error) {
-	baseBytes, err := runGit(dir, "show", mergeBaseSHA+":"+sf.Path)
+func analyzeRemovedFile(run gitrepo.Runner, ctx context.Context, analyzer *semantics.Analyzer, dir, mergeBaseSHA string, sf gitrepo.SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic, error) {
+	baseBytes, err := run(dir, "show", mergeBaseSHA+":"+sf.Path)
 	if err != nil {
 		diagnostics, stalled := readFailure(sf.Path, removedBaseSide, err)
 		return nil, diagnostics, stalled

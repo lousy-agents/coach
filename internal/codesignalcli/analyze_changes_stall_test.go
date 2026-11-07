@@ -53,13 +53,6 @@ func (g *fakeGit) questionOf(args []string) string {
 	return strings.Join(args, " ")
 }
 
-func installFakeGit(t *testing.T, fake *fakeGit) {
-	t.Helper()
-	original := runGit
-	t.Cleanup(func() { runGit = original })
-	runGit = fake.run
-}
-
 func timeoutOf(t *testing.T, question string) error {
 	t.Helper()
 	read := boundedRead(t, func(ctx context.Context) *exec.Cmd { return exec.CommandContext(ctx, "sleep", "30") }, 1<<10, 200*time.Millisecond)
@@ -75,8 +68,8 @@ func modifiedFiles(paths ...string) []gitrepo.SelectedFile {
 }
 
 // analyze runs a --base scan of the files and says whether it produced a report, and its error.
-func analyze(files []gitrepo.SelectedFile) (reported bool, err error) {
-	report, err := AnalyzeChanges(context.Background(), ".", headSHA, mergeBaseSHA, files, nil, nil, "", nil, nil)
+func analyze(run gitrepo.Runner, files []gitrepo.SelectedFile) (reported bool, err error) {
+	report, err := analyzeChangesThrough(run, context.Background(), ".", headSHA, mergeBaseSHA, files, nil, nil, "", nil, nil)
 	return report != nil, err
 }
 
@@ -89,9 +82,8 @@ type stalledQuestion struct {
 
 func (c stalledQuestion) run(t *testing.T) {
 	fake := &fakeGit{t: t, failures: map[string]error{c.question: timeoutOf(t, strings.Fields(c.question)[0])}}
-	installFakeGit(t, fake)
 
-	reported, err := analyze(modifiedFiles("a.go", "b.go", "c.go"))
+	reported, err := analyze(fake.run, modifiedFiles("a.go", "b.go", "c.go"))
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) || reported {
@@ -115,10 +107,9 @@ func TestAnalyzeChangesEndsWithTheFirstQuestionGitDoesNotAnswer(t *testing.T) {
 
 func TestAnalyzeChangesEndsWithTheBaseContentOfARemovedFileGitDoesNotAnswer(t *testing.T) {
 	fake := &fakeGit{t: t, failures: map[string]error{"show " + mergeBaseSHA + ":a.go": timeoutOf(t, "show")}}
-	installFakeGit(t, fake)
 	removed := []gitrepo.SelectedFile{{Path: "a.go", Status: "removed", Language: "go"}, {Path: "b.go", Status: "removed", Language: "go"}}
 
-	reported, err := analyze(removed)
+	reported, err := analyze(fake.run, removed)
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) || reported || len(fake.asked) != 1 {
@@ -131,9 +122,8 @@ func TestAnalyzeChangesGoesOnPastAFileGitPrintedTooMuchOf(t *testing.T) {
 		return exec.CommandContext(ctx, "head", "-c", "5000", "/dev/zero")
 	}, 1<<10, 10*time.Second)
 	fake := &fakeGit{t: t, failures: map[string]error{"show " + headSHA + ":a.go": fmt.Errorf("git show: %w", tooMuch)}}
-	installFakeGit(t, fake)
 
-	reported, err := analyze(modifiedFiles("a.go", "b.go"))
+	reported, err := analyze(fake.run, modifiedFiles("a.go", "b.go"))
 
 	if err != nil || !reported {
 		t.Fatalf("AnalyzeChanges = %v, %v; want a report: a file git printed too much of is that file's problem", reported, err)
@@ -147,14 +137,12 @@ func TestAnalyzeChangesGoesOnPastAFileGitPrintedTooMuchOf(t *testing.T) {
 // must not be read as one, so the question ends its options with --.
 func TestTheChangedLinesOfAFileAreAskedAfterTheEndOfTheOptions(t *testing.T) {
 	var asked []string
-	original := runGit
-	t.Cleanup(func() { runGit = original })
-	runGit = func(_ string, args ...string) ([]byte, error) {
+	recording := func(_ string, args ...string) ([]byte, error) {
 		asked = args
 		return []byte(""), nil
 	}
 
-	_, diagnostic, stalled := computeChangedRanges(".", mergeBaseSHA, "--output=x.go")
+	_, diagnostic, stalled := computeChangedRanges(recording, ".", mergeBaseSHA, "--output=x.go")
 
 	n := len(asked)
 	if diagnostic != nil || stalled != nil || n < 3 || asked[n-2] != "--" || asked[n-1] != "--output=x.go" {

@@ -11,8 +11,8 @@ import (
 
 // analyzeModifiedBase reads and analyzes the merge-base side of a modified file. A base side that cannot be
 // read or analyzed is a diagnostic and no result; the head side is still reported.
-func analyzeModifiedBase(ctx context.Context, analyzer *semantics.Analyzer, dir, mergeBaseSHA string, sf gitrepo.SelectedFile) (*semantics.Result, []codesignal.Diagnostic, error) {
-	baseBytes, err := runGit(dir, "show", mergeBaseSHA+":"+sf.Path)
+func analyzeModifiedBase(run gitrepo.Runner, ctx context.Context, analyzer *semantics.Analyzer, dir, mergeBaseSHA string, sf gitrepo.SelectedFile) (*semantics.Result, []codesignal.Diagnostic, error) {
+	baseBytes, err := run(dir, "show", mergeBaseSHA+":"+sf.Path)
 	if err != nil {
 		diagnostics, stalled := readFailure(sf.Path, modifiedBaseSide, err)
 		return nil, diagnostics, stalled
