@@ -1,7 +1,6 @@
 package gitrepo
 
 import (
-	"slices"
 	"strings"
 	"testing"
 )
@@ -35,34 +34,44 @@ func statusAskedOn(t *testing.T, recorder *statusRecorder) []string {
 	return recorder.statusAsked
 }
 
-// A git before 2.44 ignores GIT_NO_LAZY_FETCH, and `git status` goes into every populated submodule, where a
-// partial clone that lacks objects is fetched into. So on such a git, and on one whose version cannot be read,
-// the status does not go into submodules; on a git that can be told not to fetch, it is the plain status.
-func TestTheStatusOfAGitBefore244DoesNotGoIntoSubmodules(t *testing.T) {
-	for _, version := range []string{"git version 2.43.0", "git version 2.30.2", "git version 1.8.3"} {
-		asked := statusAskedOn(t, &statusRecorder{version: version})
+const plainStatus = "status --porcelain=v1 --untracked-files=all -z"
 
-		if !slices.Contains(asked, "--ignore-submodules=all") {
-			t.Errorf("%s asked %q; want the status not to go into submodules", version, asked)
-		}
+// The arguments of the status are pinned for each kind of git, as the budgets are pinned for each call. A git before
+// 2.44 ignores GIT_NO_LAZY_FETCH, and `git status` goes into every populated submodule, where a partial clone that
+// lacks objects is fetched into; it also compares a staged deletion with a staged addition, which reads blobs. So on
+// such a git, and on one whose version cannot be read, the status does not go into submodules; and from git 2.18,
+// which has the flag, it does not look for renames on any git.
+func TestTheArgumentsOfTheStatusForEachKindOfGit(t *testing.T) {
+	for version, want := range map[string]string{
+		"git version 2.43.0":                 plainStatus + " --no-renames --ignore-submodules=all",
+		"git version 2.30.2":                 plainStatus + " --no-renames --ignore-submodules=all",
+		"git version 2.18.0":                 plainStatus + " --no-renames --ignore-submodules=all",
+		"git version 2.17.1":                 plainStatus + " --ignore-submodules=all",
+		"git version 1.8.3":                  plainStatus + " --ignore-submodules=all",
+		"git version 2.44.0":                 plainStatus + " --no-renames",
+		"git version 2.54.0 (Apple Git-123)": plainStatus + " --no-renames",
+		"git version 3.0.0":                  plainStatus + " --no-renames",
+	} {
+		assertStatusAskedAs(t, version, want)
 	}
 }
 
-func TestTheStatusOfAGitThatCanBeToldNotToFetchIsThePlainStatus(t *testing.T) {
-	for _, version := range []string{"git version 2.44.0", "git version 2.54.0 (Apple Git-123)", "git version 3.0.0"} {
+func assertStatusAskedAs(t *testing.T, version, want string) {
+	t.Helper()
+	t.Run(version, func(t *testing.T) {
 		asked := statusAskedOn(t, &statusRecorder{version: version})
 
-		if got := strings.Join(asked, " "); got != "status --porcelain=v1 --untracked-files=all -z" {
-			t.Errorf("%s asked %q; want the plain status", version, got)
+		if got := strings.Join(asked, " "); got != want {
+			t.Errorf("%s asked %q; want %q", version, got, want)
 		}
-	}
+	})
 }
 
-func TestTheStatusOfAGitWhoseVersionCannotBeReadDoesNotGoIntoSubmodules(t *testing.T) {
+func TestTheStatusOfAGitWhoseVersionCannotBeReadDoesNotGoIntoSubmodulesOrLookForRenames(t *testing.T) {
 	asked := statusAskedOn(t, &statusRecorder{versionErr: exitStatus128})
 
-	if !slices.Contains(asked, "--ignore-submodules=all") {
-		t.Errorf("asked %q; want the status not to go into submodules when the version is not known", asked)
+	if got := strings.Join(asked, " "); got != plainStatus+" --ignore-submodules=all" {
+		t.Errorf("asked %q; want the status that does not go into submodules, and no flag the version may not have", got)
 	}
 }
 
