@@ -16,7 +16,7 @@ import (
 const (
 	projectConfigCopyPrompt                  = "Copy project.json to .lousy-agents/coach.json? Coach will not delete project.json. [y/N] "
 	projectConfigCopiedLine                  = "Copied project.json to .lousy-agents/coach.json. Commit that file so the next scan reads it. project.json was left in place.\n"
-	wantProjectConfigMigrationSkippedMessage = "project.json can be moved to .lousy-agents/coach.json. Next: mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json"
+	wantProjectConfigMigrationSkippedMessage = "project.json can be moved to .lousy-agents/coach.json. Next: top=\"$(git rev-parse --show-toplevel)\" && mkdir -p \"$top\"/.lousy-agents && git -C \"$top\" mv -- project.json .lousy-agents/coach.json"
 )
 
 var _ = Describe("coach project config migration", func() {
