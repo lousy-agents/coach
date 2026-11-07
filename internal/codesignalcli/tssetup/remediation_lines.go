@@ -92,6 +92,18 @@ func ReplacePolicyRemediation(policy policyref.Ref) string {
 		" -- guided authoring opens there and prints a replacement for the invalid document; save it over the file, have a human review and commit it, then rerun"
 }
 
+// ReplaceGoPolicyRemediation is the appended line for a Go scan whose policy exists and cannot be used as one (its
+// document is not valid, or is over the size budget): the candidate written beside it and the move that replaces it
+// (invocation.ReplaceGoPolicy). A path the policy check refuses gets no line, since it names nothing authoring could use.
+func ReplaceGoPolicyRemediation(policyPath, candidate string) string {
+	for _, shown := range []string{policyPath, candidate} {
+		if projectconfig.ValidatePath(shown) != nil {
+			return ""
+		}
+	}
+	return invocation.ReplaceGoPolicy(policyPath, candidate)
+}
+
 // authoringTarget is where authoring has to write for the policy the user named
 // to exist: empty when nothing was named, or when the name is where authoring
 // writes by default.

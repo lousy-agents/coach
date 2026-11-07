@@ -62,8 +62,9 @@ var _ = Describe("coach project-analysis failure reports", func() {
 		remediation := lines[len(lines)-1]
 		Expect(remediation).NotTo(ContainSubstring("--project-language typescript"), "a --project-language go scan must never be offered the TypeScript-only guided-authoring command; stderr: %s", stderr)
 
-		fields := strings.Fields(remediation)
-		Expect(fields).NotTo(BeEmpty())
+		suggest, _ := replaceCommandsIn(remediation)
+		fields := strings.Fields(suggest)
+		Expect(fields).NotTo(BeEmpty(), "the line names the authoring command: %s", remediation)
 		Expect(fields[0]).To(Equal("coach"))
 		remediationStdout, remediationStderr, remediationExit := runCoachBinary(commandPath, repo, nil, fields[1:]...)
 		Expect(remediationExit).To(Equal(0), "the printed remediation command must actually succeed for this Go repository; stdout: %s stderr: %s", remediationStdout, remediationStderr)
@@ -107,7 +108,8 @@ var _ = Describe("coach project-analysis failure reports", func() {
 		tsLines := stderrLines(tsStderr)
 		Expect(goLines).To(HaveLen(2), "go's class-2 report is the config message plus AC-SET-9's appended remediation")
 		Expect(tsLines[0]).To(Equal(goLines[0]), "the underlying class-2 config message must stay language-independent")
-		Expect(goLines[len(goLines)-1]).To(Equal("coach codesignal --baseline --suggest-project-config"), "go's appended remediation must be a command go actually supports, not the TypeScript-only guided-authoring invocation (AC-2)")
+		Expect(goLines[len(goLines)-1]).To(HavePrefix("coach codesignal --baseline --suggest-project-config --output project.candidate.json"), "go's appended remediation must be a command go actually supports, not the TypeScript-only guided-authoring invocation (AC-2)")
+		Expect(goLines[len(goLines)-1]).NotTo(ContainSubstring("--project-language typescript"))
 		Expect(tsLines[len(tsLines)-1]).To(Equal("on a terminal: coach codesignal --baseline --project-config project.json --project-language typescript -- guided authoring opens there and prints a replacement for the invalid document; save it over the file, have a human review and commit it, then rerun"), "typescript's appended remediation must name its own guided-authoring invocation: for a document that exists it is the scan, because authoring creates files and refuses a target that exists")
 		Expect(len(tsLines)).To(BeNumerically(">=", len(goLines)), "TypeScript may additionally carry AC-SET-13's readiness-gap line; it must never carry fewer lines than go's report")
 	})

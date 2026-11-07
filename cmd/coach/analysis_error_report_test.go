@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -12,7 +13,7 @@ import (
 
 func TestAnalysisErrorReportForRuntimeUnresolvedError(t *testing.T) {
 	err := &tstoolchain.RuntimeUnresolvedError{Code: projectreadiness.GapNodeMissing, Policy: policyref.Named("project.json")}
-	got := analysisErrorReportFor(err, "typescript", policyref.Ref{}, false)
+	got := analysisErrorReportFor(err, "typescript", policyref.Ref{}, false, "")
 	if got.exitCode != 2 {
 		t.Fatalf("analysisErrorReportFor(RuntimeUnresolvedError).exitCode = %d, want 2", got.exitCode)
 	}
@@ -43,9 +44,20 @@ func assertAuthoringNamesOutput(t *testing.T, kind projectconfig.ErrorKind, want
 	const named = "cfg/new.json"
 	configErr := &projectconfig.ConfigError{Kind: kind, Remedy: projectreadiness.RemedyAuthor}
 
-	got := authoringRemediation(configErr, policyref.Named(named), "go", false)
+	got := authoringRemediation(configErr, policyref.Named(named), "go", false, initializedRepository(t))
 
 	if has := strings.Contains(got, "--output "+named); has != wantOutput || got == "" {
 		t.Errorf("authoringRemediation(kind %v) = %q; contains --output %s = %v, want %v, and the remedy is to author so a command is offered", kind, got, named, has, wantOutput)
 	}
+}
+
+// initializedRepository is a directory that is a git repository, which is where the line for a Go policy to replace
+// looks for a free name beside the policy.
+func initializedRepository(t *testing.T) string {
+	t.Helper()
+	repo := t.TempDir()
+	if output, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, output)
+	}
+	return repo
 }

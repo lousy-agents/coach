@@ -29,7 +29,7 @@ func runCodesignalScan(dir string, f codesignalFlags, stdin, stdout, stderr *os.
 			return runScanCompilerSetupOffer(dir, f, stdin, stdout, stderr, wrapped, budget, ports)
 		}
 		err = wordBlobReadFailure(gitrepo.RunBytes, dir, err, scanPrefix)
-		return classifyAnalysisError(err, f.projectLanguage, f.namedPolicy, noInteractive, stderr)
+		return classifyAnalysisError(err, f.projectLanguage, f.namedPolicy, noInteractive, stderr, dir)
 	}
 	if result := ports.optionalPreparation(dir, f, stdout, stderr); !shouldRenderAfterOptionalPreparation(result) {
 		return 2
