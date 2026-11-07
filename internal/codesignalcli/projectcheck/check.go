@@ -17,23 +17,23 @@ import (
 // at the analyzed revision, so a caller holding a discovered policy may pass it
 // as it is.
 func Run(dir, revision string, policy policyref.Ref) (*projectreadiness.Result, error) {
-	return RunWithLocator(tstoolchain.LocateMiseTypescriptInstall, dir, revision, policy)
-}
-
-// RunWithLocator is Run with the locator that finds a compiler mise installed given by the caller. The setup that
-// installs a compiler rechecks readiness through the locator it installed with, so the recheck looks where the install
-// put the compiler.
-func RunWithLocator(locate tstoolchain.MiseLocator, dir, revision string, policy policyref.Ref) (*projectreadiness.Result, error) {
-	return runBy(readinessGit(), locate, dir, revision, policy)
-}
-
-// runBy is RunWithLocator with the git that answers the questions about the committed policy given by the caller.
-func runBy(run gitrepo.Runner, locate tstoolchain.MiseLocator, dir, revision string, policy policyref.Ref) (*projectreadiness.Result, error) {
-	result, err := evaluate(run, locate, dir, revision, policy, policyCheckerBy(run, policy))
+	result, err := RunWithLocator(tstoolchain.LocateMiseTypescriptInstall, dir, revision, policy)
 	if err != nil {
 		return nil, err
 	}
 	return &result, nil
+}
+
+// RunWithLocator is Run with the locator that finds a compiler mise installed given by the caller. The setup that
+// installs a compiler rechecks readiness through the locator it installed with, so the recheck looks where the install
+// put the compiler. It returns the result by value, as evaluate does; Run is the one that returns a pointer.
+func RunWithLocator(locate tstoolchain.MiseLocator, dir, revision string, policy policyref.Ref) (projectreadiness.Result, error) {
+	return runBy(readinessGit(), locate, dir, revision, policy)
+}
+
+// runBy is RunWithLocator with the git that answers the questions about the committed policy given by the caller.
+func runBy(run gitrepo.Runner, locate tstoolchain.MiseLocator, dir, revision string, policy policyref.Ref) (projectreadiness.Result, error) {
+	return evaluate(run, locate, dir, revision, policy, policyCheckerBy(run, policy))
 }
 
 // evaluate is Run with the policy check chosen by the caller.

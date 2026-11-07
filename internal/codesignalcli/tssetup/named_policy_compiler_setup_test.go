@@ -41,7 +41,7 @@ func TestCompilerSetupOfferRechecksTheNamedPolicyAfterAMiseInstall(t *testing.T)
 	}
 	var transcript bytes.Buffer
 
-	result := runCompilerSetupOfferWith(locate, context.Background(), repo, revision, named, projectreadiness.GapTypescriptCompilerMissing, before, strings.NewReader("project_mise\ninstall\n"), &transcript)
+	result := runCompilerSetupOfferWith(locate, context.Background(), repo, revision, named, projectreadiness.GapTypescriptCompilerMissing, &before, strings.NewReader("project_mise\ninstall\n"), &transcript)
 
 	if !result.Succeeded {
 		t.Fatalf("the install did not succeed: %+v\n%s", result, transcript.String())

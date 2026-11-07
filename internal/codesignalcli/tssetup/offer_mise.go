@@ -52,7 +52,7 @@ func runMiseSetupOffer(locate tstoolchain.MiseLocator, ctx context.Context, dir,
 	}
 
 	if postInstall, err := projectcheck.RunWithLocator(locate, dir, revision, policy); err == nil {
-		result.PostInstallReadiness = postInstall
+		result.PostInstallReadiness = &postInstall
 	}
 	result.Succeeded = true
 	return result

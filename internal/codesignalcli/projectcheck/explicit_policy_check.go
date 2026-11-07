@@ -28,11 +28,16 @@ func checkExplicitPolicy(run gitrepo.Runner, dir, revision, policyPath string) (
 // error and the report cannot disagree about one path. For a discovered policy,
 // and for an error the analyzed revision produced, it is Run.
 func RunAfterPolicyError(dir, revision string, policy policyref.Ref, failure *projectconfig.ConfigError) (*projectreadiness.Result, error) {
-	return runAfterPolicyErrorBy(readinessGit(), dir, revision, policy, failure)
+	result, err := runAfterPolicyErrorBy(readinessGit(), dir, revision, policy, failure)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
-// runAfterPolicyErrorBy is RunAfterPolicyError with the git that answers given by the caller.
-func runAfterPolicyErrorBy(run gitrepo.Runner, dir, revision string, policy policyref.Ref, failure *projectconfig.ConfigError) (*projectreadiness.Result, error) {
+// runAfterPolicyErrorBy is RunAfterPolicyError with the git that answers given by the caller. It returns the result by
+// value; RunAfterPolicyError is the one that returns a pointer.
+func runAfterPolicyErrorBy(run gitrepo.Runner, dir, revision string, policy policyref.Ref, failure *projectconfig.ConfigError) (projectreadiness.Result, error) {
 	if !policy.JudgedOnDisk() {
 		return runBy(run, tstoolchain.LocateMiseTypescriptInstall, dir, revision, policy)
 	}
@@ -42,11 +47,7 @@ func runAfterPolicyErrorBy(run gitrepo.Runner, dir, revision string, policy poli
 		}
 		return explicitPolicyCheck(run, nil, dir, revision, policyPath)
 	}
-	result, err := evaluate(run, tstoolchain.LocateMiseTypescriptInstall, dir, revision, policy, check)
-	if err != nil {
-		return nil, err
-	}
-	return &result, nil
+	return evaluate(run, tstoolchain.LocateMiseTypescriptInstall, dir, revision, policy, check)
 }
 
 // explicitPolicyCheck is the check for a named policy given what the working

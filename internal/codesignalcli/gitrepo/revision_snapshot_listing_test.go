@@ -40,11 +40,15 @@ func TestExtractRevisionIsAnErrorWhenTheListingCannotBeRead(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			listing := treeListing(t, c.listing)
-			assertSnapshotRefused(t, func(repositoryRoot, revision string) ([]snapshotEntry, error) {
-				return listSnapshotEntriesBy(listing, repositoryRoot, revision)
-			}, nil)
+			assertSnapshotRefused(t, listingThrough(treeListing(t, c.listing)), nil)
 		})
+	}
+}
+
+// listingThrough is the lister of a real snapshot over the git that build starts.
+func listingThrough(build childBuilder) snapshotLister {
+	return func(repositoryRoot, revision string) ([]snapshotEntry, error) {
+		return listSnapshotEntriesBy(build, repositoryRoot, revision)
 	}
 }
 

@@ -186,7 +186,7 @@ func TestANamedPolicyReportFailsWhenAQuestionAfterThePolicyCheckCannotBeAnswered
 	result, err := runAfterPolicyErrorBy(run, gitfixture.Init(t), "HEAD", policyref.Named("cfg/p.json"), held)
 
 	var operational *gitrepo.OperationalError
-	if !errors.As(err, &operational) || result != nil {
-		t.Errorf("RunAfterPolicyError = %+v, %v; want no report and the operational error", result, err)
+	if !errors.As(err, &operational) || result.SchemaVersion != "" {
+		t.Errorf("runAfterPolicyErrorBy = %+v, %v; want no report and the operational error", result, err)
 	}
 }

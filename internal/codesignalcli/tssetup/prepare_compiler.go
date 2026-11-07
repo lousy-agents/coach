@@ -190,7 +190,9 @@ func runPrepareCompilerMiseSetupWith(locate tstoolchain.MiseLocator, ctx context
 	}
 
 	postInstall, err := projectcheck.RunWithLocator(locate, dir, revision, policy)
-	outcome.PostInstallReadiness = postInstall
+	if err == nil {
+		outcome.PostInstallReadiness = &postInstall
+	}
 	outcome.PostInstallReadinessError = err
 	return outcome
 }
