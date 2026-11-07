@@ -59,6 +59,11 @@ func TestRevisionFileReaderNamesWhichPartOfAnAnswerWasWrong(t *testing.T) {
 	cases := []struct{ name, printed, want string }{
 		{"no answer at all", "", `reading cat-file response header for "p.go"`},
 		{"a size that is not a number", `1111 blob many\000`, `malformed cat-file size for "p.go"`},
+		{"a size below zero", `1111 blob -1\000`, `malformed cat-file size for "p.go"`},
+		{"a header of one field", `junk\000`, `malformed cat-file header for "p.go"`},
+		{"a header of two fields that is not the missing marker", `1111 ambiguous\000`, `malformed cat-file header for "p.go"`},
+		{"a header of four fields", `1111 blob 2 extra\000`, `malformed cat-file header for "p.go"`},
+		{"an object that is not there", `1111 missing\000`, `"p.go" is missing at HEAD`},
 		{"content cut short", `1111 blob 5\000ab`, `reading cat-file content for "p.go"`},
 		{"no NUL after the content", `1111 blob 2\000hi`, `reading cat-file trailing NUL for "p.go"`},
 	}
@@ -85,5 +90,25 @@ func assertReaderFails(t *testing.T, printed, want string) {
 
 	if readErr == nil || !strings.Contains(readErr.Error(), want) || content != nil {
 		t.Errorf("Next = %q, %v; want no content and an error that says %q", content, readErr, want)
+	}
+}
+
+// An empty file is a file: its object is a header with a size of zero and nothing after the NUL that ends the
+// content. A size of zero is not malformed, and the scan reports the file as empty and not as unreadable.
+func TestRevisionFileReaderReadsAnEmptyObjectAsEmptyContent(t *testing.T) {
+	withStreamChild(t, func(ctx context.Context) *exec.Cmd {
+		return exec.CommandContext(ctx, "sh", "-c", "head -c 1 >/dev/null; printf '1111 blob 0\\000\\000'")
+	})
+	withFileReadBudget(t, fileStreamBudget{wall: time.Minute, object: 10})
+	reader, err := NewRevisionFileReader("", "HEAD")
+	if err != nil {
+		t.Fatalf("NewRevisionFileReader: %v", err)
+	}
+	defer reader.Close()
+
+	content, readErr := reader.Next("p.go")
+
+	if readErr != nil || content == nil || len(content) != 0 {
+		t.Errorf("Next = %q, %v; want empty content and no error", content, readErr)
 	}
 }
