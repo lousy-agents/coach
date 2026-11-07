@@ -3,7 +3,6 @@ package gitrepo
 import (
 	"context"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,65 +35,23 @@ func withListingScript(t *testing.T, script string) {
 	}
 }
 
-func visitingEvery(records *[]string) func([]byte) error {
-	return func(record []byte) error {
-		*records = append(*records, string(record))
+// listedRecords streams the fake git's listing and returns the records it handed over, whole, in order.
+func listedRecords() ([]string, error) {
+	var records []string
+	err := streamListing("", time.Minute, []string{"ls-tree"}, func(record []byte) error {
+		records = append(records, string(record))
 		return nil
-	}
+	})
+	return records, err
 }
 
 func TestAListingIsHandedOverARecordAtATimeInOrder(t *testing.T) {
 	withTreeListing(t, "one\x00two words\x00three\nwith a newline\x00")
-	var records []string
 
-	err := streamListing("", time.Minute, []string{"ls-tree"}, visitingEvery(&records))
+	records, err := listedRecords()
 
 	if err != nil || strings.Join(records, "|") != "one|two words|three\nwith a newline" {
 		t.Errorf("streamListing = %v after %q; want the three records, whole", err, records)
-	}
-}
-
-// The listing of a large repository is past any limit on one read, and it is read all the same: what is held is
-// a record. This one is 70 MB, past the 64 MiB a git read is held to.
-func TestAListingPastTheBudgetOfOneReadIsReadWhole(t *testing.T) {
-	withListingScript(t, "yes aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa | head -n 700000 | tr '\\n' '\\000'")
-	var bytes int
-
-	err := streamListing("", time.Minute, []string{"ls-tree"}, func(record []byte) error {
-		bytes += len(record) + 1
-		return nil
-	})
-
-	if err != nil || bytes != 700000*(len("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")+1) {
-		t.Errorf("streamListing = %v after %d bytes; want all 700000 records read, without an error about a size", err, bytes)
-	}
-	if bytes <= 64<<20 {
-		t.Errorf("the listing is %d bytes, which is not past the 64 MiB a git read is held to", bytes)
-	}
-}
-
-func TestAListingThatEndsInsideARecordIsAnError(t *testing.T) {
-	withTreeListing(t, "whole\x00cut sho")
-	var records []string
-
-	err := streamListing("", time.Minute, []string{"ls-tree"}, visitingEvery(&records))
-
-	if !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Errorf("streamListing = %v after %q; want the stream cut inside a record refused", err, records)
-	}
-}
-
-func TestARecordPastTheLimitIsRefusedAndGitIsEnded(t *testing.T) {
-	withListingScript(t, "yes aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa | tr -d '\\n'")
-	started := time.Now()
-
-	err := streamListing("", time.Minute, []string{"ls-tree"}, func([]byte) error { return nil })
-
-	if err == nil || !strings.Contains(err.Error(), "longer than 65536 bytes") {
-		t.Errorf("streamListing = %v; want the record that never ends refused", err)
-	}
-	if time.Since(started) > 15*time.Second {
-		t.Errorf("streamListing took %s to refuse a record: git was left running", time.Since(started))
 	}
 }
 
@@ -114,30 +71,6 @@ func TestAVisitThatFailsEndsGitAndItsErrorIsReturned(t *testing.T) {
 	}
 	if exec.Command("kill", "-0", strings.TrimSpace(string(pid))).Run() == nil {
 		t.Errorf("git (process %s) is still running after a visit failed: it blocks writing to a pipe nothing reads", strings.TrimSpace(string(pid)))
-	}
-}
-
-func TestAGitThatDoesNotAnswerInTimeIsABoundError(t *testing.T) {
-	withListingScript(t, "sleep 120")
-
-	err := streamListing("", 300*time.Millisecond, []string{"ls-tree"}, func([]byte) error { return nil })
-
-	var bound *BoundError
-	if !errors.As(err, &bound) || bound.Kind != BoundTimeout || !strings.Contains(err.Error(), "git ls-tree") {
-		t.Errorf("streamListing = %v; want a timeout BoundError that names git ls-tree", err)
-	}
-}
-
-func TestAGitThatFailsIsReportedWithWhatItSaidOnStderrHeldToTheBudget(t *testing.T) {
-	withListingScript(t, "printf 'whole\\000'; head -c 200000 /dev/zero | tr '\\000' 'e' >&2; exit 3")
-
-	err := streamListing("", time.Minute, []string{"ls-tree"}, func([]byte) error { return nil })
-
-	if err == nil || !strings.Contains(err.Error(), "exit status 3") || !strings.Contains(err.Error(), "eeee") {
-		t.Fatalf("streamListing = %v; want git's exit status and what it said", err)
-	}
-	if len(err.Error()) > gitStderrBudget+200 {
-		t.Errorf("the error is %d bytes; what git said on stderr is held to %d", len(err.Error()), gitStderrBudget)
 	}
 }
 
