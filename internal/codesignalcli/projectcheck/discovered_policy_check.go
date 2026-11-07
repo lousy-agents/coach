@@ -29,7 +29,7 @@ func gapForDiscoveredPolicyOnDisk(dir, revision, policyPath string, missing proj
 	if err != nil {
 		return projectreadiness.Check{}, nil, err
 	}
-	if status != nil && status.Missing == projectconfig.MissingAbsent {
+	if status != nil && status.Missing == projectconfig.MissingAbsent && status.PolicyCause != projectreadiness.CauseInSubmodule {
 		return missing, nil, nil
 	}
 	return explicitPolicyCheck(status, dir, revision, policyPath)

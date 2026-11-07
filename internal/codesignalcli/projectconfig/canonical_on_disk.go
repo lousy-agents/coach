@@ -48,7 +48,9 @@ var onDiskReasons = map[projectreadiness.PolicyCause]string{
 // text output of that command prints it, so that a reader or a program matching either finds the same word.
 func UnusableCanonicalMessage(refusal *ConfigError) string {
 	reason, known := onDiskReasons[refusal.PolicyCause]
-	if !known {
+	if refusal.PolicyCause == projectreadiness.CauseInSubmodule {
+		reason = fmt.Sprintf("it lies inside the submodule %q, which this repository records as a single commit, so the file cannot be committed here", refusal.Blocker)
+	} else if !known {
 		reason = "the working tree cannot use it"
 	}
 	return fmt.Sprintf("%s is in the worktree but cannot be the policy (cause=%s): %s, so this scan did not read it.", CanonicalPath, refusal.PolicyCause, reason)
