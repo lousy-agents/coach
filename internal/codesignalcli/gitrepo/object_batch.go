@@ -21,12 +21,24 @@ type objectOutcome struct {
 	said       string
 }
 
+// largeObjectVisit is offered an object past the limit on one object, as a stream of size bytes in body, in
+// place of its content. It reports whether it took the object: one that read its bytes, however it used them.
+// An object it does not take is read past without being held, and is reported in the outcome. Whatever it has
+// not read of an object it took is read past as well.
+type largeObjectVisit func(oid string, size int64, body io.Reader) (taken bool, err error)
+
 // readObjects asks one `git cat-file --batch` for each object in oids, in order, and hands the content of
 // every object that is there to visit. An object past the limit on one object is not handed over and not held:
 // it is reported in the outcome, and the read goes on with the next. cat-file returns the stored bytes and
 // applies no filter, and with lazy fetching off (gitCommand) it says "missing" for an object a partial clone
 // has not got instead of fetching it.
 func readObjects(dir string, oids []string, budget snapshotBudget, visit func(oid string, content []byte) error) (outcome objectOutcome, err error) {
+	return readObjectsStreaming(dir, oids, budget, visit, nil)
+}
+
+// readObjectsStreaming is readObjects with a way to take an object past the limit on one object: visitLarge
+// is offered it as a stream, a chunk of it at a time, so that it is never held.
+func readObjectsStreaming(dir string, oids []string, budget snapshotBudget, visit func(oid string, content []byte) error, visitLarge largeObjectVisit) (outcome objectOutcome, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), budget.wall)
 	defer cancel()
 	cmd := commandContext(ctx, dir, "cat-file", "--batch")
@@ -50,12 +62,9 @@ func readObjects(dir string, oids []string, budget snapshotBudget, visit func(oi
 	}
 	go requestObjects(stdin, oids)
 
-	reader := bufio.NewReader(stdout)
+	stream := &objectStream{reader: bufio.NewReader(stdout), limit: budget.object, visit: visit, visitLarge: visitLarge}
 	for _, oid := range oids {
-		response, readErr := readObjectResponse(reader, oid, budget.object)
-		if readErr == nil && response.found && !response.tooLarge {
-			readErr = visit(oid, response.content)
-		}
+		response, readErr := stream.next(oid)
 		if readErr != nil {
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()

@@ -3,9 +3,9 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"os/exec"
-	"strconv"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -23,9 +23,29 @@ func (zeroReader) Read(p []byte) (int, error) {
 // commitBigBlob commits a file of size zero bytes at path. The object is made by git from a stream, so the
 // working tree never holds it, and git compresses it to a few hundred KiB.
 func commitBigBlob(repo, path string, size int64) {
+	commitStream(repo, path, io.LimitReader(zeroReader{}, size))
+}
+
+// repeatedByte is an endless stream of one byte.
+type repeatedByte byte
+
+func (b repeatedByte) Read(p []byte) (int, error) {
+	return copy(p, bytes.Repeat([]byte{byte(b)}, len(p))), nil
+}
+
+// commitBigGoSource commits a Go source of size bytes at path: a package clause and one comment line. It is a
+// file go list can parse, which a file of zero bytes is not.
+func commitBigGoSource(repo, path, pkg string, size int64) {
+	header := "package " + pkg + "\n\n// "
+	comment := io.LimitReader(repeatedByte('x'), size-int64(len(header))-1)
+	commitStream(repo, path, io.MultiReader(strings.NewReader(header), comment, strings.NewReader("\n")))
+}
+
+// commitStream commits the bytes of stream at path. git makes the object from the stream.
+func commitStream(repo, path string, stream io.Reader) {
 	hash := exec.Command("git", "hash-object", "-w", "--stdin")
 	hash.Dir = repo
-	hash.Stdin = io.LimitReader(zeroReader{}, size)
+	hash.Stdin = stream
 	output, err := hash.Output()
 	Expect(err).NotTo(HaveOccurred(), "git hash-object")
 	oid := strings.TrimSpace(string(output))
@@ -35,7 +55,7 @@ func commitBigBlob(repo, path string, size int64) {
 	combined, err := add.CombinedOutput()
 	Expect(err).NotTo(HaveOccurred(), "git update-index: %s", combined)
 
-	commit := exec.Command("git", "commit", "-m", "commit "+path+" of "+strconv.FormatInt(size, 10)+" bytes")
+	commit := exec.Command("git", "commit", "-m", "commit "+path)
 	commit.Dir = repo
 	commit.Env = commitEnv
 	combined, err = commit.CombinedOutput()

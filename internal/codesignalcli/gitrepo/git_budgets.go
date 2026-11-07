@@ -48,12 +48,16 @@ const (
 //     records a second (a tree of 300000 files, a 41 MB listing, in 0.23 s), so it is room for a listing of
 //     twenty gigabytes, which is tens of millions of files, and a git that has not finished by then is not
 //     listing.
-//   - snapshotObjectBytes holds one object, which is what the scan keeps in memory: each object is written to
-//     disk before the next is read. 32 MiB is the limit of every other read of one file (the show row,
-//     revisionfs). The analyzers refuse source past 2 MiB and a policy past 1 MiB, so no object past it is
-//     one the scan analyzes; it is read past without being held, and its paths get a zero-length file.
+//   - snapshotObjectBytes holds one object in memory: an object within it is held, and written to disk before
+//     the next is read. 32 MiB is the limit of every other read of one file (the show row, revisionfs). An
+//     object past it is never held. When a path that names it is a file an analyzer reads (a source, a Go
+//     module file, JSON), it is written to disk a chunk at a time and in full, because `go list` parses the
+//     file before any analyzer refuses it: the analyzers refuse source past 2 MiB and a policy past 1 MiB, but
+//     an empty file in its place fails `go list` with a parse error of its own ("expected 'package', found
+//     'EOF'"), where v0.11.0 went on and the analyzer named the file too large. Any other object is read past
+//     without being held, and its paths get a zero-length file.
 //   - snapshotTotalBytes holds what the snapshot writes to the temporary directory, counting a blob once for
-//     every path that names it. The per-object limit alone leaves the disk to the repository: a tree of
+//     every path that names it, whether it is held or read to disk in chunks. The per-object limit alone leaves the disk to the repository: a tree of
 //     many objects each under it, or one blob named by many paths, writes as much as it names. 4 GiB is
 //     128 objects at the limit and is a bound on a disk, not on memory. Past it, the files the analyzers
 //     read are still written (they are written first) and the others become zero-length files; the

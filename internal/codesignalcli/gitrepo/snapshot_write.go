@@ -9,10 +9,12 @@ import (
 // through one os.Root, so a tree that names a path outside dir, or through a link, is an error and not a
 // file written elsewhere.
 //
-// A blob past the limit on one object is not held, and a blob that would pass the total the snapshot may
-// write is not written; either one is a zero-length file at each of its paths, so the tree keeps its shape
-// and a //go:embed pattern still finds the file. The files the scan reads are written first, so the total
-// is spent on them: it fails the snapshot only when those alone pass it.
+// A blob past the limit on one object is not held. When a path that names it is a file the scan reads, it is
+// written to disk a chunk at a time and in full, since go list parses it; otherwise it is a zero-length file
+// at each of its paths, so the tree keeps its shape and a //go:embed pattern still finds the file. A blob that
+// would pass the total the snapshot may write is not written either way: a zero-length file for a file no
+// scan reads, and a refusal for one it does. The files the scan reads are written first, so the total is
+// spent on them: it fails the snapshot only when those alone pass it.
 func writeSnapshot(repositoryRoot, dir string, entries []snapshotEntry) error {
 	return writeSnapshotWithin(repositoryRoot, dir, entries, snapshotTotal)
 }
@@ -31,7 +33,7 @@ func writeSnapshotWithin(repositoryRoot, dir string, entries []snapshotEntry, to
 	}
 	order, byObject := groupByObject(neededFirst(blobs))
 	writer := &snapshotWriter{root: root, byObject: byObject, total: total}
-	outcome, err := readObjects(repositoryRoot, order, defaultSnapshotBudget, writer.write)
+	outcome, err := readObjectsStreaming(repositoryRoot, order, defaultSnapshotBudget, writer.write, writer.writeLarge)
 	if err != nil {
 		return err
 	}
