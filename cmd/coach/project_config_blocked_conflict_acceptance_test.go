@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -17,10 +16,9 @@ const (
 	moveStep         = "move the file that blocks the path, then "
 )
 
-var (
-	printedCheckout = regexp.MustCompile(`git checkout --(merge|ours|theirs) -- ':\(top,literal\)p/policy\.json'`)
-	printedRemoval  = regexp.MustCompile(`git rm -- ':\(top,literal\)p/policy\.json'`)
-)
+// theStepsThatWriteThePath are the two ways the advice words the step that brings the conflicted file back: with the
+// conflict markers git makes from both sides, or keeping the version of the one side that still has it.
+var theStepsThatWriteThePath = []string{`bring back "p/policy.json" with the conflict markers`, `keep the version of "p/policy.json" that `}
 
 // aConflictedPolicyBehindAFile merges a branch into one that changed the same policy so that its index entry is
 // unmerged, and then leaves an untracked regular file where the policy's directory belongs. kind is how the sides
@@ -59,21 +57,37 @@ func copyOf(repo string) string {
 	return destination
 }
 
-// Every command that brings the conflicted file back is a pathspec checkout, which git forces, and git unlinks the
-// untracked file that stands where the policy's directory belongs to make the directory. The message already says
-// to move that file; the command must not be offered ahead of the move.
-func expectEveryCheckoutBehindTheMove(message string) {
+// Bringing the conflicted file back is forced by git, and git unlinks the untracked file that stands where the policy's
+// directory belongs to make the directory. The message says to move that file; the step that writes the path must not
+// be described ahead of the move, and no command is printed for it.
+func expectEveryStepBehindTheMove(message string) {
 	GinkgoHelper()
-	found := printedCheckout.FindAllStringIndex(message, -1)
-	for _, at := range found {
-		before := message[max(0, at[0]-200):at[0]]
-		Expect(before).To(MatchRegexp(regexp.QuoteMeta(moveStep)+`[^;]*$`), "a checkout offered before the file in the way is moved:\n%s", message)
+	expectNoRunnableCommand(message)
+	for _, step := range theStepsThatWriteThePath {
+		for _, at := range offsetsOf(message, step) {
+			before := message[max(0, at-len(moveStep)):at]
+			Expect(before).To(Equal(moveStep), "the step %q is described before the file in the way is moved:\n%s", step, message)
+		}
 	}
 }
 
+// offsetsOf are the offsets of every occurrence of part in text.
+func offsetsOf(text, part string) []int {
+	var offsets []int
+	for from := 0; from < len(text); {
+		at := strings.Index(text[from:], part)
+		if at < 0 {
+			break
+		}
+		offsets = append(offsets, from+at)
+		from += at + len(part)
+	}
+	return offsets
+}
+
 var _ = Describe("coach codesignal: advice for a conflicted policy does not delete the file in the way of its path", func() {
-	DescribeTable("a scan names the move before any checkout, and the checkout works once the file is moved",
-		func(kind string, wantsCheckout bool) {
+	DescribeTable("a scan names the move before the step that brings the file back, and the step works once the file is moved",
+		func(kind, flag string, offersTheDeletion bool) {
 			repo := aConflictedPolicyBehindAFile(kind)
 
 			stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, "codesignal", "--baseline", "--project-config", conflictedPolicy, "--no-interactive")
@@ -82,47 +96,48 @@ var _ = Describe("coach codesignal: advice for a conflicted policy does not dele
 			message := string(stderr)
 			Expect(message).To(ContainSubstring("project_config_missing"))
 			Expect(message).To(ContainSubstring("a parent path component is not a directory"))
-			expectEveryCheckoutBehindTheMove(message)
-			checkout := printedCheckout.FindString(message)
-			Expect(checkout != "").To(Equal(wantsCheckout), "stderr:\n%s", message)
+			expectEveryStepBehindTheMove(message)
+			Expect(message).To(ContainSubstring(moveStep), "the message says to move the file that blocks the path:\n%s", message)
 
-			if checkout != "" {
-				moved := copyOf(repo)
-				output, code := runInShell(moved, "mv p p.moved && "+checkout)
-				Expect(code).To(Equal(0), "the checkout after the move: %s", output)
-				Expect(os.ReadFile(filepath.Join(moved, "p", "policy.json"))).NotTo(BeEmpty())
-				Expect(os.ReadFile(filepath.Join(moved, "p.moved"))).To(Equal([]byte(theUsersFile)), "the file in the way was moved, not lost")
+			bringBack := []string{"checkout", flag, "--", ":(top,literal)" + conflictedPolicy}
+			moved := copyOf(repo)
+			Expect(os.Rename(filepath.Join(moved, "p"), filepath.Join(moved, "p.moved"))).To(Succeed(), "moving the file that blocks the path, as the message says")
+			Expect(os.ReadFile(filepath.Join(moved, "p.moved"))).To(Equal([]byte(theUsersFile)), "the file in the way was moved, not lost")
+			gitIn(moved, bringBack...)
+			Expect(os.ReadFile(filepath.Join(moved, "p", "policy.json"))).NotTo(BeEmpty(), "bringing the file back after the move recreates it")
 
-				careless := copyOf(repo)
-				output, code = runInShell(careless, checkout)
-				Expect(code).To(Equal(0), "git forces the pathspec checkout: %s", output)
-				Expect(filepath.Join(careless, "p.moved")).NotTo(BeAnExistingFile())
-				Expect(os.ReadFile(filepath.Join(careless, "p", "policy.json"))).NotTo(BeEmpty(), "without the move, the checkout made the directory in place of the user's file: this is why the move comes first")
-			}
-			removal := printedRemoval.FindString(message)
-			if removal != "" {
-				unmoved := copyOf(repo)
-				output, code := runInShell(unmoved, removal)
-				Expect(code).To(Equal(0), "%s", output)
-				Expect(os.ReadFile(filepath.Join(unmoved, "p"))).To(Equal([]byte(theUsersFile)), "accepting the deletion leaves the file in the way alone")
-			}
+			careless := copyOf(repo)
+			gitIn(careless, bringBack...)
+			Expect(filepath.Join(careless, "p.moved")).NotTo(BeAnExistingFile())
+			Expect(os.ReadFile(filepath.Join(careless, "p", "policy.json"))).NotTo(BeEmpty(), "without the move, the checkout made the directory in place of the user's file: this is why the move comes first")
+
+			Expect(strings.Contains(message, `accept the deletion by recording "p/policy.json" as deleted and committing`)).To(Equal(offersTheDeletion), "stderr:\n%s", message)
 		},
-		Entry("both sides changed it", "UU", true),
-		Entry("we changed it and they deleted it", "UD", true),
-		Entry("we deleted it and they changed it", "DU", true),
+		Entry("both sides changed it", "UU", "--merge", false),
+		Entry("we changed it and they deleted it", "UD", "--ours", true),
+		Entry("we deleted it and they changed it", "DU", "--theirs", true),
 	)
 
-	It("is described by the README: the checkout is behind the step that moves the file", func() {
-		Expect(readmeBullet("A path under a regular file")).To(ContainSubstring("is named behind the step that moves the file"))
+	It("accepts the deletion without moving the file in the way, as the message says", func() {
+		repo := aConflictedPolicyBehindAFile("UD")
+
+		gitIn(repo, "rm", "-q", "--", ":(top,literal)"+conflictedPolicy)
+
+		Expect(os.ReadFile(filepath.Join(repo, "p"))).To(Equal([]byte(theUsersFile)), "accepting the deletion leaves the file in the way alone")
+		Expect(gitIn(repo, "ls-files", "--unmerged")).To(BeEmpty())
 	})
 
-	It("--check-project prints no checkout for it", func() {
+	It("is described by the README: the step is described behind the step that moves the file", func() {
+		Expect(readmeBullet("A path under a regular file")).To(ContainSubstring("is described behind the step that moves the file"))
+	})
+
+	It("--check-project prints no command for it", func() {
 		repo := aConflictedPolicyBehindAFile("UU")
 
 		stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, pathWithoutNode(), "--baseline", "--check-project", "--project-language", "typescript", "--project-config", conflictedPolicy)
 
 		Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 		Expect(string(stdout)).To(ContainSubstring("policy_missing cause=merge_conflict"))
-		Expect(strings.Contains(string(stdout), "git checkout")).To(BeFalse(), "stdout:\n%s", stdout)
+		expectNoRunnableCommand(string(stdout))
 	})
 })

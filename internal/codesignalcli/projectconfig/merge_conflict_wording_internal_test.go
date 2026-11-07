@@ -14,35 +14,55 @@ var (
 	neitherSide = conflictSides{}
 )
 
+const conflictedFile = `"cfg/p.json"`
+
+// unprintedFile is how the advice refers to a file whose name has a character a terminal would act on.
+const unprintedFile = "the conflicted file (the name has a character that is not printed here)"
+
+func acceptingTheDeletionOf(file string) string {
+	return "accept the deletion by recording " + file + " as deleted and committing"
+}
+
 // A policy in a merge conflict is missing from disk (that is the state the message describes), so there is no file
-// to edit, and git add on a path that is not there records a deletion and drops the other side. The message
-// brings the file back with its conflict markers first.
+// to edit, and marking the path resolved while it is not there records a deletion and drops the other side. The
+// message says to bring the file back with its conflict markers first, and describes each step in words.
 func TestTheMergeConflictOffersBringTheConflictedFileBackBeforeAskingForItToBeResolved(t *testing.T) {
+	const advice = "bring back " + conflictedFile + " with the conflict markers git makes from the two sides, resolve the conflict in it, mark it resolved, and commit"
 	offers := map[string]restoreOffer{
 		"over a committed policy":      mergeConflictOffer("cfg/p.json", bothSides, false),
 		"for a policy nothing commits": unmergedNotCommittedOffer("cfg/p.json", bothSides, false),
 	}
 	for name, offer := range offers {
-		t.Run(name, func(t *testing.T) { requireTheFileIsBroughtBack(t, offer) })
+		t.Run(name, func(t *testing.T) { requireTheAdviceThenRunAgain(t, offer, advice) })
 	}
 }
 
-func requireTheFileIsBroughtBack(t *testing.T, offer restoreOffer) {
+// requireTheAdviceThenRunAgain holds the whole text after the first sentence: the advice, then the instruction to run
+// again, and nothing else in between, so no command rides along with the words.
+func requireTheAdviceThenRunAgain(t *testing.T, offer restoreOffer, advice string) {
 	t.Helper()
-	const command = "git checkout --merge -- ':(top,literal)cfg/p.json'"
-	if !strings.Contains(offer.text, command) || !strings.Contains(offer.text, "resolve the conflict markers in it, and git add it") {
-		t.Errorf("offer %q; want the command %q and then the resolution", offer.text, command)
-	}
-	if strings.Contains(offer.text, "edit the file") || strings.Contains(offer.text, "git status") {
-		t.Errorf("offer %q; the file is gone, so it cannot be edited, and git status resolves nothing", offer.text)
+	if !strings.HasSuffix(offer.text, "; "+advice+", then run again") {
+		t.Errorf("offer %q; want it to end with %q and the instruction to run again", offer.text, advice)
 	}
 }
 
-func TestAConflictedNameThatCannotBePrintedGetsTheStepWithoutTheCommand(t *testing.T) {
+func TestAConflictedNameThatCannotBePrintedGetsTheStepWithoutTheName(t *testing.T) {
 	offer := mergeConflictOffer("cfg/p\x1b.json", bothSides, false)
 
-	if strings.Contains(offer.text, "\x1b") || !strings.Contains(offer.text, "git checkout --merge (the name has a character that is not printed here)") {
-		t.Errorf("offer %q; want the step named and the unprintable name left out", offer.text)
+	requireTheAdviceThenRunAgain(t, offer, "bring back "+unprintedFile+" with the conflict markers git makes from the two sides, resolve the conflict in it, mark it resolved, and commit")
+	if strings.Contains(offer.text, "\x1b") || strings.Contains(offer.text, "p.json") {
+		t.Errorf("offer %q; want the unprintable name left out", offer.text)
+	}
+}
+
+// A path the policy check refuses names nothing the scan could use, so it is left out as well, though every character in
+// it can be shown.
+func TestAConflictedNameThatThePolicyCheckRefusesGetsTheStepWithoutTheName(t *testing.T) {
+	offer := mergeConflictOffer("../outside.json", bothSides, false)
+
+	requireTheAdviceThenRunAgain(t, offer, "bring back "+unprintedFile+" with the conflict markers git makes from the two sides, resolve the conflict in it, mark it resolved, and commit")
+	if strings.Contains(offer.text, "outside.json") {
+		t.Errorf("offer %q; want the refused name left out", offer.text)
 	}
 }
 
@@ -54,14 +74,17 @@ type oneSideCase struct {
 }
 
 func oneSideCases() []oneSideCase {
-	const keepAndDelete = ", or accept the deletion with git rm -- ':(top,literal)cfg/p.json'"
+	keepOf := func(side string) string {
+		return "only one side of the conflict still has the file, so there are no conflict markers; keep the version of " + conflictedFile +
+			" that " + side + " holds by bringing it back, mark it resolved, and commit, or " + acceptingTheDeletionOf(conflictedFile)
+	}
 	sidesAndAdvice := map[string]struct {
 		sides conflictSides
 		want  string
 	}{
-		"only the merged side holds it":  {onlyTheirs, "git checkout --theirs -- ':(top,literal)cfg/p.json' and git add it" + keepAndDelete},
-		"only the current side holds it": {onlyOurs, "git checkout --ours -- ':(top,literal)cfg/p.json' and git add it" + keepAndDelete},
-		"neither side holds it":          {neitherSide, "both sides deleted it; accept the deletion with git rm -- ':(top,literal)cfg/p.json'"},
+		"only the merged side holds it":  {onlyTheirs, keepOf("the side being merged")},
+		"only the current side holds it": {onlyOurs, keepOf("the side being merged into")},
+		"neither side holds it":          {neitherSide, "both sides deleted it; " + acceptingTheDeletionOf(conflictedFile)},
 	}
 	var cases []oneSideCase
 	for name, c := range sidesAndAdvice {
@@ -72,31 +95,30 @@ func oneSideCases() []oneSideCase {
 	return cases
 }
 
-// git checkout --merge makes conflict markers from the versions of both sides and fails when one has none, and then
-// there is nothing to resolve. The advice for a file one side deleted keeps the version that is left or deletes the
-// file, and names the checkout flag of the side that still has it.
-func TestAFileOneSideDeletedGetsTheCommandsThatWorkAndNotCheckoutMerge(t *testing.T) {
+// Conflict markers are made from the versions of both sides, and there are none to make when one has no version, and
+// then there is nothing to resolve. The advice for a file one side deleted keeps the version that is left or accepts
+// the deletion, and names the side that still has it.
+func TestAFileOneSideDeletedGetsTheStepsThatWorkAndNoConflictMarkers(t *testing.T) {
 	for _, c := range oneSideCases() {
-		t.Run(c.name, func(t *testing.T) { requireTheAdviceAndNotCheckoutMerge(t, c) })
+		t.Run(c.name, func(t *testing.T) { requireTheAdviceWithoutConflictMarkers(t, c) })
 	}
 }
 
-func requireTheAdviceAndNotCheckoutMerge(t *testing.T, c oneSideCase) {
+func requireTheAdviceWithoutConflictMarkers(t *testing.T, c oneSideCase) {
 	t.Helper()
-	if !strings.Contains(c.offer.text, c.want) {
-		t.Errorf("offer %q; want %q", c.offer.text, c.want)
-	}
-	if strings.Contains(c.offer.text, "checkout --merge") {
-		t.Errorf("offer %q; git checkout --merge fails for want of the other version", c.offer.text)
+	requireTheAdviceThenRunAgain(t, c.offer, c.want)
+	if strings.Contains(c.offer.text, "with the conflict markers") {
+		t.Errorf("offer %q; there are no conflict markers to make from one version", c.offer.text)
 	}
 }
 
 func TestAFileOneSideDeletedWhoseNameCannotBePrintedGetsTheStepsWithoutTheName(t *testing.T) {
 	offer := mergeConflictOffer("cfg/p\x1b.json", onlyTheirs, false)
 
-	const unprinted = " (the name has a character that is not printed here)"
-	if strings.Contains(offer.text, "\x1b") || !strings.Contains(offer.text, "git checkout --theirs"+unprinted+" and git add it, or accept the deletion with git rm"+unprinted) {
-		t.Errorf("offer %q; want the steps named and the unprintable name left out", offer.text)
+	requireTheAdviceThenRunAgain(t, offer, "only one side of the conflict still has the file, so there are no conflict markers; keep the version of "+unprintedFile+
+		" that the side being merged holds by bringing it back, mark it resolved, and commit, or "+acceptingTheDeletionOf(unprintedFile))
+	if strings.Contains(offer.text, "\x1b") || strings.Contains(offer.text, "p.json") {
+		t.Errorf("offer %q; want the unprintable name left out", offer.text)
 	}
 }
 
