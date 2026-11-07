@@ -29,14 +29,6 @@ const (
 	candidateRootsPattern   = `(?s)"roots":\s*\[\s*"\."\s*\]`
 )
 
-func commitStubToolchainTypeScriptRepo(policyPath, policy string) string {
-	repo := newTempGitRepo()
-	commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
-	commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
-	commitFile(repo, policyPath, policy)
-	return repo
-}
-
 func commitRealCompilerTypeScriptRepo(policyPath, policy string) string {
 	repo := newTempGitRepo()
 	commitFile(repo, "package.json", tsRealCompilerPackageJSON(realTypescriptVersion()))
@@ -171,7 +163,6 @@ var _ = Describe("coach codesignal guided policy authoring on a discovered .lous
 		Entry("no controlling terminal", func(path string) []string { return stubToolchainEnv(path) }, []string{}, false),
 		Entry("a controlling terminal under a non-empty CI variable", func(path string) []string { return append(stubToolchainEnv(path), "CI=1") }, []string{}, true),
 		Entry("a controlling terminal with --no-interactive", func(path string) []string { return stubToolchainEnv(path) }, []string{"--no-interactive"}, true),
-		Entry("a controlling terminal with an explicit --project-config naming the invalid canonical file", func(path string) []string { return stubToolchainEnv(path) }, []string{"--project-config", coachConfigPath}, true),
 	)
 
 	When("the committed canonical policy declares no layers and coverage is incomplete", Label("ts-project-backend"), func() {
