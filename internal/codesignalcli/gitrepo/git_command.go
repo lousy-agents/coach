@@ -27,6 +27,11 @@ import (
 // Every spawn goes through here, so a runner added later cannot start git without them.
 func gitCommand(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "git", gitArgs(dir, args...)...)
-	cmd.Env = append(withoutAmbientGitSettings(os.Environ()), "GIT_NO_LAZY_FETCH=1", "GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1")
+	cmd.Env = append(append(withoutAmbientGitSettings(os.Environ()), lazyFetchInstruction...), "GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1")
 	return cmd
 }
+
+// lazyFetchInstruction is the setting that tells git not to fetch an object a partial clone lacks. A test sets it to
+// nothing to run the real git as one before 2.44 runs it, which does not read the setting, so that what such a git
+// does with a missing object is observed and not assumed.
+var lazyFetchInstruction = []string{"GIT_NO_LAZY_FETCH=1"}

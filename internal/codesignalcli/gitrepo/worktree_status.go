@@ -27,7 +27,12 @@ var runWorktreeStatusGit = BoundedRunner(maxWorktreeStatusBytes, maxWorktreeStat
 // `git status --porcelain=v1 --untracked-files=all -z`.
 func WorktreeStatus(dir string) ([]WorktreeEntry, error) {
 	supported, _ := noLazyFetchSupported(runWorktreeStatusGit, dir)
-	output, err := runWorktreeStatusGit(dir, worktreeStatusArguments(supported)...)
+	return worktreeStatusOf(dir, supported)
+}
+
+// worktreeStatusOf is the status for a git that can, or cannot, be told not to fetch.
+func worktreeStatusOf(dir string, canBeToldNotToFetch bool) ([]WorktreeEntry, error) {
+	output, err := runWorktreeStatusGit(dir, worktreeStatusArguments(canBeToldNotToFetch)...)
 	if err != nil {
 		return nil, err
 	}
