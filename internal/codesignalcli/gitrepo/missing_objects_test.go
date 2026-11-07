@@ -74,13 +74,25 @@ func TestRevisionsReadAreHEADAndTheMergeBaseOfTheBase(t *testing.T) {
 	gitfixture.Git(t, repository, "checkout", "--quiet", "side")
 	gitfixture.CommitFile(t, repository, "c.go", "package a\n")
 
-	baseline, baselineErr := revisionsRead(RunBytes, repository, "")
-	diff, diffErr := revisionsRead(RunBytes, repository, trunk)
+	baseline := revisionsRead(RunBytes, repository, "")
+	diff := revisionsRead(RunBytes, repository, trunk)
 
-	if baselineErr != nil || len(baseline) != 1 || baseline[0].name != "HEAD" {
-		t.Errorf("revisionsRead(baseline) = %+v, %v; want HEAD alone", baseline, baselineErr)
+	if len(baseline) != 1 || baseline[0].name != "HEAD" {
+		t.Errorf("revisionsRead(baseline) = %+v; want HEAD alone", baseline)
 	}
-	if diffErr != nil || len(diff) != 2 || diff[0].name != "HEAD" || diff[1].name != fork {
-		t.Errorf("revisionsRead(diff) = %+v, %v; want HEAD and the fork point %s", diff, diffErr, fork)
+	if len(diff) != 2 || diff[0].name != fork || diff[1].name != "HEAD" {
+		t.Errorf("revisionsRead(diff) = %+v; want the fork point %s, then HEAD", diff, fork)
+	}
+}
+
+// A base that has no merge base with HEAD is a failure the scan ends on, so only HEAD is read: the same decision
+// for both branches of the guard, which ask this.
+func TestABaseWithNoMergeBaseLeavesHEADAloneToBeRead(t *testing.T) {
+	repository := fakeRepository{mergeBaseErr: exitStatusOne}
+
+	got := revisionsRead(repository.run, "repo", "other")
+
+	if len(got) != 1 || got[0].name != "HEAD" {
+		t.Errorf("revisionsRead = %+v; want HEAD alone", got)
 	}
 }

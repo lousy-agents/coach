@@ -2,6 +2,7 @@ package gitrepo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -64,8 +65,12 @@ func finishGitBoundedRead(stdout, stderr gitPipeResult, waitErr error, ctx conte
 }
 
 func gitWaitError(waitErr error, stderr []byte) error {
-	if len(stderr) > 0 {
-		return fmt.Errorf("%s: %s", waitErr, TerminalSafe(strings.TrimSpace(string(stderr))))
+	if len(stderr) == 0 {
+		return waitErr
 	}
-	return waitErr
+	message := fmt.Sprintf("%s: %s", waitErr, TerminalSafe(strings.TrimSpace(string(stderr))))
+	if gitRanAndFailed(waitErr) {
+		return &gitExitFailure{message: message}
+	}
+	return errors.New(message)
 }

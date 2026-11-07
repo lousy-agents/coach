@@ -20,18 +20,37 @@ var (
 	objectID          = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
 )
 
-// revisionsRead are the commits whose trees the scan reads: HEAD, and for a diff the merge base of base
-// and HEAD, which is the other side of the changed files.
-func revisionsRead(run Runner, dir, base string) ([]readRevision, error) {
+// revisionsRead are the commits whose trees the scan reads, in the order a fetch lists them: for a diff the merge
+// base of base and HEAD, which is the other side of the changed files, then HEAD. Both branches of the guard ask
+// this, so that they cannot disagree about what the scan reads.
+func revisionsRead(run Runner, dir, base string) []readRevision {
 	head := readRevision{name: "HEAD", label: "HEAD"}
+	if mergeBase, found := mergeBaseRevisionOf(run, dir, base); found {
+		return []readRevision{mergeBase, head}
+	}
+	return []readRevision{head}
+}
+
+// mergeBaseRevisionOf is the merge base of base and HEAD as a revision the scan reads. A baseline has no base,
+// and a base that has no merge base is a failure the scan ends on and words itself, so neither has a revision
+// to ask about.
+func mergeBaseRevisionOf(run Runner, dir, base string) (readRevision, bool) {
 	if base == "" {
-		return []readRevision{head}, nil
+		return readRevision{}, false
 	}
 	mergeBase, err := mergeBaseOf(run, dir, base)
 	if err != nil {
-		return nil, err
+		return readRevision{}, false
 	}
-	return []readRevision{head, mergeBaseRevision(base, mergeBase)}, nil
+	return mergeBaseRevision(base, mergeBase), true
+}
+
+func revisionNames(revisions []readRevision) []string {
+	names := make([]string, len(revisions))
+	for i, revision := range revisions {
+		names[i] = revision.name
+	}
+	return names
 }
 
 // mergeBaseOf is the object id of the merge base of base and HEAD.

@@ -64,9 +64,9 @@ func TestRefuseMissingObjectsProbesTheTreesTheScanReads(t *testing.T) {
 		want []string
 	}{
 		{"a baseline reads HEAD", "", []string{"rev-list --objects --missing=print --no-walk --quiet HEAD"}},
-		{"a diff reads HEAD and the merge base", "origin/main", []string{
-			"rev-list --objects --missing=print --no-walk --quiet HEAD",
+		{"a diff reads the merge base and HEAD", "origin/main", []string{
 			"rev-list --objects --missing=print --no-walk --quiet " + mergeBaseSHA,
+			"rev-list --objects --missing=print --no-walk --quiet HEAD",
 		}},
 	}
 	for _, c := range cases {

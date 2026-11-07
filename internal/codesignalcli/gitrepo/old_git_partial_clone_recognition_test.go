@@ -39,12 +39,24 @@ func TestAnOlderGitRefusesAPartialCloneWhosePromisorRemoteHasADotInItsName(t *te
 	}
 }
 
-func TestAnOlderGitRefusesWhenItCannotTellWhichObjectsAreMissing(t *testing.T) {
+// A base that does not resolve is a failure the scan ends on and words itself, so it is not a question the guard
+// cannot answer; HEAD, which the scan reads whatever the base, is still asked about.
+func TestAnOlderGitLeavesABaseThatDoesNotResolveToTheScan(t *testing.T) {
 	clone := filteredClone(t, twoCommitSource(t), true)
 
 	err := refuseWhenReadRevisionsLackObjects(RunBytes, clone, "no-such-ref", olderThanTheInstruction)
 
-	if !strings.Contains(refusalText(err), "could not tell whether this repository has the objects Coach reads") {
-		t.Errorf("RefuseMissingObjects = %v; want a refusal for want of an answer, not a read on a guess", err)
+	if err != nil {
+		t.Errorf("refuseWhenReadRevisionsLackObjects = %v; want nil, so that the scan says the base cannot be resolved", err)
+	}
+}
+
+func TestAnOlderGitStillRefusesWhatHEADLacksWhenTheBaseDoesNotResolve(t *testing.T) {
+	clone := filteredClone(t, twoCommitSource(t), false)
+
+	err := refuseWhenReadRevisionsLackObjects(RunBytes, clone, "no-such-ref", olderThanTheInstruction)
+
+	if !strings.Contains(refusalText(err), "HEAD has 2 objects that are not in it") {
+		t.Errorf("refuseWhenReadRevisionsLackObjects = %v; want HEAD's missing objects refused", err)
 	}
 }

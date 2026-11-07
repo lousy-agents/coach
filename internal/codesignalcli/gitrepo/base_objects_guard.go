@@ -11,14 +11,10 @@ import "fmt"
 // A base that has no merge base is left to the scan, which says so in its own words; once the merge base is
 // known, a question that cannot be answered is a refusal, because the scan would go on without the answer.
 func refuseWhenTheMergeBaseLacksObjects(run Runner, dir, base string) error {
-	if base == "" {
+	revision, found := mergeBaseRevisionOf(run, dir, base)
+	if !found {
 		return nil
 	}
-	mergeBase, err := mergeBaseOf(run, dir, base)
-	if err != nil {
-		return nil
-	}
-	revision := mergeBaseRevision(base, mergeBase)
 	missing, err := missingObjectsOf(run, dir, revision.name)
 	if err != nil {
 		return &OperationalError{Message: fmt.Sprintf("could not tell whether %s has the objects the changed files are compared with (%s), so the diff is not run: a file that cannot be compared is recorded as unreadable, and the run ends without having analyzed it", revision.label, TerminalSafe(err.Error())), Cause: err}
@@ -52,15 +48,7 @@ func refuseWhenHeadLacksTrees(run Runner, dir, base string) error {
 	return &OperationalError{Message: fmt.Sprintf("this repository is a partial clone, and HEAD has %s not in it, so its files cannot be listed, and Coach does not fetch objects%s", missing.phrase(), advice(FetchAdviceFor(run, dir, revisionsToFetch(run, dir, base)...)))}
 }
 
-// revisionsToFetch are HEAD and, for a diff whose merge base is known, the merge base. A base that has no merge
-// base is left to the scan, which says so in its own words.
+// revisionsToFetch are the revisions the scan reads, which one paste brings in together.
 func revisionsToFetch(run Runner, dir, base string) []string {
-	if base == "" {
-		return []string{"HEAD"}
-	}
-	mergeBase, err := mergeBaseOf(run, dir, base)
-	if err != nil {
-		return []string{"HEAD"}
-	}
-	return []string{mergeBase, "HEAD"}
+	return revisionNames(revisionsRead(run, dir, base))
 }
