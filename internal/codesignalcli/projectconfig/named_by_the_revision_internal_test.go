@@ -1,10 +1,14 @@
 package projectconfig
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
@@ -99,21 +103,33 @@ func commitDirectoryBehindAParentThatCannotBeSearched(t *testing.T, repo string)
 }
 
 // A question git cannot answer about what the revision commits is an operational failure, not a verdict: the
-// refusal of the disk is not reported in its place.
+// refusal of the disk is not reported in its place. All of git is the fake: it says where the repository is, fails
+// the tree question and fails the test on any other, so the failure returned is the one the question under test
+// made.
 func TestAFailedQuestionAboutWhatTheRevisionCommitsIsNotAVerdictAboutThePath(t *testing.T) {
-	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, "a.txt", "x")
+	repo := t.TempDir()
 	makeDirectory(t, repo)
-	failing := func(dir string, args ...string) ([]byte, error) {
-		if args[0] == "ls-tree" {
+	var unexpected []string
+	allOfGit := func(_ string, args ...string) ([]byte, error) {
+		switch {
+		case args[0] == "rev-parse" && slices.Contains(args, "--show-toplevel"):
+			return []byte(repo + "\n"), nil
+		case args[0] == "ls-tree":
 			return nil, errBoom
 		}
-		return runProjectConfigGit(dir, args...)
+		unexpected = append(unexpected, strings.Join(args, " "))
+		return nil, errNotAsked
 	}
 
-	status, err := ExplicitOnDiskStatus(failing, repo, "HEAD", "dir.json")
+	status, err := ExplicitOnDiskStatus(allOfGit, repo, "HEAD", "dir.json")
 
-	if err == nil {
-		t.Errorf("ExplicitOnDiskStatus = %+v, nil; want the failed question returned", status)
+	var operational *gitrepo.OperationalError
+	if !errors.As(err, &operational) || !errors.Is(operational.Cause, errBoom) {
+		t.Errorf("ExplicitOnDiskStatus = %+v, %v; want the operational error of the failed tree question", status, err)
+	}
+	if len(unexpected) != 0 {
+		t.Errorf("git was asked %q before the tree question failed; the fake answers only that one", unexpected)
 	}
 }
+
+var errNotAsked = errors.New("git was asked a question the fake does not answer")

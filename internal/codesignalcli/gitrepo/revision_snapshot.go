@@ -15,7 +15,13 @@ import (
 // tree with ls-tree and the objects with cat-file, neither of which converts anything, and it does not
 // depend on the version of git.
 func ExtractRevision(repositoryRoot, revision string) (string, error) {
-	listing, err := RunBytes(repositoryRoot, "ls-tree", "-r", "-z", "--full-tree", revision)
+	return extractRevision(RunBytes, repositoryRoot, revision)
+}
+
+// extractRevision is ExtractRevision with the git it lists the tree and words the way to fetch through run, so
+// that a test can make the listing fail without a repository.
+func extractRevision(run Runner, repositoryRoot, revision string) (string, error) {
+	listing, err := run(repositoryRoot, "ls-tree", "-r", "-z", "--full-tree", revision)
 	if err != nil {
 		return "", fmt.Errorf("reading source snapshot %q: %w", revision, err)
 	}
@@ -29,16 +35,16 @@ func ExtractRevision(repositoryRoot, revision string) (string, error) {
 	}
 	if err := writeSnapshot(repositoryRoot, dir, entries); err != nil {
 		os.RemoveAll(dir)
-		return "", fmt.Errorf("reading source snapshot %q: %w", revision, adviseOnMissingObjects(repositoryRoot, revision, err))
+		return "", fmt.Errorf("reading source snapshot %q: %w", revision, adviseOnMissingObjects(run, repositoryRoot, revision, err))
 	}
 	return dir, nil
 }
 
 // adviseOnMissingObjects adds the way to fetch to a snapshot that stopped at objects a partial clone lacks.
-func adviseOnMissingObjects(repositoryRoot, revision string, err error) error {
+func adviseOnMissingObjects(run Runner, repositoryRoot, revision string, err error) error {
 	var absent *ObjectsNotLocalError
 	if errors.As(err, &absent) {
-		absent.Advice = FetchAdvice(RunBytes, repositoryRoot, revision, "")
+		absent.Advice = FetchAdvice(run, repositoryRoot, revision, "")
 	}
 	return err
 }
