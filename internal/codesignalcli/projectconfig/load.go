@@ -12,7 +12,7 @@ import (
 
 // runProjectConfigGit is the Git seam used by Load. Tests may
 // replace it to exercise timeout and bound failures without hanging.
-var runProjectConfigGit = gitrepo.BoundedRunner(MaxBytes, MaxGitStderr, GitTimeout)
+var runProjectConfigGit = NewGitRunner()
 
 // LoadForReadiness reads and validates repoPath at revision
 // like Load, but keeps a git-read failure distinct from a

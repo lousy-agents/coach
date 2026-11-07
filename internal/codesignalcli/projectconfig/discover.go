@@ -40,6 +40,9 @@ func selectWhereNoBlobIsCommitted(dir, root, revision string) (Selection, error)
 		return Selection{Fatal: asDefaultPolicyError(refusal, CanonicalPath)}, nil
 	}
 	if renamed := WrongCaseAtRevision(runProjectConfigGit, dir, revision, CanonicalPath); renamed != nil {
+		if silence := GitSilence(renamed, "coach codesignal", CanonicalPath); silence != nil {
+			return Selection{}, silence
+		}
 		return Selection{Fatal: renamed}, nil
 	}
 	return selectLegacy(dir, root, revision)
