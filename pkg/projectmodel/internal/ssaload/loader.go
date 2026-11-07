@@ -40,16 +40,16 @@ func (Loader) Materialize(snapshot fs.FS) (string, func(), error) {
 }
 
 // moduleLoadConfig is how the packages of a module in a directory of committed bytes are loaded. The directory
-// is not trusted, so go neither stamps version control information, which runs git there, nor fetches and runs
-// a toolchain that a committed go.mod names. The caller's own GOTOOLCHAIN and GOFLAGS do not change either,
-// since a flag on the command line wins over GOFLAGS and the last value of GOTOOLCHAIN wins.
+// is not trusted, so go does not fetch and run a toolchain that a committed go.mod names, whatever the caller's
+// GOTOOLCHAIN says: the last value of a variable wins. go/packages already passes -buildvcs=false, so go
+// stamps no version control information, which would run git there; the acceptance spec for BuildGoCallGraph
+// pins that, so a release of go/packages that stopped would fail it.
 func moduleLoadConfig(ctx context.Context, moduleDir string) packages.Config {
 	return packages.Config{
-		Context:    ctx,
-		Dir:        moduleDir,
-		Mode:       packages.LoadSyntax,
-		BuildFlags: []string{"-buildvcs=false"},
-		Env:        append(os.Environ(), "GOTOOLCHAIN=local"),
+		Context: ctx,
+		Dir:     moduleDir,
+		Mode:    packages.LoadSyntax,
+		Env:     append(os.Environ(), "GOTOOLCHAIN=local"),
 	}
 }
 
