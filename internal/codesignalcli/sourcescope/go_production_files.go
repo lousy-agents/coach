@@ -18,7 +18,7 @@ func goProductionFiles(snapshotDir, repositoryRoot, invocationDir, buildTarget s
 	if err != nil {
 		return nil, err
 	}
-	output, err := runCommand(snapshotDir, "go", "list", "-deps", "-json", target)
+	output, err := runGoIn(snapshotDir, "list", "-buildvcs=false", "-deps", "-json", target)
 	if err != nil {
 		return nil, fmt.Errorf("determining Go production files for %q: %w", buildTarget, err)
 	}
