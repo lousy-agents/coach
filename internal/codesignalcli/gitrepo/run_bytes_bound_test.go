@@ -113,11 +113,11 @@ func TestEveryGitReadOnTheScanPathHasABudget(t *testing.T) {
 // The snapshot stream is not a RunBytes read, so its limits are constants the stream's own code takes; the
 // numbers are pinned here, with the table, so that a change is a decision.
 func TestTheSnapshotStreamHasAWallTimeAnObjectSizeAndATotal(t *testing.T) {
-	if SnapshotWallTime != 10*time.Minute || SnapshotObjectBytes != 512<<20 || SnapshotTotalBytes != 4<<30 {
-		t.Errorf("snapshot limits = %s, %d bytes per object, %d bytes in all; want 10m0s, %d, %d", SnapshotWallTime, int64(SnapshotObjectBytes), int64(SnapshotTotalBytes), int64(512<<20), int64(4<<30))
+	if snapshotWallTime != 10*time.Minute || snapshotObjectBytes != 32<<20 || snapshotTotalBytes != 4<<30 {
+		t.Errorf("snapshot limits = %s, %d bytes per object, %d bytes in all; want 10m0s, %d, %d", snapshotWallTime, int64(snapshotObjectBytes), int64(snapshotTotalBytes), int64(32<<20), int64(4<<30))
 	}
-	if defaultSnapshotBudget.wall != SnapshotWallTime || defaultSnapshotBudget.object != SnapshotObjectBytes {
-		t.Errorf("the default snapshot budget = %+v, want the wall time and object size above", defaultSnapshotBudget)
+	if defaultSnapshotBudget.wall != snapshotWallTime || defaultSnapshotBudget.object != snapshotObjectBytes || snapshotTotal != snapshotTotalBytes {
+		t.Errorf("the default snapshot budget = %+v and total %d, want the wall time, object size and total above", defaultSnapshotBudget, snapshotTotal)
 	}
 }
 

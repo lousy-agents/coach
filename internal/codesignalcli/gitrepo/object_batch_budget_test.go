@@ -23,17 +23,21 @@ func committedBlobs(t *testing.T, contents ...string) (repository string, oids [
 	return repository, oids
 }
 
-func TestReadObjectsRefusesAnObjectPastTheLimitBeforeReadingIt(t *testing.T) {
-	repository, oids := committedBlobs(t, strings.Repeat("x", 100))
-	var visited int
+// An object past the limit is read past without being held, and reported; the read goes on.
+func TestReadObjectsReadsPastAnObjectPastTheLimitAndGoesOn(t *testing.T) {
+	repository, oids := committedBlobs(t, strings.Repeat("x", 100), "small")
+	var visited []string
 
-	_, err := readObjects(repository, oids, snapshotBudget{wall: time.Minute, object: 50}, func(string, []byte) error {
-		visited++
+	outcome, err := readObjects(repository, oids, snapshotBudget{wall: time.Minute, object: 50}, func(oid string, content []byte) error {
+		visited = append(visited, string(content))
 		return nil
 	})
 
-	if err == nil || !strings.Contains(err.Error(), "50-byte") || visited != 0 {
-		t.Errorf("readObjects = %v after %d objects; want a refusal that names the 50-byte budget, with nothing read", err, visited)
+	if err != nil || len(outcome.tooLarge) != 1 || outcome.tooLarge[0] != oids[0] || len(outcome.missing) != 0 {
+		t.Errorf("readObjects = %+v, %v; want the 100-byte object reported as too large", outcome, err)
+	}
+	if len(visited) != 1 || visited[0] != "small" {
+		t.Errorf("visited %q; want only %q: the stream must stay in step after an object that is read past", visited, "small")
 	}
 }
 
@@ -43,13 +47,13 @@ func TestReadObjectsAppliesTheLimitToEachObjectAndNotToTheirSum(t *testing.T) {
 	repository, oids := committedBlobs(t, strings.Repeat("a", 50), strings.Repeat("b", 50), strings.Repeat("c", 50))
 	var visited int
 
-	missing, err := readObjects(repository, oids, snapshotBudget{wall: time.Minute, object: 50}, func(string, []byte) error {
+	outcome, err := readObjects(repository, oids, snapshotBudget{wall: time.Minute, object: 50}, func(string, []byte) error {
 		visited++
 		return nil
 	})
 
-	if err != nil || len(missing) != 0 || visited != 3 {
-		t.Errorf("readObjects = %v, %v after %d objects; want all three read: each is exactly at the limit", missing, err, visited)
+	if err != nil || len(outcome.missing) != 0 || len(outcome.tooLarge) != 0 || visited != 3 {
+		t.Errorf("readObjects = %+v, %v after %d objects; want all three read: each is exactly at the limit", outcome, err, visited)
 	}
 }
 

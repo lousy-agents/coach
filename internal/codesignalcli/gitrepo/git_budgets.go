@@ -38,26 +38,27 @@ const (
 // The snapshot of a revision is read as one stream (`git cat-file --batch`) that is started and fed by its
 // own code, so it does not go through RunBytes and has no row in defaultBudgetFor; these are its row.
 //
-//   - SnapshotWallTime holds the whole stream. 10 minutes is long for any repository this fits, and a git that
+//   - snapshotWallTime holds the whole stream. 10 minutes is long for any repository this fits, and a git that
 //     stops answering does not hold the scan past it.
-//   - SnapshotObjectBytes holds one object, which is what the scan keeps in memory: each object is written to
-//     disk before the next is read. 512 MiB is the working-set budget the report states for an analysis, so
-//     an object larger than that is larger than the scan reads anyway. An object past it is refused from its
-//     size alone, before any of it is read.
-//   - SnapshotTotalBytes holds what the snapshot writes to the temporary directory, counting a blob once for
-//     every path that names it. The per-object limit alone leaves the disk to the repository: a tree of many
-//     objects each under it, or one blob named by many paths, writes as much as it names. 4 GiB is eight
-//     times the working-set budget, above any repository whose whole tree is worth reading to scan its
-//     source, and it is a bound on a disk, not on memory.
+//   - snapshotObjectBytes holds one object, which is what the scan keeps in memory: each object is written to
+//     disk before the next is read. 32 MiB is the limit of every other read of one file (the show row,
+//     revisionfs). The analyzers refuse source past 2 MiB and a policy past 1 MiB, so no object past it is
+//     one the scan analyzes; it is read past without being held, and its paths get a zero-length file.
+//   - snapshotTotalBytes holds what the snapshot writes to the temporary directory, counting a blob once for
+//     every path that names it. The per-object limit alone leaves the disk to the repository: a tree of
+//     many objects each under it, or one blob named by many paths, writes as much as it names. 4 GiB is
+//     128 objects at the limit and is a bound on a disk, not on memory. Past it, the files the analyzers
+//     read are still written (they are written first) and the others become zero-length files; the
+//     snapshot fails only when the files the analyzers read pass it by themselves.
 const (
-	SnapshotWallTime    = 10 * time.Minute
-	SnapshotObjectBytes = 512 << 20
-	SnapshotTotalBytes  = 4 << 30
+	snapshotWallTime    = 10 * time.Minute
+	snapshotObjectBytes = 32 << 20
+	snapshotTotalBytes  = 4 << 30
 )
 
 // snapshotTotal is what writeSnapshot may write in all. It is a variable so that a test can hold a snapshot
 // to a small total; production code never assigns it.
-var snapshotTotal int64 = SnapshotTotalBytes
+var snapshotTotal int64 = snapshotTotalBytes
 
 // fileStreamBudget is what the --baseline reader (one long-lived `git cat-file --batch -Z` for the whole
 // run) may use: a wall time for one request, so that the analysis between two requests is not counted, and
@@ -81,7 +82,7 @@ type snapshotBudget struct {
 	object int64
 }
 
-var defaultSnapshotBudget = snapshotBudget{wall: SnapshotWallTime, object: SnapshotObjectBytes}
+var defaultSnapshotBudget = snapshotBudget{wall: snapshotWallTime, object: snapshotObjectBytes}
 
 // budgetFor is the budget of the git read that args name. It is a variable so that a test can hold a read
 // to a short one; production code never assigns it.
