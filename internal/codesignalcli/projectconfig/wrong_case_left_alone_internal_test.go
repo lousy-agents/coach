@@ -43,7 +43,7 @@ type leftAloneCase struct {
 func assertLeftAlone(t *testing.T, c leftAloneCase) {
 	t.Helper()
 	t.Run(c.name, func(t *testing.T) {
-		if got := wrongCaseOf(c.revision, readPath); got != nil {
+		if got := wrongCaseOf(c.revision, readPath, chosenByCoach); got != nil {
 			t.Errorf("refusal %v; want none", got)
 		}
 	})

@@ -40,7 +40,7 @@ func TestADiscoveredPolicyIsRefusedFromTheRevisionsTreeAlone(t *testing.T) {
 
 	refusal := WrongCaseAtRevision(git.run, "repo", "HEAD", readPath)
 
-	assertTheRefusalIs(t, refusal, oneSpellingMessage(".Lousy-Agents/Coach.json", readPath))
+	assertTheRefusalIs(t, refusal, oneSpellingMessage(".Lousy-Agents/Coach.json", readPath, shape{directory: true}))
 	for _, question := range git.asked {
 		if question != "ls-tree" {
 			t.Errorf("git was asked %v; want the revision's tree alone", git.asked)
@@ -69,7 +69,7 @@ func TestANamedPolicyIsRefusedFromTheRevisionsTreeBeforeTheDiskIsAsked(t *testin
 	if err != nil || status == nil {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want the refusal", status, err)
 	}
-	assertTheRefusalIs(t, status, oneSpellingMessage(".Lousy-Agents/Coach.json", readPath))
+	assertTheRefusalIs(t, status, oneSpellingMessage(".Lousy-Agents/Coach.json", readPath, shape{named: true, directory: true}))
 	if !status.FromWorkingTree {
 		t.Errorf("FromWorkingTree is false on %q; want true, so that the report rests on this verdict", status.Message)
 	}

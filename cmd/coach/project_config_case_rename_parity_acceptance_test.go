@@ -17,6 +17,10 @@ func moveWhatStandsThereAside(path string) string {
 	return fmt.Sprintf("If another file already exists at %q, move it aside first; with core.ignorecase set, git can overwrite it", path)
 }
 
+// aDirectoryInCase is the sentence that a rename of a directory in case only carries, because git cannot do it in one
+// step on a disk that folds case.
+const aDirectoryInCase = "A directory whose name changes only in case cannot be renamed in one step on a disk that folds case: rename it to another name first, then to the one you want."
+
 const (
 	readSpelling = ".lousy-agents/coach.json"
 	oneRename    = `make git record it as ".lousy-agents/coach.json" (rename it in the repository, or commit a rename you have staged)`
@@ -26,43 +30,58 @@ const (
 // What the analyzed revision commits decides whether a policy is in the wrong case, and nothing else does: not the
 // spelling a disk shows, not whether git ignores case, not what the index holds. So the refusal, its advice and its
 // cause are the same for a policy Coach finds, one the user names, and the project check, on any disk, and the advice is
-// told in words with no command to paste.
+// told in words with no command to paste. A policy the user names has one more way out, which Coach's own path does not:
+// to pass the spelling the revision commits.
 var _ = Describe("coach codesignal: a policy committed under other spellings than the one Coach reads", func() {
 	type refusal struct {
 		spellings []string
-		says      []string
+		// says is in the message of the policy Coach finds and of the one the user names alike; saysNot is in neither.
+		says, saysNot []string
+		// discovered and named are in one of them only.
+		discovered, named []string
 	}
 	rows := []TableEntry{
 		Entry("one other spelling", refusal{
 			spellings: []string{".Lousy-Agents/Coach.json"},
 			says: []string{
-				`the policy is committed as ".Lousy-Agents/Coach.json", but Coach reads ".lousy-agents/coach.json", so it is not read: ` + oneRename + `, then commit and run again`,
-				overwriting,
+				`the policy is committed as ".Lousy-Agents/Coach.json", but Coach reads ".lousy-agents/coach.json", so it is not read: `,
+				oneRename + `, then commit and run again. ` + aDirectoryInCase + ` ` + overwriting,
 			},
+			discovered: []string{`so it is not read: ` + oneRename},
+			named:      []string{`so it is not read: pass the committed spelling, ".Lousy-Agents/Coach.json", or ` + oneRename},
 		}),
 		Entry("only the file in another case", refusal{
-			spellings: []string{".lousy-agents/Coach.json"},
-			says:      []string{`the policy is committed as ".lousy-agents/Coach.json", but Coach reads`, oneRename, overwriting},
+			spellings:  []string{".lousy-agents/Coach.json"},
+			says:       []string{`the policy is committed as ".lousy-agents/Coach.json", but Coach reads`, oneRename + `, then commit and run again. ` + overwriting},
+			saysNot:    []string{aDirectoryInCase},
+			discovered: []string{`so it is not read: ` + oneRename},
+			named:      []string{`so it is not read: pass the committed spelling, ".lousy-agents/Coach.json", or ` + oneRename},
 		}),
 		Entry("only the directory in another case", refusal{
-			spellings: []string{".LOUSY-AGENTS/coach.json"},
-			says:      []string{`the policy is committed as ".LOUSY-AGENTS/coach.json", but Coach reads`, oneRename, overwriting},
+			spellings:  []string{".LOUSY-AGENTS/coach.json"},
+			says:       []string{`the policy is committed as ".LOUSY-AGENTS/coach.json", but Coach reads`, oneRename, aDirectoryInCase, overwriting},
+			discovered: []string{`so it is not read: ` + oneRename},
+			named:      []string{`so it is not read: pass the committed spelling, ".LOUSY-AGENTS/coach.json", or ` + oneRename},
 		}),
 		Entry("two other spellings", refusal{
 			spellings: []string{".LOUSY-AGENTS/coach.json", ".lousy-agents/Coach.json"},
 			says: []string{
-				`several spellings, ".LOUSY-AGENTS/coach.json", ".lousy-agents/Coach.json", and Coach reads ".lousy-agents/coach.json"`,
-				`To keep ".lousy-agents/Coach.json", ` + oneRename + `, delete ".LOUSY-AGENTS/coach.json" from the repository, then commit and run again`,
-				overwriting,
+				`several spellings, ".LOUSY-AGENTS/coach.json", ".lousy-agents/Coach.json", and Coach reads ".lousy-agents/coach.json": `,
+				`To keep ".lousy-agents/Coach.json", ` + oneRename + `, delete ".LOUSY-AGENTS/coach.json" from the repository, then commit and run again. ` + overwriting,
 			},
+			saysNot:    []string{aDirectoryInCase},
+			discovered: []string{`Coach reads ".lousy-agents/coach.json": keep one of them at that path and remove the others.`},
+			named:      []string{`Coach reads ".lousy-agents/coach.json": pass one of the committed spellings, or keep one of them at that path and remove the others.`},
 		}),
 		Entry("three other spellings", refusal{
 			spellings: []string{".LOUSY-AGENTS/coach.json", ".Lousy-Agents/COACH.JSON", ".lousy-agents/Coach.json"},
 			says: []string{
 				`".LOUSY-AGENTS/coach.json", ".Lousy-Agents/COACH.JSON", ".lousy-agents/Coach.json"`,
-				`To keep ".lousy-agents/Coach.json", ` + oneRename + `, delete ".LOUSY-AGENTS/coach.json", ".Lousy-Agents/COACH.JSON" from the repository, then commit and run again`,
-				overwriting,
+				`To keep ".lousy-agents/Coach.json", ` + oneRename + `, delete ".LOUSY-AGENTS/coach.json", ".Lousy-Agents/COACH.JSON" from the repository, then commit and run again. ` + overwriting,
 			},
+			saysNot:    []string{aDirectoryInCase},
+			discovered: []string{`keep one of them at that path and remove the others.`},
+			named:      []string{`pass one of the committed spellings, or keep one of them at that path and remove the others.`},
 		}),
 	}
 
@@ -97,10 +116,20 @@ var _ = Describe("coach codesignal: a policy committed under other spellings tha
 				for _, want := range r.says {
 					Expect(message).To(ContainSubstring(want), "stderr:\n%s", message)
 				}
+				for _, unwanted := range r.saysNot {
+					Expect(message).NotTo(ContainSubstring(unwanted), "stderr:\n%s", message)
+				}
 				Expect(message).To(ContainSubstring("(project_config_invalid)"))
 				expectNoRunnableCommand(message)
 			}
-			Expect(named).To(Equal(discovered), "the policy Coach finds and the one the user names are told the same")
+			for _, want := range r.discovered {
+				Expect(discovered).To(ContainSubstring(want), "the policy Coach finds, stderr:\n%s", discovered)
+			}
+			for _, want := range r.named {
+				Expect(named).To(ContainSubstring(want), "the policy the user names, stderr:\n%s", named)
+			}
+			Expect(discovered).NotTo(ContainSubstring("pass the committed spelling"), "Coach's own path is fixed, so renaming is the only way out:\n%s", discovered)
+			Expect(discovered).NotTo(ContainSubstring("pass one of the committed spellings"), "Coach's own path is fixed:\n%s", discovered)
 		},
 		rows,
 	)
@@ -120,14 +149,15 @@ var _ = Describe("coach codesignal: a policy committed under other spellings tha
 		func(r refusal) {
 			repo := commitScannableGoRepo()
 			commitPolicyUnderSpellings(repo, r.spellings...)
-			before := scanDiscovered(repo)
+			before, namedBefore := scanDiscovered(repo), scanNamed(repo)
 
 			gitIn(repo, "config", "core.ignorecase", "true")
 			Expect(scanDiscovered(repo)).To(Equal(before), "with git set to ignore case")
-			Expect(scanNamed(repo)).To(Equal(before), "named, with git set to ignore case")
+			Expect(scanNamed(repo)).To(Equal(namedBefore), "named, with git set to ignore case")
 
 			gitIn(repo, "config", "core.ignorecase", "false")
 			Expect(scanDiscovered(repo)).To(Equal(before), "with git set to tell cases apart")
+			Expect(scanNamed(repo)).To(Equal(namedBefore), "named, with git set to tell cases apart")
 		},
 		rows,
 	)
@@ -167,12 +197,12 @@ var _ = Describe("coach codesignal: a policy committed under other spellings tha
 		})
 
 		It("is told the same, in the same words, as before the rename", func() {
-			before := scanDiscovered(repo)
+			before, namedBefore := scanDiscovered(repo), scanNamed(repo)
 
 			renameInTheRepository(repo, ".Lousy-Agents/Coach.json", readSpelling)
 
 			Expect(scanDiscovered(repo)).To(Equal(before))
-			Expect(scanNamed(repo)).To(Equal(before))
+			Expect(scanNamed(repo)).To(Equal(namedBefore))
 			expectTheProjectCheckAgrees(repo)
 			expectTheProjectCheckAgrees(repo, "--project-config", readSpelling)
 		})
@@ -187,5 +217,48 @@ var _ = Describe("coach codesignal: a policy committed under other spellings tha
 			Expect(string(stdout)).To(ContainSubstring(`"schema_version":"2"`))
 			Expect(scanExplicitPolicyAccepted(repo, readSpelling)).To(ContainSubstring(`"schema_version":"2"`))
 		})
+	})
+})
+
+// A name typed in another case than the revision commits is often a slip, and renaming the committed policy to match it
+// would break everyone who passes the committed spelling, CI on a disk that tells cases apart included. So the words
+// that a policy the user names gets offer passing the committed spelling beside the rename, and still print no command.
+var _ = Describe("coach codesignal: a policy named in another case than the revision commits it", func() {
+	var repo string
+
+	BeforeEach(func() {
+		repo = commitScannableGoRepo()
+		commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
+	})
+
+	DescribeTable("is told to pass the committed spelling or to make git record the one typed",
+		func(typed, directoryNote string) {
+			stderr := string(scanExplicitPolicy(repo, typed))
+
+			Expect(stderr).To(ContainSubstring(`the policy is committed as "cfg/p.json", but Coach reads "`+typed+`", so it is not read: pass the committed spelling, "cfg/p.json", or `+makeGitRecordIt(typed)+`, then commit and run again.`), "stderr:\n%s", stderr)
+			Expect(stderr).To(ContainSubstring(moveWhatStandsThereAside(typed)), "stderr:\n%s", stderr)
+			if directoryNote == "" {
+				Expect(stderr).NotTo(ContainSubstring(aDirectoryInCase), "stderr:\n%s", stderr)
+			} else {
+				Expect(stderr).To(ContainSubstring(directoryNote), "stderr:\n%s", stderr)
+			}
+			expectNoRunnableCommand(stderr)
+		},
+		Entry("a file typed in another case", "cfg/P.json", ""),
+		Entry("a directory typed in another case", "CFG/p.json", aDirectoryInCase),
+		Entry("a directory and a file typed in another case", "CFG/P.json", aDirectoryInCase),
+	)
+
+	It("reads the policy once the committed spelling is passed, and nothing is renamed", func() {
+		Expect(scanExplicitPolicyAccepted(repo, "cfg/p.json")).To(ContainSubstring(`"schema_version":"2"`))
+		Expect(gitOutputIn(repo, "ls-files")).To(ContainSubstring("cfg/p.json"))
+	})
+
+	It("is told the same by the project check, with the same cause and no new policy", func() {
+		doc := expectCheckProject(repo, "--project-config", "CFG/p.json")
+
+		Expect(causeOfGap(doc, "policy_invalid")).To(Equal("name_case_differs"), "gaps: %+v", doc.Gaps)
+		_, authors := nextActionOfKind(doc, "author_policy")
+		Expect(authors).To(BeFalse(), "next actions: %+v", doc.NextActions)
 	})
 })

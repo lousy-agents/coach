@@ -29,7 +29,7 @@ var _ = Describe("coach codesignal: a policy renamed in case only, on a file sys
 
 	expectedToMakeGitRecord := func(stderr []byte, committed, read string) {
 		GinkgoHelper()
-		Expect(string(stderr)).To(ContainSubstring(`the policy is committed as "`+committed+`", but Coach reads "`+read+`", so it is not read: `+makeGitRecordIt(read)), "stderr:\n%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring(`the policy is committed as "`+committed+`", but Coach reads "`+read+`", so it is not read: pass the committed spelling, "`+committed+`", or `+makeGitRecordIt(read)), "stderr:\n%s", stderr)
 		Expect(string(stderr)).To(ContainSubstring(moveWhatStandsThereAside(read)), "stderr:\n%s", stderr)
 		Expect(string(stderr)).NotTo(ContainSubstring("commit the file so it is readable"), "committing the file records nothing here:\n%s", stderr)
 		expectNoRunnableCommand(string(stderr))
@@ -65,8 +65,11 @@ var _ = Describe("coach codesignal: a policy renamed in case only, on a file sys
 			renameInCaseOnly(filepath.Join(repo, "policies"), filepath.Join(repo, "Policies"))
 		})
 
-		It("says the revision holds the old spelling and to make git record the new one, as for a file", func() {
-			expectedToMakeGitRecord(scanExplicitPolicy(repo, "Policies/p.json"), "policies/p.json", "Policies/p.json")
+		It("says the revision holds the old spelling and to make git record the new one, as for a file, with a note for the directory", func() {
+			stderr := scanExplicitPolicy(repo, "Policies/p.json")
+
+			expectedToMakeGitRecord(stderr, "policies/p.json", "Policies/p.json")
+			Expect(string(stderr)).To(ContainSubstring(aDirectoryInCase), "stderr:\n%s", stderr)
 		})
 	})
 })

@@ -56,7 +56,7 @@ func requireTheMessageHasNot(t *testing.T, message string, unwanted ...string) {
 func TestAPolicyCommittedUnderMoreSpellingsThanTheLimitIsToldSoAndChosenNone(t *testing.T) {
 	revision := fakeRevision{"": {".lousy-agents"}, ".lousy-agents": variantsOf("coach.json", maxSpellings+1)}
 
-	got := configErrorOf(t, wrongCaseOf(revision.entries, readPath))
+	got := configErrorOf(t, wrongCaseOf(revision.entries, readPath, chosenByCoach))
 
 	requireTheMessageHas(t, got.Message, "several spellings", ", and more, and Coach reads", "keep one of them at that path and remove the others, then commit and run again. "+aRenameOverAFile(readPath))
 	requireTheMessageHasNot(t, got.Message, "To keep", "delete")
@@ -68,11 +68,22 @@ func TestTheRefusalNamesExactlySixteenSpellingsBeforeItSaysThereAreMore(t *testi
 	sixteen := fakeRevision{"": {".lousy-agents"}, ".lousy-agents": variantsOf("coach.json", 16)}
 	seventeen := fakeRevision{"": {".lousy-agents"}, ".lousy-agents": variantsOf("coach.json", 17)}
 
-	named := configErrorOf(t, wrongCaseOf(sixteen.entries, readPath)).Message
-	more := configErrorOf(t, wrongCaseOf(seventeen.entries, readPath)).Message
+	named := configErrorOf(t, wrongCaseOf(sixteen.entries, readPath, chosenByCoach)).Message
+	more := configErrorOf(t, wrongCaseOf(seventeen.entries, readPath, chosenByCoach)).Message
 
 	requireTheMessageHas(t, named, "To keep")
 	requireTheMessageHasNot(t, named, "and more")
 	requireTheMessageHas(t, more, "and more")
 	requireTheMessageHasNot(t, more, "To keep")
+}
+
+// A policy the user names is offered the same way out past the limit: there is no spelling to keep, but one of the
+// committed spellings can be passed.
+func TestAPolicyNamedAndCommittedUnderMoreSpellingsThanTheLimitCanStillBePassedAsCommitted(t *testing.T) {
+	revision := fakeRevision{"": {".lousy-agents"}, ".lousy-agents": variantsOf("coach.json", maxSpellings+1)}
+
+	got := configErrorOf(t, wrongCaseOf(revision.entries, readPath, chosenByTheUser))
+
+	requireTheMessageHas(t, got.Message, ", and more, and Coach reads", "pass one of the committed spellings, or keep one of them at that path and remove the others, then commit and run again. "+aRenameOverAFile(readPath))
+	requireTheMessageHasNot(t, got.Message, "To keep")
 }

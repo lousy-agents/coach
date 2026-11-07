@@ -21,10 +21,16 @@ import (
 // The refusal is a *ConfigError. A revision that cannot be listed is a refusal too, which carries the failure: the
 // policy is not plainly missing while git has not said whether it is committed in another case.
 func WrongCaseAtRevision(run gitrepo.Runner, dir, revision, repoPath string) error {
-	return wrongCaseOf(entriesThrough(run, dir, revision), repoPath)
+	return wrongCaseOf(entriesThrough(run, dir, revision), repoPath, chosenByCoach)
 }
 
-func wrongCaseOf(entries revisionEntries, repoPath string) error {
+// wrongCaseOfNamedPolicy is WrongCaseAtRevision for a path the user named with --project-config, which has one more way
+// out: passing the spelling the revision commits.
+func wrongCaseOfNamedPolicy(run gitrepo.Runner, dir, revision, repoPath string) error {
+	return wrongCaseOf(entriesThrough(run, dir, revision), repoPath, chosenByTheUser)
+}
+
+func wrongCaseOf(entries revisionEntries, repoPath string, chooser pathChooser) error {
 	others, held, truncated, err := spellingsInRevision(entries, strings.Split(repoPath, "/"))
 	if err != nil {
 		return unansweredListing(fmt.Sprintf("nothing is committed at %q, the path Coach reads for the policy", repoPath), err)
@@ -33,9 +39,9 @@ func wrongCaseOf(entries revisionEntries, repoPath string) error {
 		return nil
 	}
 	if len(others) == 1 {
-		return wrongCaseRefusal(fmt.Sprintf("the policy is committed as %q, but Coach reads %q, so it is not read: %s", others[0], repoPath, recordTheRename(repoPath)))
+		return wrongCaseRefusal(fmt.Sprintf("the policy is committed as %q, but Coach reads %q, so it is not read: %s", others[0], repoPath, recordTheRename(others[0], repoPath, chooser)))
 	}
-	return wrongCaseRefusal(severalSpellingsReason(others, truncated, repoPath))
+	return wrongCaseRefusal(severalSpellingsReason(others, truncated, repoPath, chooser))
 }
 
 func wrongCaseRefusal(reason string) *ConfigError {

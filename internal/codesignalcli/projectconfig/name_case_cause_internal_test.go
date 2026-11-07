@@ -13,8 +13,8 @@ func TestEveryRefusalOfAPolicyInAnotherCaseTakesTheSameCause(t *testing.T) {
 	one := fakeRevision{"": {"cfg"}, "cfg": {"p.json"}}.entries
 	several := fakeRevision{"": {"cfg"}, "cfg": {"p.json", "P.JSON"}}.entries
 	for name, refusal := range map[string]error{
-		"one other spelling":      wrongCaseOf(one, "cfg/P.json"),
-		"several other spellings": wrongCaseOf(several, "cfg/p.JSON"),
+		"one other spelling":      wrongCaseOf(one, "cfg/P.json", chosenByCoach),
+		"several other spellings": wrongCaseOf(several, "cfg/p.JSON", chosenByCoach),
 	} {
 		t.Run(name, func(t *testing.T) { requireTheCaseCause(t, refusal) })
 	}

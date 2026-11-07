@@ -34,7 +34,7 @@ func LoadExplicit(dir, revision, repoPath string) (json.RawMessage, error) {
 // names whatever the disk shows: the answer is the same on a disk that folds case and on one that does not.
 func ExplicitOnDiskStatus(run gitrepo.Runner, dir, revision, repoPath string) (*ConfigError, error) {
 	if ValidatePath(repoPath) == nil {
-		refusal := WrongCaseAtRevision(run, dir, revision, repoPath)
+		refusal := wrongCaseOfNamedPolicy(run, dir, revision, repoPath)
 		if silence := GitSilence(refusal, "coach codesignal", repoPath); silence != nil {
 			return nil, silence
 		}

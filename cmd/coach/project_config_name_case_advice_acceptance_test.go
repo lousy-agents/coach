@@ -22,13 +22,13 @@ var _ = Describe("coach codesignal: the advice for a policy path spelled in anot
 			commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
 		})
 
-		DescribeTable("the user is told what is committed and to make git record the spelling typed, in words",
+		DescribeTable("the user is told what is committed, to pass that spelling or to make git record the one typed, in words",
 			func(typed string) {
 				stderr := scanExplicitPolicy(repo, typed)
 
-				Expect(string(stderr)).To(ContainSubstring(`the policy is committed as "cfg/p.json", but Coach reads "`+typed+`", so it is not read: `+makeGitRecordIt(typed)), "stderr:\n%s", stderr)
+				Expect(string(stderr)).To(ContainSubstring(`the policy is committed as "cfg/p.json", but Coach reads "`+typed+`", so it is not read: pass the committed spelling, "cfg/p.json", or `+makeGitRecordIt(typed)), "stderr:\n%s", stderr)
 				Expect(string(stderr)).To(ContainSubstring(moveWhatStandsThereAside(typed)), "stderr:\n%s", stderr)
-				Expect(string(stderr)).NotTo(ContainSubstring("pass --project-config"), "the spelling to name is the user's to choose, and no flag is offered in its place:\n%s", stderr)
+				Expect(string(stderr)).NotTo(ContainSubstring("pass --project-config"), "the way out is told in words, with no flag to paste:\n%s", stderr)
 				expectNoRunnableCommand(string(stderr))
 			},
 			Entry("a file typed in another case", "cfg/P.JSON"),
