@@ -38,10 +38,14 @@ func wrongCaseOf(entries revisionEntries, repoPath string, chooser pathChooser) 
 	if held || len(others) == 0 {
 		return nil
 	}
-	if len(others) == 1 {
-		return wrongCaseRefusal(fmt.Sprintf("the policy is committed as %q, but Coach reads %q, so it is not read: %s", others[0], repoPath, recordTheRename(others[0], repoPath, chooser)))
+	if keepsTheDefaultSpelling(repoPath, others, chooser) {
+		return wrongCaseRefusal(keepTheDefaultPolicy(others, truncated, repoPath))
 	}
-	return wrongCaseRefusal(severalSpellingsReason(others, truncated, repoPath, chooser))
+	record := whereToRecord(repoPath, chooser)
+	if len(others) == 1 {
+		return wrongCaseRefusal(fmt.Sprintf("the policy is committed as %q, but Coach reads %q, so it is not read: %s", others[0], repoPath, recordTheRename(others[0], record, chooser)))
+	}
+	return wrongCaseRefusal(severalSpellingsReason(others, truncated, repoPath, record, chooser))
 }
 
 func wrongCaseRefusal(reason string) *ConfigError {

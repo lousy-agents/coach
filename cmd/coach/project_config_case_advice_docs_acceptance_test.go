@@ -67,6 +67,11 @@ var _ = Describe("the CLI contract: the case rule it describes is the one the sc
 		Expect(rule).To(ContainSubstring("When the rename changes the case of a directory's name, the message adds that git cannot do that in one step on a file system that folds case, and says to rename the directory to another name first and then to the one wanted."))
 	})
 
+	It("says the default policy's path named in another case is never told to be recorded at that spelling", func() {
+		Expect(rule).To(ContainSubstring("A policy named with the default policy's path in another case (`.lousy-agents/COACH.json`) is not told to make git record the policy at the spelling typed, because a scan without `--project-config` reads only `.lousy-agents/coach.json` and would then refuse it."))
+		Expect(rule).To(ContainSubstring("It is told to pass the committed spelling or to leave the flag off; when the revision commits the default spelling beside others it is told to keep that one and delete the others, and the default spelling is never the one to delete; when only another spelling is committed, git is to record the policy at the default spelling."))
+	})
+
 	It("says what is listed when the revision commits several spellings, and the limit of 16", func() {
 		Expect(rule).To(ContainSubstring("the message lists every one of them (up to 16, then \"and more\"), says to keep one of them at that path and remove the others, names the one to keep and the ones to delete, and gives the same warning; past 16 spellings it names none to keep, and says only to keep one of them at that path and remove the others"))
 	})
