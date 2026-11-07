@@ -14,7 +14,7 @@ import (
 const (
 	projectConfigMigrationPrompt         = "Copy project.json to .lousy-agents/coach.json? Coach will not delete project.json. [y/N] "
 	projectConfigMigrationCopied         = "Copied project.json to .lousy-agents/coach.json. Commit that file so the next scan reads it. project.json was left in place.\n"
-	projectConfigMigrationSkippedMessage = "project.json can be moved to .lousy-agents/coach.json. Next: mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json"
+	projectConfigMigrationSkippedMessage = "project.json can be moved to .lousy-agents/coach.json. Next: top=\"$(git rev-parse --show-toplevel)\" && mkdir -p \"$top\"/.lousy-agents && git -C \"$top\" mv -- project.json .lousy-agents/coach.json"
 )
 
 func prepareScanProjectAnalysis(dir, revision string, f codesignalFlags, stdin, stderr *os.File, ports scanPorts) (*codesignalcli.ProjectAnalysis, []codesignal.Diagnostic, func(), error) {

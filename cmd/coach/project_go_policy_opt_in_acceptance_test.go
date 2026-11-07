@@ -49,7 +49,7 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			Expect(text).To(ContainSubstring("project_config_deprecated"))
 			Expect(text).To(ContainSubstring(deprecatedRootProjectConfigMessage))
 			Expect(text).To(ContainSubstring("project_config_migration_skipped"))
-			Expect(text).To(ContainSubstring("mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json"))
+			Expect(text).To(ContainSubstring("top=\"$(git rev-parse --show-toplevel)\" && mkdir -p \"$top\"/.lousy-agents && git -C \"$top\" mv -- project.json .lousy-agents/coach.json"))
 		})
 	})
 
@@ -152,7 +152,7 @@ func expectOmittedScanSelectsRootProjectJSON(omitted, explicit *codesignal.Repor
 	skipped := codesignal.Diagnostic{
 		Kind:    "project_config_migration_skipped",
 		Path:    "project.json",
-		Message: "project.json can be moved to .lousy-agents/coach.json. Next: mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json",
+		Message: "project.json can be moved to .lousy-agents/coach.json. Next: top=\"$(git rev-parse --show-toplevel)\" && mkdir -p \"$top\"/.lousy-agents && git -C \"$top\" mv -- project.json .lousy-agents/coach.json",
 	}
 	Expect(omitted.Diagnostics).To(HaveLen(len(explicit.Diagnostics) + 2))
 	Expect(diagnosticsOfKind(omitted.Diagnostics, "project_config_deprecated")).To(Equal([]codesignal.Diagnostic{deprecated}))

@@ -87,3 +87,31 @@ var _ = Describe("coach codesignal: the rename a refusal prints works from a sub
 		Entry("under zsh", "zsh"),
 	)
 })
+
+// The hint that moves a deprecated project.json names repository-relative paths too.
+var _ = Describe("coach codesignal: the move of a deprecated project.json that a scan prints works from a subdirectory", func() {
+	DescribeTable("pasted from src/",
+		func(shell string) {
+			skipUnlessInstalled(shell)
+			repo := commitScannableGoRepo()
+			commitFile(repo, "src/keep.go", minimalGoSource)
+			commitFile(repo, legacyConfigPath, singleRootPolicyJSON)
+			subdirectory := filepath.Join(repo, "src")
+
+			stdout, stderr, exitCode := runCoachBinary(commandPath, subdirectory, nil, "codesignal", "--baseline", "--format=json", "--no-interactive")
+			Expect(exitCode).To(Equal(0), "stdout: %s\nstderr: %s", stdout, stderr)
+			skipped, ok := diagnosticFor(decodeCoachReport(stdout), "project_config_migration_skipped", legacyConfigPath)
+			Expect(ok).To(BeTrue(), "stdout:\n%s", stdout)
+			command := regexp.MustCompile(`Next: (.+)$`).FindStringSubmatch(skipped.Message)
+			Expect(command).NotTo(BeNil(), "the hint prints the commands: %s", skipped.Message)
+
+			pasteIn(subdirectory, command[1], shell)
+
+			Expect(gitOutputIn(repo, "ls-files")).To(ContainSubstring(".lousy-agents/coach.json"))
+			Expect(gitOutputIn(repo, "ls-files")).NotTo(MatchRegexp(`(?m)^project\.json$`))
+			Expect(filepath.Join(subdirectory, ".lousy-agents")).NotTo(BeADirectory(), "the command left a stray directory in the subdirectory")
+		},
+		Entry("under sh", "sh"),
+		Entry("under zsh", "zsh"),
+	)
+})

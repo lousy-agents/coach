@@ -105,13 +105,13 @@ var _ = Describe("coach project config discovery", func() {
 			Expect(diag.Message).To(Equal("project.json at the repository root is deprecated. Coach will keep reading it until you move it to .lousy-agents/coach.json."))
 			skipped, ok := diagnosticFor(discovered, "project_config_migration_skipped", legacyConfigPath)
 			Expect(ok).To(BeTrue(), "diagnostics: %+v", discovered.Diagnostics)
-			Expect(skipped.Message).To(Equal("project.json can be moved to .lousy-agents/coach.json. Next: mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json"))
+			Expect(skipped.Message).To(Equal("project.json can be moved to .lousy-agents/coach.json. Next: top=\"$(git rev-parse --show-toplevel)\" && mkdir -p \"$top\"/.lousy-agents && git -C \"$top\" mv -- project.json .lousy-agents/coach.json"))
 
 			textStdout, textStderr, textExit := runCoachCodesignalBaselineRaw(repo)
 			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
 			Expect(string(textStdout)).To(ContainSubstring("project_config_deprecated"))
 			Expect(string(textStdout)).To(ContainSubstring("project_config_migration_skipped"))
-			Expect(string(textStdout)).To(ContainSubstring("mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json"))
+			Expect(string(textStdout)).To(ContainSubstring("top=\"$(git rev-parse --show-toplevel)\" && mkdir -p \"$top\"/.lousy-agents && git -C \"$top\" mv -- project.json .lousy-agents/coach.json"))
 		})
 
 		It("matches the explicit --project-config project.json schema_version and project_changes, without the deprecation diagnostic", func() {
