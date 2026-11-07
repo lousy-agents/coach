@@ -35,7 +35,7 @@ func TestRefuseMissingObjectsAsksNoQuestionOfGitWhenTheAnswerIsAlreadyKnown(t *t
 		name       string
 		repository fakeRepository
 	}{
-		{"a repository that is not a partial clone", fakeRepository{version: oldGit}},
+		{"a repository that is not a partial clone, on a git that cannot fetch", fakeRepository{version: currentGit}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

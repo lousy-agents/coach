@@ -47,15 +47,23 @@ func ConfigHasNoValue(err error) bool {
 // has every object; a repository that cannot be told apart from an ordinary one is refused, because reading it
 // could run its remote's transport.
 //
-// A git that can be told not to fetch never does, but a clone made without trees lacks the trees of HEAD, which
-// nothing can be listed without, and a diff reads the merge base's version of every changed file, which the clone
-// may lack: both are refused, with the command that brings the objects in.
+// A git that can be told not to fetch never does, so whether the repository is a partial clone only decides
+// whether to look: a clone made without trees lacks the trees of HEAD, which nothing can be listed without, and
+// a diff reads the merge base's version of every changed file, which the clone may lack. Both are refused, with
+// the command that brings the objects in.
 //
-// On an older git, which ignores the instruction, a partial clone is read when every object of the
-// revisions the scan reads is already here: base is empty for a baseline, which reads HEAD, and otherwise
-// the scan reads HEAD and the merge base of base and HEAD. A revision that lacks objects is refused, and so
-// is a question the probe cannot answer, because a read that might fetch is not made on a guess.
+// On an older git, which ignores the instruction, the configuration decides nothing. What git takes for a
+// promisor remote is more than the settings Coach reads (a remote with a partial clone filter is one, with
+// promisor unset or false), and a read of a missing object from it fetches. So the revisions the scan reads are
+// always asked about, with a probe that never fetches, and a revision that lacks objects is refused, whatever
+// the configuration says; it only words the refusal. base is empty for a baseline, which reads HEAD, and
+// otherwise the scan reads HEAD and the merge base of base and HEAD. A question the probe cannot answer is a
+// refusal too, because a read that might fetch is not made on a guess.
 func RefuseMissingObjects(run Runner, dir, base string) error {
+	supported, version := noLazyFetchSupported(run, dir)
+	if !supported {
+		return refuseWhenReadRevisionsLackObjects(run, dir, base, version)
+	}
 	partial, err := IsPartialClone(run, dir)
 	if errors.Is(err, exec.ErrNotFound) {
 		return gitNotFoundError()
@@ -66,12 +74,8 @@ func RefuseMissingObjects(run Runner, dir, base string) error {
 	if !partial {
 		return nil
 	}
-	supported, version := noLazyFetchSupported(run, dir)
-	if supported {
-		if err := refuseWhenHeadLacksTrees(run, dir, base); err != nil {
-			return err
-		}
-		return refuseWhenTheMergeBaseLacksObjects(run, dir, base)
+	if err := refuseWhenHeadLacksTrees(run, dir, base); err != nil {
+		return err
 	}
-	return refuseWhenReadRevisionsLackObjects(run, dir, base, version)
+	return refuseWhenTheMergeBaseLacksObjects(run, dir, base)
 }
