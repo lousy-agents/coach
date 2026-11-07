@@ -124,8 +124,8 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring never mu
 	})
 })
 
-// scanShouldAuthorProjectConfig must trigger only for AC-POL-8's own gap: a
-// TypeScript policy that was never committed at all. A *ProjectConfigError
+// The authoring decision must trigger only for a gap a new policy fixes: a
+// TypeScript policy that was never committed at all, or one whose document is not valid. A *ProjectConfigError
 // can also report a usage error (an unusable --project-config path) or a
 // file that exists uncommitted in the worktree, and neither is "no policy
 // was ever authored" -- entering guided authoring for either would silently
@@ -253,7 +253,7 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring guard le
 })
 
 // Exercising this requires a genuine controlling terminal on os.Stdin, since
-// scanShouldAuthorProjectConfig reads os.Stdin directly and
+// authoringInteractive reads os.Stdin directly and
 // terminal.HasControllingTerminal has no fake-injection mode by design
 // (controlling_terminal.go) -- a pipe or regular file reports false
 // regardless of Kind, which would make this assertion pass whether or not
@@ -272,7 +272,7 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring guard tr
 			var zeroKindErr projectconfig.ConfigError
 			zeroKindErr.Message = `coach codesignal: --project-config "project.json" is invalid at revision "HEAD" (project_config_invalid): unclassified`
 
-			Expect(scanShouldAuthorProjectConfig(&zeroKindErr, "typescript", policyref.Named("project.json"), false)).To(BeFalse(), "an error whose cause was never classified must not select guided authoring")
+			Expect(offerAuthoring(&zeroKindErr, "typescript", authoringInteractive(false))).To(Equal(authoringNotOffered), "an error whose cause was never classified must not select guided authoring")
 		})
 	})
 })

@@ -99,6 +99,13 @@ func (e *ConfigError) OffersAuthoring() bool {
 	return named && action == projectreadiness.NextActionAuthorPolicy
 }
 
+// ReplacesPolicy is whether the way out is a new document at a path where one already exists: a policy the
+// revision holds whose document is not valid. Authoring creates files and refuses a target that exists, so it
+// cannot write at the path; it can only offer the candidate to be saved over the file.
+func (e *ConfigError) ReplacesPolicy() bool {
+	return e.Kind == KindInvalid && e.OffersAuthoring()
+}
+
 // readError classifies a runProjectConfigGit failure into a
 // user-facing message that never surfaces raw git stderr. A
 // *gitrepo.BoundError is our own timeout/output-budget text and is

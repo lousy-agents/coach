@@ -43,7 +43,7 @@ func assertAuthoringNamesOutput(t *testing.T, kind projectconfig.ErrorKind, want
 	const named = "cfg/new.json"
 	configErr := &projectconfig.ConfigError{Kind: kind, Remedy: projectreadiness.RemedyAuthor}
 
-	got := authoringRemediation(configErr, policyref.Named(named), false, "go")
+	got := authoringRemediation(configErr, policyref.Named(named), "go", false)
 
 	if has := strings.Contains(got, "--output "+named); has != wantOutput || got == "" {
 		t.Errorf("authoringRemediation(kind %v) = %q; contains --output %s = %v, want %v, and the remedy is to author so a command is offered", kind, got, named, has, wantOutput)

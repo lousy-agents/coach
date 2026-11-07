@@ -33,3 +33,25 @@ func requireOffersAuthoring(t *testing.T, err *ConfigError, want bool) {
 		t.Errorf("OffersAuthoring() = %v for kind %d and remedy %d, want %v", got, err.Kind, err.Remedy, want)
 	}
 }
+
+// Authoring creates files and refuses a target that exists, so a new document replaces a policy only when the
+// revision holds one whose document is not valid; for a path with nothing at it the document is created, and a
+// refusal that shares the kind of an invalid document offers neither.
+func TestAnErrorReplacesThePolicyOnlyWhereItsDocumentIsNotValidAndANewOneFixesIt(t *testing.T) {
+	cases := map[string]struct {
+		err  *ConfigError
+		want bool
+	}{
+		"invalid content that a new document replaces": {&ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyAuthor}, true},
+		"a policy committed as a link":                 {&ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone}, false},
+		"a policy missing from disk":                   {&ConfigError{Kind: KindMissing, Remedy: projectreadiness.RemedyAuthor}, false},
+		"a policy found nowhere":                       {&ConfigError{Kind: KindNotFound, Remedy: projectreadiness.RemedyAuthor}, false},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := c.err.ReplacesPolicy(); got != c.want {
+				t.Errorf("ReplacesPolicy() = %v for kind %d and remedy %d, want %v", got, c.err.Kind, c.err.Remedy, c.want)
+			}
+		})
+	}
+}

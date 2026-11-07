@@ -86,11 +86,11 @@ func analysisErrorReportFor(err error, language string, policy policyref.Ref, ha
 	if errors.As(err, &configErrWithReadiness) {
 		return classTwoReport(configErrWithReadiness.Message,
 			tssetup.AlsoFailingGapLines(configErrWithReadiness.Readiness, configErrWithReadiness.Policy),
-			authoringRemediation(configErrWithReadiness.ConfigError, policy, hasControllingTerminal, language))
+			authoringRemediation(configErrWithReadiness.ConfigError, policy, language, hasControllingTerminal))
 	}
 	var configErr *projectconfig.ConfigError
 	if errors.As(err, &configErr) {
-		return classTwoReport(configErr.Message, nil, authoringRemediation(configErr, policy, hasControllingTerminal, language))
+		return classTwoReport(configErr.Message, nil, authoringRemediation(configErr, policy, language, hasControllingTerminal))
 	}
 	var opErr *gitrepo.OperationalError
 	if errors.As(err, &opErr) {
@@ -99,15 +99,18 @@ func analysisErrorReportFor(err error, language string, policy policyref.Ref, ha
 	return analysisErrorReport{lines: []string{err.Error()}, exitCode: 1}
 }
 
-// authoringRemediation is the appended --suggest-project-config line, withheld
-// when authoring a policy cannot fix the error: the policy is committed and
-// only needs restoring, or its path cannot be created. It writes the policy the
-// user named when nothing is at that path, so it names that path.
-func authoringRemediation(configErr *projectconfig.ConfigError, policy policyref.Ref, hasControllingTerminal bool, language string) string {
-	if !configErr.OffersAuthoring() {
+// authoringRemediation is the appended line that offers a new policy as a command to run on a terminal, and
+// nothing when authoring cannot fix the error (the policy is committed and only needs restoring, or its path cannot
+// be created) or when a guided session runs instead. It writes the policy the user named when nothing is at that
+// path, so it names that path; for a document that exists and is not valid it names the scan, which can replace it.
+func authoringRemediation(configErr *projectconfig.ConfigError, policy policyref.Ref, language string, interactive bool) string {
+	if offerAuthoring(configErr, language, interactive) != authoringCommand {
 		return ""
 	}
-	return tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.SuggestProjectConfigRemediation(language, authoringTargetPolicy(configErr, policy)))
+	if configErr.ReplacesPolicy() && language == "typescript" {
+		return tssetup.ReplacePolicyRemediation(policy)
+	}
+	return tssetup.SuggestProjectConfigRemediation(language, authoringTargetPolicy(configErr, policy))
 }
 
 // authoringTargetPolicy is the policy authoring should write: the one the user

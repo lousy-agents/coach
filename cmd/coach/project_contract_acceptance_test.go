@@ -108,7 +108,7 @@ var _ = Describe("coach project-analysis failure reports", func() {
 		Expect(goLines).To(HaveLen(2), "go's class-2 report is the config message plus AC-SET-9's appended remediation")
 		Expect(tsLines[0]).To(Equal(goLines[0]), "the underlying class-2 config message must stay language-independent")
 		Expect(goLines[len(goLines)-1]).To(Equal("coach codesignal --baseline --suggest-project-config"), "go's appended remediation must be a command go actually supports, not the TypeScript-only guided-authoring invocation (AC-2)")
-		Expect(tsLines[len(tsLines)-1]).To(Equal("on a terminal: coach codesignal --baseline --suggest-project-config --project-language typescript -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"), "typescript's appended remediation must still name its own guided-authoring invocation")
+		Expect(tsLines[len(tsLines)-1]).To(Equal("on a terminal: coach codesignal --baseline --project-config project.json --project-language typescript -- guided authoring opens there and prints a replacement for the invalid document; save it over the file, have a human review and commit it, then rerun"), "typescript's appended remediation must name its own guided-authoring invocation: for a document that exists it is the scan, because authoring creates files and refuses a target that exists")
 		Expect(len(tsLines)).To(BeNumerically(">=", len(goLines)), "TypeScript may additionally carry AC-SET-13's readiness-gap line; it must never carry fewer lines than go's report")
 	})
 

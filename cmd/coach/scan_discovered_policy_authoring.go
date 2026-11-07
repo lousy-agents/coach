@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
@@ -11,27 +10,6 @@ import (
 )
 
 const layerlessPolicyAuthoringPrompt = "%s is valid but declares no layers, so layer rules have nothing to check. Start guided policy authoring? [y/N] "
-
-// scanShouldAuthorDiscoveredProjectConfig reports whether err is a committed
-// .lousy-agents/coach.json that the scan discovered on its own and that
-// failed schema validation. The policy was not named with --project-config,
-// so the explicit-path trigger in scanShouldAuthorProjectConfig never sees it.
-func scanShouldAuthorDiscoveredProjectConfig(err error, f codesignalFlags, noInteractive bool) bool {
-	if noInteractive || !discoveredPolicyAuthorable(err, f) {
-		return false
-	}
-	return terminal.HasControllingTerminal(os.Stdin)
-}
-
-// discoveredPolicyAuthorable is the part of that decision that needs no terminal: a TypeScript scan of a
-// discovered policy whose error is an invalid document that a new policy replaces.
-func discoveredPolicyAuthorable(err error, f codesignalFlags) bool {
-	if f.projectLanguage != "typescript" || f.namedPolicy.Explicit {
-		return false
-	}
-	var configErr *projectconfig.ConfigError
-	return errors.As(err, &configErr) && configErr.Kind == projectconfig.KindInvalid && configErr.OffersAuthoring()
-}
 
 func layerlessDiscoveredPolicy(report *codesignal.Report, f codesignalFlags) bool {
 	if f.projectLanguage != "typescript" || f.namedPolicy.Explicit || report.ProjectScope == nil {

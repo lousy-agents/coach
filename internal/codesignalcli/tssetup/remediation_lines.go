@@ -77,6 +77,16 @@ func SuggestProjectConfigRemediation(language string, policy policyref.Ref) stri
 	return invocation.BatchAuthoring(target)
 }
 
+// ReplacePolicyRemediation is the appended line for a policy that exists and whose document is not valid. The
+// authoring command creates files and refuses a target that exists, and written elsewhere its candidate would
+// leave this file as it was, so the command is the scan itself: on a terminal it opens guided authoring and prints
+// a replacement to save over the file. Like every appended authoring command it needs a terminal, which the
+// prefix says.
+func ReplacePolicyRemediation(policy policyref.Ref) string {
+	return onATerminal(invocation.Command{Mode: invocation.Scan, Policy: policy}.Phrase("")) +
+		" -- guided authoring opens there and prints a replacement for the invalid document; save it over the file, have a human review and commit it, then rerun"
+}
+
 // authoringTarget is where authoring has to write for the policy the user named
 // to exist: empty when nothing was named, or when the name is where authoring
 // writes by default.
