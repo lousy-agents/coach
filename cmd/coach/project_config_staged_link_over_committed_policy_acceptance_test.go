@@ -63,9 +63,44 @@ var _ = Describe("coach codesignal: a committed policy with a symbolic link or a
 		stderr := scanExplicitPolicy(committedPolicyRepo(stagedLink), policy)
 
 		Expect(string(stderr)).To(ContainSubstring("symbolic link"), "stderr:\n%s", stderr)
-		Expect(string(stderr)).To(ContainSubstring("no keep step is offered"), "stderr:\n%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("that restore is not offered"), "stderr:\n%s", stderr)
 		Expect(string(stderr)).To(ContainSubstring("git diff --cached"), "stderr:\n%s", stderr)
 		Expect(regexp.MustCompile(`git restore -- '[^']+'`).FindString(string(stderr))).To(BeEmpty(), "that command writes the link back, which the scan refuses:\n%s", stderr)
+	})
+
+	// Reviewing the staged entry changes nothing, so a step to run again after only that leaves the state as it was and
+	// prints the same message: the user goes round. The only step that ends in running again is the one that changes the
+	// index, which is staging a regular file where the link is.
+	It("offers no step to run again that leaves the state unchanged, and names the regular file that keeps the change", func() {
+		stderr := scanExplicitPolicy(committedPolicyRepo(stagedLink), policy)
+
+		for _, clause := range strings.Split(string(stderr), "; ") {
+			if strings.Contains(clause, "run again") {
+				Expect(clause).To(ContainSubstring("stage a regular file at the path in place of the link"), "a step to run again that changes nothing:\n%s", stderr)
+			}
+		}
+		Expect(string(stderr)).To(ContainSubstring("to keep the change, stage a regular file at the path in place of the link, then run again"), "stderr:\n%s", stderr)
+	})
+
+	It("ends the loop when a regular file is staged in place of the link, as the message says", func() {
+		repo := committedPolicyRepo(stagedLink)
+		scanExplicitPolicy(repo, policy)
+		writeWorktreeFile(repo, policy, singleRootPolicyJSON)
+		gitIn(repo, "add", policy)
+
+		scanExplicitPolicyAccepted(repo, policy)
+	})
+
+	It("reports a submodule entry staged over it as in_submodule in --check-project, with the path left unlisted by that check", func() {
+		repo := newTempGitRepo()
+		commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+		commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
+		commitFile(repo, policy, singleRootPolicyJSON)
+		stagedSubmoduleEntry(repo)
+
+		doc := expectCheckProject(repo, "--project-config", policy)
+
+		Expect(causeOfGap(doc, "policy_missing")).To(Equal("in_submodule"))
 	})
 
 	It("names the cause and keeps the path in dirty_worktree in --check-project", func() {
@@ -84,9 +119,15 @@ var _ = Describe("coach codesignal: a committed policy with a symbolic link or a
 })
 
 var _ = Describe("the CLI contract: a link staged over a committed policy", func() {
-	It("says the cause is staged_not_a_file and that only the restore that drops the staged entry is printed", func() {
+	It("says the cause is staged_not_a_file, that only the restore that drops the staged link is printed, and what keeps the change", func() {
 		text := documentText("docs/cli-codesignal.md")
 
-		Expect(text).To(ContainSubstring("has the cause `staged_not_a_file`, and the message prints only the restore that drops the staged entry, because the one that keeps it writes the link back and the scan refuses a link."))
+		Expect(text).To(ContainSubstring("has the cause `staged_not_a_file`, and the message prints only the restore that drops the staged link, because the one that keeps it writes the link back and the scan refuses a link; to keep the change it says to stage a regular file at the path in place of the link, then run again."))
+	})
+
+	It("says a submodule entry staged over the policy is not that case but in_submodule, with no restore", func() {
+		text := documentText("docs/cli-codesignal.md")
+
+		Expect(text).To(ContainSubstring("A submodule entry (a gitlink) staged over the policy is not this case: it is reported as `in_submodule`, with no restore."))
 	})
 })

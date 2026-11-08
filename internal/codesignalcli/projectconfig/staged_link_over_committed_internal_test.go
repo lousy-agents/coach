@@ -63,3 +63,25 @@ func assertTheDropIsTheOnlyRestore(t *testing.T, blocked bool) {
 		t.Errorf("offer %q; a file in the way is moved before the restore, and only then", text)
 	}
 }
+
+// Reviewing the staged entry changes nothing, so a step to run again after only that brings the same message back. The one
+// step that ends in running again is the one that changes the index: staging a regular file where the link is.
+func TestTheOnlyStepToRunAgainAfterIsTheOneThatStagesARegularFile(t *testing.T) {
+	for _, blocked := range []bool{false, true} {
+		clauses := clausesAskingToRunAgain(stagedNonFileOverCommittedOffer("HEAD", "cfg/p.json", blocked).text)
+
+		if len(clauses) != 1 || !strings.Contains(clauses[0], "stage a regular file at the path in place of the link") {
+			t.Errorf("a file in the way = %v: the clauses that ask to run again are %q; want exactly one, and it stages a regular file", blocked, clauses)
+		}
+	}
+}
+
+func clausesAskingToRunAgain(text string) []string {
+	var found []string
+	for _, clause := range strings.Split(text, "; ") {
+		if strings.Contains(clause, "run again") {
+			found = append(found, clause)
+		}
+	}
+	return found
+}

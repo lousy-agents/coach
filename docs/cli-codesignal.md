@@ -78,9 +78,11 @@ The index decides this whether or not the file is on disk. A file that is there 
 holds as an unresolved merge conflict, is `policy_missing` with the cause `merge_conflict` and not `not_committed`: git
 refuses to commit while the path is unmerged, so the message says to resolve the conflict, mark it resolved, and commit it.
 A staged copy of it keeps `not_committed`, because committing it is the way out. In both the path stays in
-`dirty_worktree`, with the file on disk or gone. A committed policy with a symbolic link, or another entry that is not a
-regular file, staged over it and the file gone has the cause `staged_not_a_file`, and the message prints only the restore that
-drops the staged entry, because the one that keeps it writes the link back and the scan refuses a link.
+`dirty_worktree`, with the file on disk or gone. A committed policy with a symbolic link staged over it and the file gone has
+the cause `staged_not_a_file`, and the message prints only the restore that drops the staged link, because the one that keeps
+it writes the link back and the scan refuses a link; to keep the change it says to stage a regular file at the path in place
+of the link, then run again. A submodule entry (a gitlink) staged over the policy is not this case: it is reported as
+`in_submodule`, with no restore.
 
 A policy gap that names neither `author_policy` nor `restore_policy` says why in a
 `cause` on the gap, and the text prints the same word after the code

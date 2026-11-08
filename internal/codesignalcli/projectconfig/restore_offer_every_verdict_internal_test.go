@@ -90,8 +90,8 @@ func verdictCases() []verdictCase {
 	merge1, merge2 := bothWays(projectreadiness.PolicyCause("merge_conflict"), "unresolved merge conflict")
 	mark1, mark2 := bothWays(projectreadiness.PolicyCause("skip_worktree"), "update-index --no-skip-worktree")
 	nonFile1, nonFile2 := bothWays(projectreadiness.PolicyCause("staged_not_a_file"), "not a regular file")
-	linkOver1 := offerWant{true, projectreadiness.RemedyNone, projectreadiness.PolicyCause("staged_not_a_file"), []string{"not a regular file", "no keep step is offered", "git diff --cached", "restore it with " + restoreSource}, true}
-	linkOver2 := offerWant{true, projectreadiness.RemedyNone, projectreadiness.PolicyCause("staged_not_a_file"), []string{"no keep step is offered", "move the file that blocks the path, then restore it with " + restoreSource}, true}
+	linkOver1 := offerWant{true, projectreadiness.RemedyNone, projectreadiness.PolicyCause("staged_not_a_file"), []string{"not a regular file", "that restore is not offered", "git diff --cached", "stage a regular file at the path in place of the link", "restore it with " + restoreSource}, true}
+	linkOver2 := offerWant{true, projectreadiness.RemedyNone, projectreadiness.PolicyCause("staged_not_a_file"), []string{"that restore is not offered", "move the file that blocks the path, then stage a regular file", "move the file that blocks the path, then restore it with " + restoreSource}, true}
 	stagedMark1, stagedMark2 := bothWays(projectreadiness.PolicyCause("skip_worktree"), "marked skip-worktree")
 	stagedSparse1, stagedSparse2 := bothWays(projectreadiness.PolicyCause("sparse_checkout"), "staged copy of it that this sparse checkout leaves out")
 	emptyMark1, emptyMark2 := bothWays(projectreadiness.PolicyCause("skip_worktree"), "empty entry", "marked skip-worktree", "update-index --no-skip-worktree")
