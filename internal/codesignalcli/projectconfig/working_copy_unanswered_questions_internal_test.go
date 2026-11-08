@@ -88,7 +88,7 @@ func (g whollyFakeGit) run(_ string, args ...string) ([]byte, error) {
 	case "rev-parse":
 		return []byte(g.root + "\n"), nil
 	case "check-attr":
-		return []byte(replacePath + "\x00filter\x00unspecified\x00"), nil
+		return nil, nil // git leaves out the attributes that are not specified, so a path with none prints nothing
 	case "hash-object":
 		return []byte(strings.Repeat("9", 40) + "\n"), nil
 	}

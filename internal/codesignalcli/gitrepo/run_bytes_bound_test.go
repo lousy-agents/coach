@@ -81,7 +81,7 @@ func TestEveryGitReadOnTheScanPathHasABudget(t *testing.T) {
 		{"the partial-clone question", []string{"config", "--get-regexp", "x"}, lookup(30*second, 1<<20)},
 		{"the index entries of one path", []string{"ls-files", "--stage", "-z", "--full-name", "--", "x"}, lookup(30*second, 1<<20)},
 		{"the version of git", []string{"version"}, lookup(30*second, 1<<20)},
-		{"the attributes of one path", []string{"check-attr", "-z", "filter", "--", "x"}, lookup(30*second, 1<<20)},
+		{"the attributes of one path", []string{"check-attr", "-z", "-a", "--", "x"}, lookup(30*second, 1<<20)},
 		{"the object id of one file", []string{"hash-object", "--path=x", "--", "y"}, lookup(30*second, 1<<20)},
 		{"one object by name", []string{"cat-file", "-e", "x"}, lookup(30*second, 1<<20)},
 		{"the merge base", []string{"merge-base", "a", "b"}, lookup(30*second, 1<<20)},

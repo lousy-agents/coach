@@ -16,10 +16,18 @@ import (
 func TestWhatGitCannotAnswerAboutAConvertedCheckoutIsTakenToDiffer(t *testing.T) {
 	repo, objectID := aConvertedCheckout(t, "core.autocrlf", "true")
 	cases := map[string]gitrepo.Runner{
-		"the attribute question fails":  fakeGitAnswering(t, errors.New("exit status 128"), "", "unused"),
-		"the attribute record is short": fakeGitAnswering(t, nil, "cfg/p.json\x00", objectID),
-		"the hash question fails":       fakeGitAnswering(t, nil, "cfg/p.json\x00filter\x00unspecified\x00", ""),
-		"the hash is another object":    fakeGitAnswering(t, nil, "cfg/p.json\x00filter\x00unspecified\x00", strings.Repeat("1", 40)),
+		"the attribute question fails":       fakeGitAnswering(t, errors.New("exit status 128"), "", objectID),
+		"the attribute record is short":      fakeGitAnswering(t, nil, "cfg/p.json\x00", objectID),
+		"the attribute records are cut off":  fakeGitAnswering(t, nil, "cfg/p.json\x00text\x00set\x00cfg/p.json\x00eol", objectID),
+		"the last record has no end":         fakeGitAnswering(t, nil, "cfg/p.json\x00text\x00set\x00cfg", objectID),
+		"the attribute records do not end":   fakeGitAnswering(t, nil, "cfg/p.json\x00text\x00set", objectID),
+		"the hash question fails":            fakeGitAnswering(t, nil, "", ""),
+		"the hash is another object":         fakeGitAnswering(t, nil, "", strings.Repeat("1", 40)),
+		"a filter is among the attributes":   fakeGitAnswering(t, nil, "cfg/p.json\x00text\x00set\x00cfg/p.json\x00filter\x00lfs\x00", objectID),
+		"a filter is the only attribute":     fakeGitAnswering(t, nil, "cfg/p.json\x00filter\x00lfs\x00", objectID),
+		"the filter is named unset":          fakeGitAnswering(t, nil, "cfg/p.json\x00filter\x00unset\x00", objectID),
+		"the filter is named unspecified":    fakeGitAnswering(t, nil, "cfg/p.json\x00filter\x00unspecified\x00", objectID),
+		"the filter is given an empty value": fakeGitAnswering(t, nil, "cfg/p.json\x00filter\x00\x00", objectID),
 	}
 	for name, run := range cases {
 		t.Run(name, func(t *testing.T) { requireTakenToDiffer(t, run, repo, objectID) })
@@ -72,7 +80,7 @@ func TestTheConversionIsAskedOfGitFromTheRootAndWithTheFilesOwnPath(t *testing.T
 
 	holdsTheCommittedBlobConverted(run, repo, "cfg/p.json", objectID)
 
-	want := []string{repo + ": check-attr -z filter -- cfg/p.json", repo + ": hash-object --path=cfg/p.json -- " + filepath.Join(repo, "cfg", "p.json")}
+	want := []string{repo + ": check-attr -z -a -- cfg/p.json", repo + ": hash-object --path=cfg/p.json -- " + filepath.Join(repo, "cfg", "p.json")}
 	if strings.Join(asked, "\n") != strings.Join(want, "\n") {
 		t.Errorf("asked %q; want %q", asked, want)
 	}
