@@ -84,17 +84,14 @@ var _ = Describe("project-config boundary budgets", func() {
 	It("rejects documents that exceed the JSON nesting budget", rejectsDocumentsExceedJSONNestingBudget)
 
 	It("surfaces a timed-out git child as project_config_invalid", func() {
-		originalRunner := runProjectConfigGit
-		DeferCleanup(func() { runProjectConfigGit = originalRunner })
-
 		hungGit := func(ctx context.Context, dir string, args ...string) *exec.Cmd {
 			return exec.CommandContext(ctx, "sleep", "60")
 		}
-		runProjectConfigGit = func(dir string, args ...string) ([]byte, error) {
+		hungRunner := func(dir string, args ...string) ([]byte, error) {
 			return gitrepo.RunBytesBoundedWith(hungGit, dir, MaxBytes, MaxGitStderr, 50*time.Millisecond, args...)
 		}
 
-		_, err := Load(".", "HEAD", "project.json")
+		_, err := loadThrough(hungRunner, ".", "HEAD", "project.json")
 		Expect(err).To(HaveOccurred())
 		var cfgErr *ConfigError
 		Expect(err).To(BeAssignableToTypeOf(cfgErr))

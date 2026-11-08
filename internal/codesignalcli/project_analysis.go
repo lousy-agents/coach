@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/projectbridge"
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -21,7 +22,11 @@ import (
 // be non-nil; config/backend failures stay on the CLI composition root so
 // file-local reports remain available with stable diagnostics.
 type ProjectAnalysis struct {
-	ConfigPath   string
+	// Policy is the policy the analysis used, however it was selected, and whether
+	// the user named it with --project-config, which is what decides how later
+	// checks judge it: a named policy must be on disk, a discovered one is read
+	// from the analyzed revision as before.
+	Policy       policyref.Ref
 	Language     string
 	Config       json.RawMessage
 	ConfigDigest string
@@ -41,7 +46,7 @@ type ProjectBackendRequest struct {
 	HeadRevision string
 	BaseRevision string
 	Baseline     bool
-	ConfigPath   string
+	Policy       policyref.Ref
 	Config       json.RawMessage
 	ConfigDigest string
 	Language     string
@@ -123,7 +128,7 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		HeadRevision: headRevision,
 		BaseRevision: baseRevision,
 		Baseline:     baseline,
-		ConfigPath:   project.ConfigPath,
+		Policy:       project.Policy,
 		Config:       project.Config,
 		ConfigDigest: project.ConfigDigest,
 		Language:     project.Language,
@@ -149,7 +154,7 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		analyzerProtocolVersion = projectbridge.ProtocolVersion
 	}
 	roots := selectedRootsFromConfig(project.Config)
-	diagnostics = appendProjectWorktreeDiagnostic(diagnostics, dir, roots, project.ConfigPath)
+	diagnostics = appendProjectWorktreeDiagnostic(diagnostics, dir, roots, project.Policy)
 
 	merged := codesignal.Input{
 		Scope:               input.Scope,
@@ -195,23 +200,28 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 	return merged, enabled, nil
 }
 
-func selectedRootsFromConfig(config json.RawMessage) []string {
+// parsedPolicy is the policy document when there is one that parses. An empty
+// or invalid document yields ok=false, which both callers read as "declares
+// nothing".
+func parsedPolicy(config json.RawMessage) (cfg projectconfig.Config, ok bool) {
 	if len(config) == 0 {
-		return nil
+		return cfg, false
 	}
 	cfg, err := projectconfig.Parse(config)
-	if err != nil {
+	return cfg, err == nil
+}
+
+func selectedRootsFromConfig(config json.RawMessage) []string {
+	cfg, ok := parsedPolicy(config)
+	if !ok {
 		return nil
 	}
 	return cfg.Roots
 }
 
 func forbiddenImportsDeclared(config json.RawMessage) bool {
-	if len(config) == 0 {
-		return false
-	}
-	cfg, err := projectconfig.Parse(config)
-	return err == nil && len(cfg.ForbiddenImports) > 0
+	cfg, ok := parsedPolicy(config)
+	return ok && len(cfg.ForbiddenImports) > 0
 }
 
 // headProjectDiagnostics stamps Side "head" and Revision headRevision onto
@@ -220,16 +230,7 @@ func forbiddenImportsDeclared(config json.RawMessage) bool {
 // unprefixed for a head-side diagnostic, matching the pre-existing
 // convention that only base-side diagnostics get a marked Kind.
 func headProjectDiagnostics(diagnostics []codesignal.Diagnostic, headRevision string) []codesignal.Diagnostic {
-	if len(diagnostics) == 0 {
-		return nil
-	}
-	stamped := make([]codesignal.Diagnostic, len(diagnostics))
-	for i, d := range diagnostics {
-		d.Side = "head"
-		d.Revision = headRevision
-		stamped[i] = d
-	}
-	return stamped
+	return stampProjectDiagnostics(diagnostics, "head", headRevision, "")
 }
 
 // baseProjectDiagnostics prefixes each diagnostic's Kind with "base_",
@@ -241,15 +242,21 @@ func headProjectDiagnostics(diagnostics []codesignal.Diagnostic, headRevision st
 // one describes. Side "base" and Revision baseRevision are additive,
 // machine-readable versions of that same distinction (AC-VER-3).
 func baseProjectDiagnostics(diagnostics []codesignal.Diagnostic, baseRevision string) []codesignal.Diagnostic {
+	return stampProjectDiagnostics(diagnostics, "base", baseRevision, "base_")
+}
+
+// stampProjectDiagnostics copies diagnostics with Side and Revision set and
+// Kind prefixed by kindPrefix, or returns nil when there are none.
+func stampProjectDiagnostics(diagnostics []codesignal.Diagnostic, side, revision, kindPrefix string) []codesignal.Diagnostic {
 	if len(diagnostics) == 0 {
 		return nil
 	}
-	prefixed := make([]codesignal.Diagnostic, len(diagnostics))
+	stamped := make([]codesignal.Diagnostic, len(diagnostics))
 	for i, d := range diagnostics {
-		d.Kind = "base_" + d.Kind
-		d.Side = "base"
-		d.Revision = baseRevision
-		prefixed[i] = d
+		d.Kind = kindPrefix + d.Kind
+		d.Side = side
+		d.Revision = revision
+		stamped[i] = d
 	}
-	return prefixed
+	return stamped
 }

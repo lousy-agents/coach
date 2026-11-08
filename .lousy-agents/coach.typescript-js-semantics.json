@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "roots": ["js/semantics"],
+  "layers": [
+    {"name": "entities", "prefixes": ["js/semantics/src/types.ts", "js/semantics/src/errors.ts", "js/semantics/src/protocol.ts"]},
+    {"name": "usecases", "prefixes": ["js/semantics/src/analyzer.ts", "js/semantics/src/backend.ts"]},
+    {"name": "adapters", "prefixes": ["js/semantics/src/backend-cli.ts", "js/semantics/src/backend-cli-child.ts", "js/semantics/src/backend-default.ts", "js/semantics/src/project-sidecar"]},
+    {"name": "app", "prefixes": ["js/semantics/src/index.ts"]},
+    {"name": "tooling", "prefixes": ["js/semantics/test"]}
+  ],
+  "forbidden_imports": [{"from":"entities","to":"usecases"},{"from":"entities","to":"adapters"},{"from":"entities","to":"app"},{"from":"entities","to":"tooling"},{"from":"usecases","to":"adapters"},{"from":"usecases","to":"app"},{"from":"usecases","to":"tooling"},{"from":"adapters","to":"app"},{"from":"adapters","to":"tooling"},{"from":"app","to":"tooling"}],
+  "required_layer": "usecases",
+  "exclude_type_only_edges": false
+}

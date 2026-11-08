@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
@@ -81,7 +82,7 @@ func analyzeTSProjectBackend(dir, headRevision, baseRevision string, baseline bo
 		HeadRevision: headRevision,
 		BaseRevision: baseRevision,
 		Baseline:     baseline,
-		ConfigPath:   "project.json",
+		Policy:       policyref.Discovered("project.json"),
 		Config:       config,
 		ConfigDigest: projectconfig.Digest(config),
 		Language:     "typescript",

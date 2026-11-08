@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"strconv"
-	"strings"
+	"sync/atomic"
+	"time"
 )
 
 // RevisionFileReader streams git object contents for a single fixed
@@ -27,11 +27,30 @@ import (
 // every response after it for the rest of the batch. NUL cannot appear in a
 // Git path or a `revision:path` object identifier, so it is the only safe
 // delimiter here.
+//
+// Each request is held to the wall time of its budget (defaultFileReadBudget): a git that does not answer in time is killed and its pipe
+// closed, and the reader answers every request after it with the same timeout, because a git that did not
+// answer will not answer the next one.
 type RevisionFileReader struct {
 	revisionSHA string
 	cmd         *exec.Cmd
 	stdin       io.WriteCloser
+	pipe        io.ReadCloser
 	stdout      *bufio.Reader
+	budget      fileStreamBudget
+	stopped     atomic.Bool
+}
+
+// ObjectTooLargeError says that a file is past the limit on one file. The reader has discarded its content
+// and is ready for the next request.
+type ObjectTooLargeError struct {
+	Path  string
+	Size  int64
+	Limit int64
+}
+
+func (e *ObjectTooLargeError) Error() string {
+	return fmt.Sprintf("content is %d bytes, exceeds max %d bytes", e.Size, e.Limit)
 }
 
 // NewRevisionFileReader starts `git cat-file --batch` in dir and leaves it
@@ -40,26 +59,7 @@ type RevisionFileReader struct {
 // returned as a plain error; callers in this package wrap it into an
 // *OperationalError the same way other git-executable-missing failures are.
 func NewRevisionFileReader(dir, revisionSHA string) (*RevisionFileReader, error) {
-	cmd := exec.Command("git", "-C", dir, "cat-file", "--batch", "-Z")
-
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, fmt.Errorf("git cat-file --batch: %w", err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("git cat-file --batch: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("git cat-file --batch: %w", err)
-	}
-
-	return &RevisionFileReader{
-		revisionSHA: revisionSHA,
-		cmd:         cmd,
-		stdin:       stdin,
-		stdout:      bufio.NewReader(stdout),
-	}, nil
+	return newRevisionFileReader(ReadCommandContext, defaultFileReadBudget(), dir, revisionSHA)
 }
 
 // next returns the content of path at r.revisionSHA. A missing object (a
@@ -67,53 +67,31 @@ func NewRevisionFileReader(dir, revisionSHA string) (*RevisionFileReader, error)
 // (a malformed header, an unexpectedly closed pipe) is returned as an
 // error describing path -- it is the caller's responsibility to treat that
 // the same way a failed `git show` used to be treated, and to keep calling
-// next for the remaining files rather than aborting the whole scan.
+// next for the remaining files rather than aborting the whole scan. A git
+// that does not answer in time is the exception: its error is a *BoundError
+// (see TimedOut), and so is every later one.
 func (r *RevisionFileReader) Next(path string) ([]byte, error) {
-	if _, err := io.WriteString(r.stdin, r.revisionSHA+":"+path+"\x00"); err != nil {
-		return nil, fmt.Errorf("writing cat-file request for %q: %w", path, err)
+	clock := time.AfterFunc(r.budget.wall, r.endStalledGit)
+	content, err := r.request(path)
+	if !clock.Stop() || r.stopped.Load() {
+		return nil, fmt.Errorf("git cat-file: %w", &BoundError{Kind: BoundTimeout, message: fmt.Sprintf("git execution timed out after %s", r.budget.wall)})
 	}
-
-	header, err := r.stdout.ReadString('\x00')
-	if err != nil {
-		return nil, fmt.Errorf("reading cat-file response header for %q: %w", path, err)
-	}
-	header = strings.TrimSuffix(header, "\x00")
-
-	fields := strings.Fields(header)
-	if len(fields) == 2 && fields[1] == "missing" {
-		return nil, fmt.Errorf("%q is missing at %s", path, r.revisionSHA)
-	}
-	if len(fields) != 3 {
-		return nil, fmt.Errorf("malformed cat-file header for %q: %q", path, header)
-	}
-
-	size, err := strconv.Atoi(fields[2])
-	if err != nil || size < 0 {
-		return nil, fmt.Errorf("malformed cat-file size for %q: %q", path, header)
-	}
-
-	content := make([]byte, size)
-	if _, err := io.ReadFull(r.stdout, content); err != nil {
-		return nil, fmt.Errorf("reading cat-file content for %q: %w", path, err)
-	}
-
-	// Each response ends with exactly one trailing NUL after the object's
-	// content (per -Z), regardless of the object's own bytes.
-	if _, err := r.stdout.Discard(1); err != nil {
-		return nil, fmt.Errorf("reading cat-file trailing NUL for %q: %w", path, err)
-	}
-
-	return content, nil
+	return content, err
 }
 
-// close closes the batch process's stdin (which is what makes `git
-// cat-file --batch` exit) and waits for it to finish. It is safe to call on
-// a reader whose construction otherwise succeeded.
-func (r *RevisionFileReader) Close() error {
-	closeErr := r.stdin.Close()
-	waitErr := r.cmd.Wait()
-	if closeErr != nil {
-		return closeErr
-	}
-	return waitErr
+// endStalledGit kills a git that has not answered and closes its pipe, so that a read blocked on it returns
+// even when a child of git still holds the other end.
+func (r *RevisionFileReader) endStalledGit() {
+	r.stopped.Store(true)
+	_ = r.cmd.Process.Kill()
+	_ = r.pipe.Close()
+}
+
+// Close ends the batch process and waits for it: closing its stdin is what makes `git cat-file --batch`
+// exit. It returns nothing because nothing could act on what it would return: a git that was killed for a stall
+// or that failed mid-object has already given the reader the error that matters, and the status of one that
+// exited after its stdin closed says nothing about the files it was asked for.
+func (r *RevisionFileReader) Close() {
+	_ = r.stdin.Close()
+	_ = r.cmd.Wait()
 }

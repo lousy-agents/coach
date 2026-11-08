@@ -6,6 +6,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -19,8 +20,8 @@ func TestWrapCompilerUnresolvedErrorWithReadinessUnwrapsToThePlainError(t *testi
 	repo := gitfixture.Init(t)
 	head := gitfixture.CommitFile(t, repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 
-	original := &tstoolchain.CompilerUnresolvedError{Code: projectreadiness.GapTypescriptCompilerMissing, ConfigPath: "project.json"}
-	wrapped := WrapCompilerUnresolvedErrorWithReadiness(original, repo, head, "project.json")
+	original := &tstoolchain.CompilerUnresolvedError{Code: projectreadiness.GapTypescriptCompilerMissing, Policy: policyref.Named("project.json")}
+	wrapped := WrapCompilerUnresolvedErrorWithReadiness(original, repo, head, policyref.Named("project.json"))
 
 	var withReadiness *CompilerUnresolvedErrorWithReadiness
 	if !errors.As(wrapped, &withReadiness) {
@@ -29,8 +30,8 @@ func TestWrapCompilerUnresolvedErrorWithReadinessUnwrapsToThePlainError(t *testi
 	if withReadiness.Readiness == nil {
 		t.Fatalf("CompilerUnresolvedErrorWithReadiness.Readiness is nil, want a populated snapshot")
 	}
-	if withReadiness.Revision != head || withReadiness.ConfigPath != "project.json" {
-		t.Fatalf("CompilerUnresolvedErrorWithReadiness = {Revision: %q, ConfigPath: %q}, want {%q, %q}", withReadiness.Revision, withReadiness.ConfigPath, head, "project.json")
+	if withReadiness.Revision != head || withReadiness.Policy != policyref.Named("project.json") {
+		t.Fatalf("CompilerUnresolvedErrorWithReadiness = {Revision: %q, Policy: %+v}, want {%q, %+v}", withReadiness.Revision, withReadiness.Policy, head, policyref.Named("project.json"))
 	}
 
 	var plain *tstoolchain.CompilerUnresolvedError
@@ -44,14 +45,14 @@ func TestWrapCompilerUnresolvedErrorWithReadinessUnwrapsToThePlainError(t *testi
 
 func TestWrapProjectConfigErrorWithReadinessLeavesOtherErrorsUnchanged(t *testing.T) {
 	plain := &gitrepo.OperationalError{Message: "boom"}
-	if got := WrapProjectConfigErrorWithReadiness(plain, ".", "HEAD", "project.json"); got != error(plain) {
+	if got := WrapProjectConfigErrorWithReadiness(plain, ".", "HEAD", policyref.Named("project.json")); got != error(plain) {
 		t.Fatalf("WrapProjectConfigErrorWithReadiness(non-ProjectConfigError) = %v, want the original error unchanged", got)
 	}
 }
 
 func TestWrapCompilerUnresolvedErrorWithReadinessLeavesOtherErrorsUnchanged(t *testing.T) {
 	plain := &gitrepo.OperationalError{Message: "boom"}
-	if got := WrapCompilerUnresolvedErrorWithReadiness(plain, ".", "HEAD", "project.json"); got != error(plain) {
+	if got := WrapCompilerUnresolvedErrorWithReadiness(plain, ".", "HEAD", policyref.Named("project.json")); got != error(plain) {
 		t.Fatalf("WrapCompilerUnresolvedErrorWithReadiness(non-CompilerUnresolvedError) = %v, want the original error unchanged", got)
 	}
 }

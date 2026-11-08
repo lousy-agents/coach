@@ -14,20 +14,20 @@ import (
 const (
 	projectConfigMigrationPrompt         = "Copy project.json to .lousy-agents/coach.json? Coach will not delete project.json. [y/N] "
 	projectConfigMigrationCopied         = "Copied project.json to .lousy-agents/coach.json. Commit that file so the next scan reads it. project.json was left in place.\n"
-	projectConfigMigrationSkippedMessage = "project.json can be moved to .lousy-agents/coach.json. Next: mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json"
+	projectConfigMigrationSkippedMessage = "project.json can be moved to .lousy-agents/coach.json. Next: top=\"$(git rev-parse --show-toplevel)\" && mkdir -p \"$top\"/.lousy-agents && git -C \"$top\" mv -- project.json .lousy-agents/coach.json"
 )
 
-func prepareScanProjectAnalysis(dir, revision string, f codesignalFlags, stdin, stderr *os.File) (*codesignalcli.ProjectAnalysis, []codesignal.Diagnostic, func(), error) {
-	suppressUncommitted, migrationDiags, restore := offerDeprecatedProjectConfigMigration(dir, revision, f, stdin, stderr)
-	project, diags, err := prepareProjectAnalysis(dir, revision, f.projectConfigSet, f.projectConfig, f.projectLanguage, suppressUncommitted)
+func prepareScanProjectAnalysis(dir, revision string, f codesignalFlags, stdin, stderr *os.File, ports scanPorts) (*codesignalcli.ProjectAnalysis, []codesignal.Diagnostic, func(), error) {
+	suppressUncommitted, migrationDiags, restore := offerDeprecatedProjectConfigMigration(dir, revision, f, stdin, stderr, ports)
+	prepared, err := prepareProjectAnalysis(dir, revision, f.namedPolicy, f.projectLanguage, suppressUncommitted, ports)
 	if err != nil {
 		return nil, nil, restore, err
 	}
-	return project, append(diags, migrationDiags...), restore, nil
+	return prepared.analysis, append(prepared.diagnostics, migrationDiags...), restore, nil
 }
 
-func offerDeprecatedProjectConfigMigration(dir, revision string, f codesignalFlags, stdin, stderr *os.File) (bool, []codesignal.Diagnostic, func()) {
-	if !deprecatedProjectConfigCanMigrate(dir, revision, f) {
+func offerDeprecatedProjectConfigMigration(dir, revision string, f codesignalFlags, stdin, stderr *os.File, ports scanPorts) (bool, []codesignal.Diagnostic, func()) {
+	if !deprecatedProjectConfigCanMigrate(dir, revision, f, ports) {
 		return false, nil, leaveWorktreeStatusLive
 	}
 	if !terminal.HasControllingTerminal(stdin) || nonInteractiveRequested(f) {
@@ -51,12 +51,12 @@ func acceptProjectConfigMigrationCopy(dir string, stderr *os.File) (bool, []code
 
 func leaveWorktreeStatusLive() {}
 
-func deprecatedProjectConfigCanMigrate(dir, revision string, f codesignalFlags) bool {
-	if f.projectConfigSet {
+func deprecatedProjectConfigCanMigrate(dir, revision string, f codesignalFlags, ports scanPorts) bool {
+	if f.namedPolicy.Explicit {
 		return false
 	}
-	selection, err := discoverProjectConfig(dir, revision)
-	return err == nil && selection.Fatal == nil && selection.Deprecated && !selection.UncommittedCanonical
+	selection, err := ports.discover(dir, revision)
+	return err == nil && selection.Fatal == nil && selection.Deprecated && !selection.CanonicalPathTaken()
 }
 
 func answeredYes(stdin *os.File) bool {
@@ -72,10 +72,10 @@ func readLineWithoutReadAhead(stdin *os.File) string {
 	next := make([]byte, 1)
 	for {
 		n, err := stdin.Read(next)
+		if n == 1 && next[0] == '\n' {
+			break
+		}
 		if n == 1 {
-			if next[0] == '\n' {
-				break
-			}
 			line = append(line, next[0])
 		}
 		if err != nil {

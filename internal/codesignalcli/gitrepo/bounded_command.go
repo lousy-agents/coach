@@ -29,17 +29,17 @@ type BoundError struct {
 	Kind    BoundErrorKind
 }
 
-// commandContext builds the git child used by bounded reads. Tests may
-// replace it to simulate hung or oversized children.
-var commandContext = func(ctx context.Context, dir string, args ...string) *exec.Cmd {
-	return exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+// ReadCommandContext builds a git child that starts with the arguments and the environment every read of
+// this package starts with. A caller outside the package that needs a child (revisionfs's snapshot reads)
+// takes it as it is and does not set its Env, so all of the scan's reads see the repository alike.
+func ReadCommandContext(ctx context.Context, dir string, args ...string) *exec.Cmd {
+	return gitCommand(ctx, dir, args...)
 }
 
 // RunBytesBoundedWith is the shared bounded-git-read implementation
 // behind RunBytesBounded: a wall-time limit, hard stdout/stderr caps, and
 // concurrent pipe draining. buildCmd is the child-construction seam, letting
-// callers vary command/environment construction (e.g. revisionfs's
-// sanitized-environment snapshot reads) without duplicating this I/O logic.
+// a caller (or a test) supply the child without duplicating this I/O logic.
 func RunBytesBoundedWith(buildCmd func(ctx context.Context, dir string, args ...string) *exec.Cmd, dir string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
 	if err := validateGitReadBounds(timeout, maxStdout, maxStderr); err != nil {
 		return nil, err
@@ -66,21 +66,26 @@ func RunBytesBoundedWith(buildCmd func(ctx context.Context, dir string, args ...
 	// blocked reading the other.
 	stdoutCh := make(chan gitPipeResult, 1)
 	stderrCh := make(chan gitPipeResult, 1)
+	readersDone := make(chan struct{})
 	go func() {
-		stdoutCh <- readGitPipe(stdout, maxStdout+1)
+		stdoutCh <- readGitPipeUntilOverrun(stdout, maxStdout, cancel)
 	}()
 	go func() {
-		stderrCh <- readGitPipe(stderr, maxStderr+1)
+		stderrCh <- readGitPipeUntilOverrun(stderr, maxStderr, cancel)
 	}()
-	return finishGitBoundedRead(<-stdoutCh, <-stderrCh, cmd.Wait(), ctx, maxStdout, maxStderr, timeout)
+	// Killing git when the context ends does not end a child of git, and a child keeps the pipes open. The
+	// pipes are read here and not copied by exec, so cmd.WaitDelay has nothing to bound: this closes them.
+	go closePipesOfAGitThatOutlivesItsContext(ctx, readersDone, childPipeGrace, stdout, stderr)
+	stdoutResult, stderrResult := <-stdoutCh, <-stderrCh
+	close(readersDone)
+	return finishGitBoundedRead(stdoutResult, stderrResult, cmd.Wait(), ctx, maxStdout, maxStderr, timeout)
 }
 
 // RunBytesBounded runs git with a wall-time limit and hard caps on
-// collected stdout and stderr, building the child via the package's default
-// commandContext seam. The LimitReader stops after maxStdout+1 bytes so
+// collected stdout and stderr, building the child with ReadCommandContext. The LimitReader stops after maxStdout+1 bytes so
 // an oversized blob is detected without buffering the entire child output.
 func RunBytesBounded(dir string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
-	return RunBytesBoundedWith(commandContext, dir, maxStdout, maxStderr, timeout, args...)
+	return RunBytesBoundedWith(ReadCommandContext, dir, maxStdout, maxStderr, timeout, args...)
 }
 
 func (e *BoundError) Error() string { return e.message }

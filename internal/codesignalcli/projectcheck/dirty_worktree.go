@@ -10,24 +10,36 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// detectRelevantDirtyWorktree lists uncommitted/untracked paths -- via `git
-// status`, path names only, never their content -- relevant to the
-// readiness result: see IsRelevantDirtyPath for what counts as relevant.
-func detectRelevantDirtyWorktree(dir string, roots []string, policyPath string) (projectreadiness.DirtyWorktree, error) {
+// detectRelevantDirtyWorktree lists the uncommitted paths the report says it did
+// not read, via `git status`: path names only, never their content. See
+// IsRelevantDirtyPath for what counts as relevant. readFromDisk is a path the
+// checks did read from the working tree, so a change to it is never one of them.
+func detectRelevantDirtyWorktree(dir string, roots []string, policyPath, readFromDisk string) (projectreadiness.DirtyWorktree, error) {
 	entries, err := gitrepo.WorktreeStatus(dir)
 	if err != nil {
 		return projectreadiness.DirtyWorktree{}, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: git status failed: %s", err)}
 	}
 
+	relevant := relevantDirtyPaths(entries, roots, policyPath, readFromDisk)
+
+	return projectreadiness.DirtyWorktree{RelevantChanges: len(relevant) > 0, Paths: relevant}, nil
+}
+
+// relevantDirtyPaths are the paths of entries the report did not read and that count as relevant, sorted.
+// A path is the policy's own when it names the same path as readFromDisk or policyPath, whichever Unicode
+// form git lists it in and the user typed it in.
+func relevantDirtyPaths(entries []gitrepo.WorktreeEntry, roots []string, policyPath, readFromDisk string) []string {
 	relevant := make([]string, 0, len(entries))
 	for _, entry := range entries {
+		if readFromDisk != "" && gitrepo.SamePath(entry.Path, readFromDisk) {
+			continue
+		}
 		if IsRelevantDirtyPath(entry.Path, roots, policyPath) {
 			relevant = append(relevant, entry.Path)
 		}
 	}
 	sort.Strings(relevant)
-
-	return projectreadiness.DirtyWorktree{RelevantChanges: len(relevant) > 0, Paths: relevant}, nil
+	return relevant
 }
 
 var alwaysRelevantMetadataBasenames = map[string]bool{
@@ -43,7 +55,7 @@ var alwaysRelevantMetadataBasenames = map[string]bool{
 }
 
 func IsRelevantDirtyPath(candidate string, roots []string, policyPath string) bool {
-	if candidate == policyPath {
+	if gitrepo.SamePath(candidate, policyPath) {
 		return true
 	}
 	base := path.Base(candidate)

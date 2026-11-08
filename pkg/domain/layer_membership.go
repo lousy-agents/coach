@@ -26,14 +26,17 @@ func LayerPrefixContains(prefix, key string) bool {
 func NewLayerMembership(keys []string, prefixes []string) LayerMembership {
 	outside := 0
 	for _, key := range keys {
-		if !anyLayerPrefixContains(prefixes, key) {
+		if !AnyLayerPrefixContains(prefixes, key) {
 			outside++
 		}
 	}
 	return LayerMembership{AnalyzedFiles: len(keys), FilesOutsideLayers: outside}
 }
 
-func anyLayerPrefixContains(prefixes []string, key string) bool {
+// AnyLayerPrefixContains reports whether any of a layer's prefixes contains key,
+// by LayerPrefixContains. A layer is the union of its prefixes, so every
+// membership question about a layer is this one.
+func AnyLayerPrefixContains(prefixes []string, key string) bool {
 	for _, prefix := range prefixes {
 		if LayerPrefixContains(prefix, key) {
 			return true

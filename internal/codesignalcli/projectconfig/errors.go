@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // ErrorKind discriminates why a *ConfigError was
@@ -36,6 +37,9 @@ const (
 	// output-budget bound tripped while reading repoPath: a transient
 	// operational condition, not a defect in the file's content.
 	KindUnreadable
+	// KindMissing means an explicit --project-config names a file that does
+	// not exist on disk. It never falls back to another policy.
+	KindMissing
 )
 
 // Error signals a --project-config value that is missing,
@@ -45,38 +49,179 @@ const (
 type ConfigError struct {
 	Message string
 	Kind    ErrorKind
+
+	// Missing says why a policy that is missing from disk is missing, for the
+	// callers that have to tell the cases apart. It is MissingUnset for every
+	// other kind. It is not PolicyCause, the stable word the readiness result carries.
+	Missing MissingCause
+	// FromWorkingTree is set when the working tree, not the analyzed revision,
+	// produced this error. A caller that holds it does not need to look at the
+	// working tree for the same policy again.
+	FromWorkingTree bool
+	// UnreadStagedEdit is set when the working tree could not supply the
+	// policy and the policy is committed, and the index holds an edit to it that
+	// nothing has read, or git could not say it holds none. A report that rests
+	// on this error does not reflect that edit.
+	UnreadStagedEdit bool
+	// Blocker is, for a policy missing because a file stands where a directory of its path should be, that file's
+	// path. It is empty for every other error.
+	Blocker string
+	// Remedy is the way out the tool offers. Every constructor in this file sets
+	// it. The zero value offers nothing, so a constructor that left it unset
+	// would withhold advice, never suggest a new policy where one cannot help.
+	Remedy projectreadiness.PolicyRemedy
+	// PolicyCause is why no remedy fixes the gap, as a stable word, for an error that
+	// offers none. It is empty when a restore or a new policy is offered.
+	PolicyCause projectreadiness.PolicyCause
+	// GitFailure is set when git could not answer a question about the policy,
+	// so a caller that reports operational failures separately can return it.
+	GitFailure error
 }
+
+// MissingCause is why a policy named with --project-config is missing from disk.
+type MissingCause int
+
+const (
+	// MissingUnset is the zero value, for an error that is not a missing policy.
+	MissingUnset MissingCause = iota
+	// MissingAbsent means nothing is at the path.
+	MissingAbsent
+	// MissingBlockedParent means a parent path component is a file, so the path
+	// cannot be created or restored while that file stays.
+	MissingBlockedParent
+)
 
 func (e *ConfigError) Error() string { return e.Message }
 
-// readError classifies a runProjectConfigGit failure into a
+// OffersAuthoring is whether a new policy is the way out of this error. It is the one decision every
+// gate that starts or suggests guided authoring asks, and the remedy makes it: the kind says what went
+// wrong, and a refusal that shares a kind with an invalid document (a policy committed as a link, a path
+// the disk cannot use) offers no new policy.
+func (e *ConfigError) OffersAuthoring() bool {
+	action, named := projectreadiness.NextActionForRemedy(e.Remedy)
+	return named && action == projectreadiness.NextActionAuthorPolicy
+}
+
+// ReplacesPolicy is whether the way out is a new document at a path where one already exists: a policy the
+// revision holds whose document is not valid, or is over the size budget, which a smaller document fixes. The
+// size overrun is the one unreadable policy that offers authoring (a time or stderr bound offers none).
+// Authoring creates files and refuses a target that exists, so it cannot write at the path; it can only offer the
+// candidate to be saved over the file.
+func (e *ConfigError) ReplacesPolicy() bool {
+	return (e.Kind == KindInvalid || e.Kind == KindUnreadable) && e.OffersAuthoring()
+}
+
+// AbsentFromDisk is whether nothing is at the policy's path in the working tree: the error is a missing policy
+// and not a path that is unusable or blocked by a file.
+func (e *ConfigError) AbsentFromDisk() bool {
+	return e.Kind == KindMissing && e.Missing == MissingAbsent
+}
+
+// FreeForANewPolicy is whether a new file can go at the policy's path, or project.json be moved there, without
+// losing work or failing: nothing is on disk, and nothing else holds the path. What else can hold it is decided where
+// the judgment of the path is made, which asks the index and the revision as well as the disk, and the remedy it
+// arrives at is a new policy only when nothing does: a staged copy or edit, a recorded conflict, a skip-worktree mark,
+// a sparse checkout, a submodule, or a policy the revision holds that a restore brings back each leave another remedy. This
+// is the one question every gate that writes or moves a policy asks, for a policy named and for one discovered.
+func (e *ConfigError) FreeForANewPolicy() bool {
+	return e.AbsentFromDisk() && e.Remedy == projectreadiness.RemedyAuthor
+}
+
+// readError classifies a failure of the policy read into a
 // user-facing message that never surfaces raw git stderr. A
 // *gitrepo.BoundError is our own timeout/output-budget text and is
 // safe to include verbatim. Any other failure means git itself reported the
 // read as failed; that case is further split by whether repoPath exists in
 // the worktree, so a user who forgot to commit a generated config is told to
 // commit it rather than shown a generic not-found message.
-func readError(dir, revision, repoPath string, gitErr error) error {
+func readError(run gitrepo.Runner, dir, revision, repoPath string, gitErr error) error {
 	var boundErr *gitrepo.BoundError
 	if errors.As(gitErr, &boundErr) {
-		return &ConfigError{Kind: KindUnreadable, Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
+		remedy, cause := boundOutcome(boundErr)
+		return &ConfigError{Kind: KindUnreadable, Remedy: remedy, PolicyCause: cause, Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
 	}
-	if configExistsInWorktree(dir, repoPath) {
-		return &ConfigError{Kind: KindUncommitted, Message: fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision)}
+	exists, err := configExistsInWorktree(run, dir, repoPath)
+	if err != nil {
+		return unansweredRead(repoPath, revision, newGitFailure("whether it exists in the worktree", err))
 	}
-	return &ConfigError{Kind: KindNotFound, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found at revision %q (project_config_invalid)", repoPath, revision)}
+	if exists {
+		state, _ := UncommittedPolicyInIndex(run, dir, revision, repoPath)
+		return &ConfigError{Kind: KindUncommitted, Remedy: projectreadiness.RemedyNone, PolicyCause: state.Cause, Message: state.Message}
+	}
+	return &ConfigError{Kind: KindNotFound, Remedy: projectreadiness.RemedyAuthor, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found at revision %q (project_config_invalid)", repoPath, revision)}
 }
 
-// configExistsInWorktree reports whether repoPath is readable in the
-// worktree at dir. Any stat failure (not just "does not exist") is treated
-// as absent: this function's only caller already falls back to a generic
-// not-found-at-revision message in that case, so distinguishing
-// permission-denied or other I/O errors from a missing file has no observer.
-func configExistsInWorktree(dir, repoPath string) bool {
-	_, statErr := os.Stat(filepath.Join(dir, repoPath))
+// unansweredRead is a policy that cannot be told from absent because git could not answer a question
+// about it. It names the question and offers nothing: "was not found" would offer a new policy over a
+// file that may be there.
+func unansweredRead(repoPath, revision string, failure *gitFailure) error {
+	return &ConfigError{Kind: KindUnreadable, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseGitUnreadable, Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): Coach could not check %s, so it gives no advice", repoPath, revision, failure.describe())}
+}
+
+// boundOutcome is the way out of a read that tripped a bound, or the reason it has none, decided once
+// so the two cannot disagree. A policy over the size budget is a content gap a smaller policy fixes, so
+// authoring stays offered, as --check-project already reports it, and there is no cause. A time or
+// stderr bound says the read failed for a reason a new policy does not change: no remedy, and the
+// cause says the read failed.
+func boundOutcome(boundErr *gitrepo.BoundError) (projectreadiness.PolicyRemedy, projectreadiness.PolicyCause) {
+	if boundErr.Kind == gitrepo.BoundStdout {
+		return projectreadiness.RemedyAuthor, ""
+	}
+	return projectreadiness.RemedyNone, projectreadiness.CauseGitUnreadable
+}
+
+// configExistsInWorktree reports whether repoPath is readable in the worktree at dir, which it
+// finds through run. Any stat failure (not just "does not exist") is treated as absent, since
+// distinguishing permission-denied from a missing file has no observer here. Where git cannot say
+// where the worktree is, it is an error: the caller must not read that as absent.
+func configExistsInWorktree(run gitrepo.Runner, dir, repoPath string) (bool, error) {
+	root, err := gitrepo.RepositoryRootWith(run, dir)
+	if err != nil {
+		return false, err
+	}
+	return worktreeHolds(root, repoPath), nil
+}
+
+// worktreeHolds is whether repoPath is readable under the worktree rooted at root.
+func worktreeHolds(root, repoPath string) bool {
+	_, statErr := os.Stat(filepath.Join(root, repoPath))
 	return statErr == nil
 }
 
+func missingError(repoPath string) error {
+	return &ConfigError{Kind: KindMissing, Missing: MissingAbsent, Remedy: projectreadiness.RemedyAuthor, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found on disk at the repository root (project_config_missing); the path is repository-relative", repoPath)}
+}
+
+// blockedParentError is a missing policy whose path cannot be created because a
+// parent component is not a directory, so writing a new policy there is not a
+// way forward, and neither is restoring the committed one: git restore would
+// delete the file in the way. It is still missing, never a reason to read
+// another policy.
+func blockedParentError(repoPath, component string) error {
+	return &ConfigError{Kind: KindMissing, Missing: MissingBlockedParent, Blocker: component, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseParentNotDirectory, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found on disk at the repository root (project_config_missing): a parent path component is not a directory, %q; move or remove it; the path is repository-relative", repoPath, component)}
+}
+
+// unusableOnDiskError is a policy path the working tree decided is unusable. A
+// new policy cannot replace what is there, so authoring is not offered.
+func unusableOnDiskError(repoPath string, cause projectreadiness.PolicyCause, reason string) error {
+	return newUnusableOnDisk(repoPath, cause, reason)
+}
+
+// newUnusableOnDisk is unusableOnDiskError as the concrete type. The cause says which fix the
+// path needs, so a reader can tell a directory from a link, an unreadable file and a name in
+// another case without parsing the message.
+func newUnusableOnDisk(repoPath string, cause projectreadiness.PolicyCause, reason string) *ConfigError {
+	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: cause, Message: fmt.Sprintf("coach codesignal: --project-config %q %s (project_config_invalid)", repoPath, reason)}
+}
+
+// invalidPathError is a --project-config value that cannot name a policy in this repository. A new policy
+// is written at its own location and leaves the path wrong, so authoring is not offered; the reason says what
+// is wrong with the path. It is a usage refusal, made before any readiness check runs, so no report carries it
+// and it has no word in the cause vocabulary; a gap built from it anyway says undetermined.
+func invalidPathError(repoPath, revision, reason string) error {
+	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, Message: fmt.Sprintf("coach codesignal: --project-config %q is invalid at revision %q (project_config_invalid): %s", repoPath, revision, reason)}
+}
+
 func invalidError(repoPath, revision, reason string) error {
-	return &ConfigError{Kind: KindInvalid, Message: fmt.Sprintf("coach codesignal: --project-config %q is invalid at revision %q (project_config_invalid): %s", repoPath, revision, reason)}
+	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyAuthor, Message: fmt.Sprintf("coach codesignal: --project-config %q is invalid at revision %q (project_config_invalid): %s", repoPath, revision, reason)}
 }

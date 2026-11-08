@@ -16,13 +16,18 @@ type T interface {
 	TempDir() string
 }
 
-// CommitEnv pins a commit identity so a fixture commit never depends on the
-// host's git configuration.
+// CommitEnv pins a commit identity so a fixture commit never depends on the host's git configuration, and leaves the
+// host's own configuration out of the fixture's git: a developer's machine has a global identity or guesses one from
+// its hostname, and a runner has neither, so a fixture that commits without its own identity is green on one and red on
+// the other. A fixture's git reads no global or system configuration, and none from the XDG directory.
 var CommitEnv = append(os.Environ(),
 	"GIT_AUTHOR_NAME=coach-test",
 	"GIT_AUTHOR_EMAIL=coach-test@example.com",
 	"GIT_COMMITTER_NAME=coach-test",
 	"GIT_COMMITTER_EMAIL=coach-test@example.com",
+	"GIT_CONFIG_GLOBAL=/dev/null",
+	"GIT_CONFIG_NOSYSTEM=1",
+	"XDG_CONFIG_HOME=/dev/null",
 )
 
 // Init runs `git init` in a fresh temporary directory and returns it.
@@ -60,6 +65,9 @@ func Rename(t T, dir, from, to string) string {
 
 func run(t T, dir string, env []string, args ...string) string {
 	t.Helper()
+	if env == nil {
+		env = CommitEnv
+	}
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	cmd.Env = env

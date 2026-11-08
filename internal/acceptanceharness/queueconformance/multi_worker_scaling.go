@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 )
 
 // runMultiWorkerScaling backs the "multi-worker scaling" subtest. Per
@@ -20,7 +21,7 @@ import (
 // retrying (with a short bounded backoff) until a shared completion count
 // reaches taskCount or ctx is done -- the latter remains the real safety
 // net against a genuinely broken adapter.
-func runMultiWorkerScaling(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Clock) Queue) {
+func runMultiWorkerScaling(t *testing.T, newQueue func(tb testing.TB, clock clock.Clock) Queue) {
 	const taskCount = 20
 	const workerCount = 4
 

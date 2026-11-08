@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 )
 
 func validateCheckProjectFlags(f codesignalFlags, setFlags map[string]bool, positional []string, checkProjectCount int) string {
@@ -19,10 +17,8 @@ func validateCheckProjectFlags(f codesignalFlags, setFlags map[string]bool, posi
 	if f.format != "text" && f.format != "json" {
 		return fmt.Sprintf("coach: invalid --format value %q: must be \"text\" or \"json\"", f.format)
 	}
-	if f.projectConfigSet {
-		if err := projectconfig.ValidatePath(f.projectConfig); err != nil {
-			return fmt.Sprintf("coach: --project-config %q is invalid: %s", f.projectConfig, err)
-		}
+	if message := invalidNamedPolicyMessage(f.namedPolicy); message != "" {
+		return message
 	}
 	allowedWithCheckProject := map[string]bool{"check-project": true, "baseline": true, "project-language": true, "project-config": true, "format": true}
 	if name, disallowed := firstDisallowedFlag(setFlags, allowedWithCheckProject); disallowed {

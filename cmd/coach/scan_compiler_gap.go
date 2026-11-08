@@ -5,15 +5,16 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
-func wrapScanAnalysisError(err error, dir, revision, configPath string, stderr *os.File) error {
+func wrapScanAnalysisError(err error, dir, revision string, policy policyref.Ref, stderr *os.File) error {
 	var unresolved *tstoolchain.CompilerUnresolvedError
 	if errors.As(err, &unresolved) {
-		return tssetup.WrapCompilerUnresolvedErrorWithReadiness(unresolved, dir, revision, configPath)
+		return tssetup.WrapCompilerUnresolvedErrorWithReadiness(unresolved, dir, revision, policy)
 	}
 	var runtimeErr *tstoolchain.RuntimeUnresolvedError
 	if errors.As(err, &runtimeErr) {

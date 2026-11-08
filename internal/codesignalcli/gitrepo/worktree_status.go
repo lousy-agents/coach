@@ -1,8 +1,9 @@
 package gitrepo
 
 import (
+	"regexp"
+	"strconv"
 	"strings"
-	"time"
 )
 
 type WorktreeEntry struct {
@@ -16,25 +17,72 @@ type WorktreeEntry struct {
 // CLI or exhausting memory, the same as every other git read this package
 // performs.
 const (
-	maxWorktreeStatusBytes  = 16 << 20
-	maxWorktreeStatusStderr = 64 << 10
-	worktreeStatusTimeout   = 30 * time.Second
+	maxWorktreeStatusBytes  = WorktreeStatusBytes
+	maxWorktreeStatusStderr = GitStderrBytes
 )
 
-// runWorktreeStatusGit is the git seam used by WorktreeStatus. Tests may
-// replace it to exercise timeout and bound failures without hanging.
-var runWorktreeStatusGit = func(dir string, args ...string) ([]byte, error) {
-	return RunBytesBounded(dir, maxWorktreeStatusBytes, maxWorktreeStatusStderr, worktreeStatusTimeout, args...)
+// worktreeStatusGit is the git every status read is made with, held to the budget of the status listing.
+func worktreeStatusGit() Runner {
+	return BoundedRunner(maxWorktreeStatusBytes, maxWorktreeStatusStderr, WorktreeStatusTimeout)
 }
 
 // WorktreeStatus lists every changed or untracked worktree path via
 // `git status --porcelain=v1 --untracked-files=all -z`.
 func WorktreeStatus(dir string) ([]WorktreeEntry, error) {
-	output, err := runWorktreeStatusGit(dir, "status", "--porcelain=v1", "--untracked-files=all", "-z")
+	return worktreeStatusBy(worktreeStatusGit(), dir)
+}
+
+// worktreeStatusBy is WorktreeStatus with the git that answers given by the caller, so that a test can record the
+// questions it is asked, or hand in one that times out, without replacing anything.
+func worktreeStatusBy(run Runner, dir string) ([]WorktreeEntry, error) {
+	supported, version := noLazyFetchSupported(run, dir)
+	return worktreeStatusOf(run, dir, supported, version)
+}
+
+// worktreeStatusOf is the status for a git of the given version, which can, or cannot, be told not to fetch.
+func worktreeStatusOf(run Runner, dir string, canBeToldNotToFetch bool, version string) ([]WorktreeEntry, error) {
+	output, err := run(dir, worktreeStatusArguments(canBeToldNotToFetch, version)...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseWorktreeStatus(output), nil
+}
+
+// worktreeStatusArguments are the arguments of the status.
+//
+// A git that can be told not to fetch is, and `git status` then starts a nested status in every populated submodule
+// with that instruction in its environment. An older git ignores the instruction, and a submodule that is a partial
+// clone lacking objects is fetched into by that nested status: the remote's transport runs, though the guard only
+// looked at the superproject's revisions. So that git does not go into submodules, and a change inside one does not
+// show in the status.
+//
+// `--no-renames` keeps the status from comparing a staged deletion with a staged addition, which reads the blob of
+// each. The guard lists the objects the revisions reach, and an index can name a blob that none of them does and that
+// the repository lacks (a path reset from a fetched branch); an older git fetches it, and a current one fails the
+// whole status for it. Every path the status lists is still listed, and a staged rename is listed as its deletion and
+// its addition. The flag is git 2.18's, so a git that is older, or whose version is not known, is not given it.
+func worktreeStatusArguments(canBeToldNotToFetch bool, version string) []string {
+	arguments := []string{"status", "--porcelain=v1", "--untracked-files=all", "-z"}
+	if statusKnowsNoRenames(version) {
+		arguments = append(arguments, "--no-renames")
+	}
+	if !canBeToldNotToFetch {
+		arguments = append(arguments, "--ignore-submodules=all")
+	}
+	return arguments
+}
+
+var statusVersionPattern = regexp.MustCompile(`^(\d+)\.(\d+)`)
+
+// statusKnowsNoRenames is whether the version of git has `git status --no-renames`, which came in 2.18.
+func statusKnowsNoRenames(version string) bool {
+	match := statusVersionPattern.FindStringSubmatch(version)
+	if match == nil {
+		return false
+	}
+	major, _ := strconv.Atoi(match[1])
+	minor, _ := strconv.Atoi(match[2])
+	return major > 2 || (major == 2 && minor >= 18)
 }
 
 // ParseWorktreeStatus parses `git status --porcelain=v1 -z` output.

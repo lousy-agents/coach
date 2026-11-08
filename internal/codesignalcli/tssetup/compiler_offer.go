@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // CompilerSetupOfferResult is RunCompilerSetupOffer's outcome: the
@@ -25,10 +27,17 @@ type CompilerSetupOfferResult struct {
 	// mirroring RunPrepareCompilerMiseSetup's own AC-SET-13 precondition
 	// (prepare_compiler.go). The sole production caller
 	// (runScanCompilerSetupOffer) only ever reaches this function downstream
-	// of a successful loadProjectConfig, so this never actually fires today;
+	// of a successful policy load, so this never actually fires today;
 	// the guard exists so that invariant is enforced here too rather than
 	// resting entirely on the caller never changing.
 	PolicyRequired bool
+
+	// PolicyCode and PolicyRemedy are the failing policy's gap code and the
+	// next action readiness named for it, as on PrepareCompilerMiseResult.
+	PolicyCode   string
+	PolicyRemedy projectreadiness.PolicyRemedy
+	// CauseText is why no remedy fixes the policy, as on PrepareCompilerMiseResult.
+	CauseText string
 
 	// NoChoicesOffered is true either when gapCode's own next action is not
 	// the executable prepare-compiler kind (a runtime-boundary gap such as
@@ -122,9 +131,15 @@ type CompilerSetupOfferResult struct {
 // readiness.Checks.Policy must already be projectreadiness.Pass, mirroring
 // RunPrepareCompilerMiseSetup's own precondition: a reviewed, committed
 // policy is required before compiler setup is ever offered (AC-SET-13).
-func RunCompilerSetupOffer(ctx context.Context, dir, revision, configPath, gapCode string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) CompilerSetupOfferResult {
+func RunCompilerSetupOffer(ctx context.Context, dir, revision string, policy policyref.Ref, gapCode string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) CompilerSetupOfferResult {
+	return runCompilerSetupOfferWith(tstoolchain.LocateMiseTypescriptInstall, ctx, dir, revision, policy, gapCode, readiness, in, out)
+}
+
+// runCompilerSetupOfferWith is RunCompilerSetupOffer with the locator that finds the compiler mise installed given by the
+// caller: the install verifies the compiler through it, and so does the readiness recheck after it.
+func runCompilerSetupOfferWith(locate tstoolchain.MiseLocator, ctx context.Context, dir, revision string, policy policyref.Ref, gapCode string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) CompilerSetupOfferResult {
 	if readiness != nil && readiness.Checks.Policy.State != projectreadiness.Pass {
-		return CompilerSetupOfferResult{PolicyRequired: true}
+		return CompilerSetupOfferResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy, CauseText: readiness.Checks.Policy.CauseText}
 	}
 	if code, blocking := readinessHasBlockingRuntimeGap(readiness); blocking {
 		return CompilerSetupOfferResult{RuntimeGapCode: code}
@@ -135,7 +150,7 @@ func RunCompilerSetupOffer(ctx context.Context, dir, revision, configPath, gapCo
 	if readiness == nil {
 		return CompilerSetupOfferResult{NoChoicesOffered: true}
 	}
-	menu, projectPackageDirectory, resolutionWithheld := withProjectPackageResolution(AvailableChoices(*readiness), dir, revision, configPath)
+	menu, projectPackageDirectory, resolutionWithheld := withProjectPackageResolution(AvailableChoices(*readiness), dir, revision, policy)
 	if !menuOffersExecutableChoice(menu) {
 		return CompilerSetupOfferResult{NoChoicesOffered: true, Withheld: menu.Withheld}
 	}
@@ -165,9 +180,9 @@ func RunCompilerSetupOffer(ctx context.Context, dir, revision, configPath, gapCo
 	}
 
 	if choice == ChoiceProjectPackage {
-		return runProjectPackageSetupOffer(ctx, dir, revision, configPath, projectPackageDirectory, readiness.Checks.PackageManager, out, reader)
+		return runProjectPackageSetupOffer(ctx, dir, revision, policy, projectPackageDirectory, readiness.Checks.PackageManager, out, reader)
 	}
-	return runMiseSetupOffer(ctx, dir, revision, configPath, choice, out, reader)
+	return runMiseSetupOffer(locate, ctx, dir, revision, policy, choice, out, reader)
 }
 
 // menuOffersExecutableChoice reports whether menu carries at least one

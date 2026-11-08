@@ -3,7 +3,6 @@ package pkgmanager
 import (
 	"context"
 	"path"
-	"time"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
@@ -18,17 +17,15 @@ const (
 // same as the project-config read so a hostile manifest or hung git child
 // fails closed.
 const (
-	maxPackageManagerRevisionBytes  = 1 << 20  // 1 MiB
-	maxPackageManagerRevisionStderr = 64 << 10 // 64 KiB
-	packageManagerRevisionTimeout   = 30 * time.Second
+	maxPackageManagerRevisionBytes  = gitrepo.CommittedFileBytes
+	maxPackageManagerRevisionStderr = gitrepo.GitStderrBytes
+	packageManagerRevisionTimeout   = gitrepo.CommittedFileTimeout
 )
 
 // runPackageManagerRevisionGit is the bounded git read behind
 // AtRevision. Tests may replace it to inject git
 // failures into revision-scoped detection.
-var runPackageManagerRevisionGit = func(dir string, args ...string) ([]byte, error) {
-	return gitrepo.RunBytesBounded(dir, maxPackageManagerRevisionBytes, maxPackageManagerRevisionStderr, packageManagerRevisionTimeout, args...)
-}
+var runPackageManagerRevisionGit = gitrepo.BoundedRunner(maxPackageManagerRevisionBytes, maxPackageManagerRevisionStderr, packageManagerRevisionTimeout)
 
 // snapshotProbePackageManagerVersion is the probe seam for
 // AtRevision. Tests may replace it to verify that the

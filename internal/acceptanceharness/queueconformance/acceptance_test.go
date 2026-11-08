@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 )
 
 // referenceVisibilityTimeout is comfortably smaller than reclaimAdvance, so
@@ -19,7 +19,7 @@ const referenceVisibilityTimeout = time.Minute
 // naming convention, so it is picked up by `go test -race ./... -run
 // Acceptance` / `mise run test-acceptance-fast`.
 func TestQueueConformanceAcceptance(t *testing.T) {
-	Run(t, func(tb testing.TB, clock acceptanceharness.Clock) Queue {
+	Run(t, func(tb testing.TB, clock clock.Clock) Queue {
 		return newInMemoryQueue(clock, referenceVisibilityTimeout)
 	})
 }

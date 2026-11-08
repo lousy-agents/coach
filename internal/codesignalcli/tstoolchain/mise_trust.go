@@ -90,11 +90,11 @@ func gatedMiseOriginEvaluation(origin string, trust MiseTrust, evaluate func() o
 // tool itself happens to be unverifiable. Every other case (zero or one
 // candidate version) is gated on MiseTrust as usual: reading that one
 // version's installed location is where mise's own trustworthiness matters.
-func evaluateMiseProjectOriginGated(worktreeRoot string) originEvaluation {
+func evaluateMiseProjectOriginGated(locate MiseLocator, worktreeRoot string) originEvaluation {
 	if localMiseProjectVersionsConflict(worktreeRoot) {
-		return evaluateMiseProjectOrigin(worktreeRoot)
+		return evaluateMiseProjectOrigin(locate, worktreeRoot)
 	}
 	return gatedMiseOriginEvaluation(OriginMiseProject, EvaluateMiseProjectTrust(context.Background(), worktreeRoot), func() originEvaluation {
-		return evaluateMiseProjectOrigin(worktreeRoot)
+		return evaluateMiseProjectOrigin(locate, worktreeRoot)
 	})
 }

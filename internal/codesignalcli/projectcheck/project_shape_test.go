@@ -19,7 +19,7 @@ func TestCheckProjectShapeWalksUpToParentPackageJSONWhenPolicyPassed(t *testing.
 		t.Fatalf("write index.ts: %v", err)
 	}
 
-	got, err := checkProjectShape(repo, revision, []string{"js/semantics/src"}, true)
+	got, err := checkProjectShape(readinessGit(), repo, revision, []string{"js/semantics/src"}, true)
 	if err != nil {
 		t.Fatalf("checkProjectShape returned error: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestCheckProjectShapeWalksUpToParentPackageJSONWhenPolicyPassed(t *testing.
 
 // TestCheckProjectShapeIgnoresRootsWhenPolicyNotPassed pins the
 // policyPassed guard in checkProjectShape directly, independent of whatever
-// CheckPolicy happens to return on any particular invalid-policy path:
+// checkPolicy happens to return on any particular invalid-policy path:
 // removing the `if !policyPassed` branch turns this red regardless. Without
 // a validated policy, roots is untrusted input, so a root-level manifest
 // miss reports not_checked rather than asserting an unsupported shape this
@@ -44,7 +44,7 @@ func TestCheckProjectShapeIgnoresRootsWhenPolicyNotPassed(t *testing.T) {
 	}
 	revision := gitfixture.CommitFile(t, repo, "sub/package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 
-	got, err := checkProjectShape(repo, revision, []string{"sub"}, false)
+	got, err := checkProjectShape(readinessGit(), repo, revision, []string{"sub"}, false)
 	if err != nil {
 		t.Fatalf("checkProjectShape returned error: %v", err)
 	}

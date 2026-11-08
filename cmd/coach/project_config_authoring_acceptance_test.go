@@ -60,7 +60,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			defer stderr.Close()
 
 			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
-			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr, defaultScanPorts())
 
 			Expect(exitCode).To(Equal(3))
 			Expect(readStdout()).To(BeEmpty(), "no prompt output must reach stdout when the baseline revision cannot even be resolved")
@@ -70,8 +70,8 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 
 	When("TypeScript root discovery reports the snapshot itself is unreadable (not merely budget-truncated)", func() {
 		It("exits 3 with a snapshot-unavailable message before ever prompting, distinct from the budget-truncation warning", func() {
-			original := discoverTSRoots
-			discoverTSRoots = func(snapshot fs.FS, budgets projectmodel.GoBudgets) (projectmodel.TSRootDiscoveryResult, error) {
+			ports := defaultScanPorts()
+			ports.discoverTSRoots = func(snapshot fs.FS, budgets projectmodel.GoBudgets) (projectmodel.TSRootDiscoveryResult, error) {
 				return projectmodel.TSRootDiscoveryResult{
 					Complete: false,
 					Coverage: projectmodel.Coverage{
@@ -79,7 +79,6 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 					},
 				}, nil
 			}
-			DeferCleanup(func() { discoverTSRoots = original })
 
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", "{}\n")
@@ -91,7 +90,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			defer stderr.Close()
 
 			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
-			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr, ports)
 
 			Expect(exitCode).To(Equal(3))
 			Expect(readStdout()).To(BeEmpty(), "no prompt output must reach stdout when the snapshot itself could not be read")
@@ -119,7 +118,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			defer stderr.Close()
 
 			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
-			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr, defaultScanPorts())
 
 			Expect(exitCode).To(Equal(2))
 			Expect(readStdout()).To(BeEmpty(), "no prompt output must reach stdout when discovery is refused for being budget-truncated")
@@ -142,7 +141,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			defer stderr.Close()
 
 			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript", output: "../escape.json", outputSet: true}
-			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr, defaultScanPorts())
 
 			Expect(exitCode).To(Equal(2))
 			Expect(readStdout()).To(BeEmpty(), "--output must be rejected before any prompt is printed, so nothing the user typed is wasted")
@@ -169,7 +168,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			defer stderr.Close()
 
 			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript", output: "project.json", outputSet: true}
-			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr, defaultScanPorts())
 
 			Expect(exitCode).To(Equal(2))
 			Expect(readStdout()).To(BeEmpty(), "--output's existing-target rejection must happen before any prompt is printed, so nothing the user typed is wasted")
@@ -183,8 +182,8 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 
 	When("TypeScript root discovery reports a single unreadable file, not the whole snapshot", func() {
 		It("still exits 3 before prompting, even though some roots were already collected before the failure", func() {
-			original := discoverTSRoots
-			discoverTSRoots = func(snapshot fs.FS, budgets projectmodel.GoBudgets) (projectmodel.TSRootDiscoveryResult, error) {
+			ports := defaultScanPorts()
+			ports.discoverTSRoots = func(snapshot fs.FS, budgets projectmodel.GoBudgets) (projectmodel.TSRootDiscoveryResult, error) {
 				return projectmodel.TSRootDiscoveryResult{
 					Roots:    []string{"apps/api"},
 					Complete: false,
@@ -193,7 +192,6 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 					},
 				}, nil
 			}
-			DeferCleanup(func() { discoverTSRoots = original })
 
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", "{}\n")
@@ -205,7 +203,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			defer stderr.Close()
 
 			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
-			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr, ports)
 
 			Expect(exitCode).To(Equal(3))
 			Expect(readStdout()).To(BeEmpty(), "no prompt output must reach stdout when any part of the snapshot could not be read, even if some roots were already collected")
@@ -228,7 +226,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			defer stderr.Close()
 
 			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript", output: "project.json", outputSet: true}
-			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr, defaultScanPorts())
 
 			Expect(exitCode).To(Equal(2))
 			Expect(readStderr()).To(ContainSubstring("cancelled or not approved"), "stderr: %s", readStderr())
@@ -252,7 +250,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			defer stderr.Close()
 
 			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript", output: "project.json", outputSet: true}
-			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr, defaultScanPorts())
 
 			Expect(exitCode).To(Equal(0))
 			Expect(readStderr()).To(ContainSubstring("Select the roots to include"), "stderr: %s", readStderr())
@@ -280,7 +278,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			defer stderr.Close()
 
 			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
-			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr, defaultScanPorts())
 
 			Expect(exitCode).To(Equal(0))
 			Expect(readStdout()).NotTo(ContainSubstring(`"schema_version"`), "the candidate document must not be written to stdout; stdout: %s", readStdout())
@@ -313,7 +311,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 				defer stderrFile.Close()
 
 				flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
-				exitCode = authorProjectConfigTypeScript(repo, flags, stdin, stdoutFile, stderrFile)
+				exitCode = authorProjectConfigTypeScript(repo, flags, stdin, stdoutFile, stderrFile, defaultScanPorts())
 				data, readErr := os.ReadFile(filepath.Join(repo, ".lousy-agents", "coach.json"))
 				Expect(readErr).NotTo(HaveOccurred(), "stderr: %s", readStderr())
 				Expect(os.Remove(filepath.Join(repo, ".lousy-agents", "coach.json"))).To(Succeed())

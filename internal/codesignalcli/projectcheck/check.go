@@ -5,53 +5,84 @@
 package projectcheck
 
 import (
-	"errors"
-
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/pkgmanager"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
-func Run(dir, revision, configPath string) (*projectreadiness.Result, error) {
-	policyPath, extraWarnings, err := resolveCheckPolicy(dir, revision, configPath)
+// Run evaluates the project at revision. A policy the user named is checked on
+// disk at its path; a discovered one is selected again by Discover and checked
+// at the analyzed revision, so a caller holding a discovered policy may pass it
+// as it is.
+func Run(dir, revision string, policy policyref.Ref) (*projectreadiness.Result, error) {
+	result, err := RunWithLocator(tstoolchain.LocateMiseTypescriptInstall, dir, revision, policy)
 	if err != nil {
 		return nil, err
+	}
+	return &result, nil
+}
+
+// RunWithLocator is Run with the locator that finds a compiler mise installed given by the caller. The setup that
+// installs a compiler rechecks readiness through the locator it installed with, so the recheck looks where the install
+// put the compiler. It returns the result by value, as evaluate does; Run is the one that returns a pointer.
+func RunWithLocator(locate tstoolchain.MiseLocator, dir, revision string, policy policyref.Ref) (projectreadiness.Result, error) {
+	return runBy(readinessGit(), locate, dir, revision, policy)
+}
+
+// runBy is RunWithLocator with the git that answers the questions about the committed policy given by the caller.
+func runBy(run gitrepo.Runner, locate tstoolchain.MiseLocator, dir, revision string, policy policyref.Ref) (projectreadiness.Result, error) {
+	return evaluate(run, locate, dir, revision, policy, policyCheckerBy(run, policy))
+}
+
+// evaluate is Run with the policy check chosen by the caller.
+func evaluate(run gitrepo.Runner, locate tstoolchain.MiseLocator, dir, revision string, policy policyref.Ref, check func(dir, revision, policyPath string) (projectreadiness.Check, []string, error)) (projectreadiness.Result, error) {
+	policyPath, extraWarnings, err := resolveCheckPolicy(dir, revision, policy)
+	if err != nil {
+		return projectreadiness.Result{}, err
 	}
 
-	policy, roots, err := CheckPolicy(dir, revision, policyPath)
+	policyCheck, roots, err := check(dir, revision, policyPath)
 	if err != nil {
-		return nil, err
+		return projectreadiness.Result{}, err
 	}
-	projectShape, err := checkProjectShape(dir, revision, roots, policy.State == projectreadiness.Pass)
+	projectShape, err := checkProjectShape(run, dir, revision, roots, policyCheck.State == projectreadiness.Pass)
 	if err != nil {
-		return nil, err
+		return projectreadiness.Result{}, err
 	}
 	runtime := tstoolchain.CheckNode()
 	node := tstoolchain.NodeCompatibilityMirror(runtime)
-	compiler := tstoolchain.ResolveCompiler(dir, roots)
-	packageManager := pkgmanager.Check(dir, roots, policy.State == projectreadiness.Pass)
+	compiler := tstoolchain.ResolveCompilerWith(locate, dir, roots)
+	packageManager := pkgmanager.Check(dir, roots, policyCheck.State == projectreadiness.Pass)
 
 	checks := projectreadiness.Checks{
 		ProjectShape:   projectShape,
-		Policy:         policy,
+		Policy:         policyCheck,
 		Node:           node,
 		Runtime:        runtime,
 		Compiler:       compiler,
 		PackageManager: packageManager,
 	}
 
-	dirty, err := detectRelevantDirtyWorktree(dir, roots, policyPath)
+	readFromDisk := ""
+	if policyCheck.DecidedOnDisk {
+		readFromDisk = policyPath
+	}
+	dirtyRoots, err := dirtyRelevanceRoots(run, dir, revision, policy, policyPath, policyCheck, roots)
 	if err != nil {
-		return nil, err
+		return projectreadiness.Result{}, err
+	}
+	dirty, err := detectRelevantDirtyWorktree(dir, dirtyRoots, policyPath, readFromDisk)
+	if err != nil {
+		return projectreadiness.Result{}, err
 	}
 
 	miseChoices := tstoolchain.EvaluateMiseSetupChoices(dir, roots)
 	status, gaps, nextActions, warnings := aggregateReadiness(checks, dirty.RelevantChanges, miseChoices)
 	warnings = append(warnings, extraWarnings...)
 
-	return &projectreadiness.Result{
+	return projectreadiness.Result{
 		SchemaVersion: projectreadiness.SchemaVersion,
 		Status:        status,
 		Language:      "typescript",
@@ -63,74 +94,4 @@ func Run(dir, revision, configPath string) (*projectreadiness.Result, error) {
 		NextActions:   nextActions,
 		MiseChoices:   miseChoices,
 	}, nil
-}
-
-// ResolvePolicyPath is the policy document Run checks. An empty configPath
-// is the path Discover and policyFromSelection select.
-func ResolvePolicyPath(dir, revision, configPath string) (string, error) {
-	path, _, err := resolveCheckPolicy(dir, revision, configPath)
-	return path, err
-}
-
-func CheckPolicy(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
-	exists, err := gitrepo.FileExistsAtRevision(runReadinessGit, dir, revision, policyPath)
-	if err != nil {
-		return projectreadiness.Check{}, nil, err
-	}
-	if !exists {
-		return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing}, nil, nil
-	}
-
-	config, err := projectconfig.LoadForReadiness(dir, revision, policyPath)
-	if err != nil {
-		var configErr *projectconfig.ConfigError
-		if errors.As(err, &configErr) {
-			return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyInvalid}, nil, nil
-		}
-		return projectreadiness.Check{}, nil, err
-	}
-	return projectreadiness.Check{State: projectreadiness.Pass}, config.Roots, nil
-}
-
-func resolveCheckPolicy(dir, revision, configPath string) (string, []projectreadiness.Warning, error) {
-	if configPath != "" {
-		return configPath, nil, nil
-	}
-	selection, err := projectconfig.Discover(dir, revision)
-	if err != nil {
-		return "", nil, err
-	}
-	return policyFromSelection(selection)
-}
-
-func policyFromSelection(selection projectconfig.Selection) (string, []projectreadiness.Warning, error) {
-	switch {
-	case selection.Fatal != nil && !canonicalRecheckedByReadiness(selection.Fatal):
-		return "", nil, selection.Fatal
-	case selection.Deprecated:
-		return selection.Path, []projectreadiness.Warning{{Code: "project_config_deprecated"}}, nil
-	case selection.Path != "":
-		return selection.Path, nil, nil
-	default:
-		return projectconfig.CanonicalPath, nil, nil
-	}
-}
-
-// canonicalRecheckedByReadiness reports a canonical Load failure that
-// CheckPolicy must classify again. Load collapses a stdout size bound and a
-// timeout or stderr bound into KindUnreadable. LoadForReadiness, which
-// CheckPolicy calls, reports the size bound as policy_invalid and leaves the
-// timeout and stderr bounds as operational errors. Scan keeps Load's
-// classification and does not call this path.
-func canonicalRecheckedByReadiness(err error) bool {
-	var configErr *projectconfig.ConfigError
-	if !errors.As(err, &configErr) {
-		return false
-	}
-	switch configErr.Kind {
-	case projectconfig.KindInvalid, projectconfig.KindUnreadable:
-		return true
-	default:
-		return false
-	}
 }

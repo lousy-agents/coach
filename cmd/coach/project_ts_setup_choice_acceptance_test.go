@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
@@ -426,7 +427,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices over a real CheckProjectRe
 
 			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
-			readiness, err := projectcheck.Run(repo, revision, "")
+			readiness, err := projectcheck.Run(repo, revision, policyref.Ref{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "the fixture must genuinely need setup, or the menu assertion below proves nothing")
 
@@ -448,7 +449,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices over a real CheckProjectRe
 
 			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
-			readiness, err := projectcheck.Run(repo, revision, "")
+			readiness, err := projectcheck.Run(repo, revision, policyref.Ref{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
 

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/lousy-agents/coach/internal/gitpath"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
@@ -24,6 +25,9 @@ type Loader struct{}
 // golang.org/x/tools/go/packages (which shells out to the Go toolchain) has
 // real files to load; the caller must invoke the returned cleanup func.
 func (Loader) Materialize(snapshot fs.FS) (string, func(), error) {
+	if err := refuseUncheckablePaths(snapshot); err != nil {
+		return "", func() {}, err
+	}
 	dir, err := os.MkdirTemp("", "projectmodel-callgraph-*")
 	if err != nil {
 		return "", func() {}, err
@@ -39,6 +43,32 @@ func (Loader) Materialize(snapshot fs.FS) (string, func(), error) {
 	return dir, cleanup, nil
 }
 
+// moduleLoadConfig is how the packages of a module in a directory of committed bytes are loaded. The directory
+// is not trusted, so go does not fetch and run a toolchain that a committed go.mod names, whatever the caller's
+// GOTOOLCHAIN says: the last value of a variable wins. go/packages already passes -buildvcs=false, so go
+// stamps no version control information, which would run git there; the acceptance spec for BuildGoCallGraph
+// pins that, so a release of go/packages that stopped would fail it.
+func moduleLoadConfig(ctx context.Context, moduleDir string) packages.Config {
+	return packages.Config{
+		Context: ctx,
+		Dir:     moduleDir,
+		Mode:    packages.LoadSyntax,
+		Env:     append(os.Environ(), "GOTOOLCHAIN=local"),
+	}
+}
+
+// refuseUncheckablePaths is the error for a snapshot that holds a path git would not check out, as a git
+// directory: written to disk it would be a repository that git and go's version control stamping take for one,
+// whose config names programs git runs. It stops at the first such path and writes nothing.
+func refuseUncheckablePaths(snapshot fs.FS) error {
+	return fs.WalkDir(snapshot, ".", func(name string, _ fs.DirEntry, err error) error {
+		if err != nil || name == "." {
+			return err
+		}
+		return gitpath.RefuseUncheckable(name)
+	})
+}
+
 // LoadModule loads moduleDir's own packages from dir/moduleDir and builds
 // an SSA program for them. The load mode is packages.LoadSyntax: typed
 // syntax for the snapshot's own packages, export data for dependencies.
@@ -46,12 +76,8 @@ func (Loader) Materialize(snapshot fs.FS) (string, func(), error) {
 // (net/http, database/sql, reflect) on every call; StaticCallee and stdlib
 // type identity only need those packages' types, not their syntax.
 func (Loader) LoadModule(ctx context.Context, dir, moduleDir string) ([]*packages.Package, *ssa.Program, map[string]bool, error) {
-	cfg := &packages.Config{
-		Context: ctx,
-		Dir:     filepath.Join(dir, filepath.FromSlash(moduleDir)),
-		Mode:    packages.LoadSyntax,
-	}
-	pkgs, err := packages.Load(cfg, "./...")
+	config := moduleLoadConfig(ctx, filepath.Join(dir, filepath.FromSlash(moduleDir)))
+	pkgs, err := packages.Load(&config, "./...")
 	if err != nil {
 		return nil, nil, nil, err
 	}

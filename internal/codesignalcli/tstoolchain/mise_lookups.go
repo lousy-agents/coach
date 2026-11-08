@@ -18,11 +18,16 @@ var DetectGlobalMiseTypescriptVersion = func(ctx context.Context) (version strin
 	return out, true
 }
 
+// MiseLocator reports where mise installed a version of the TypeScript compiler, as LocateMiseTypescriptInstall does. The
+// checks that look for an installed compiler take one, so that a test hands in a locator that finds a compiler where the
+// test put it, and nothing is replaced.
+type MiseLocator func(ctx context.Context, version string) (string, bool)
+
 // LocateMiseTypescriptInstall reports where mise installed the requested
 // version. `mise where` reports the tool's install root, not the npm package
 // directory: the `typescript` package lives at
 // <install-root>/node_modules/typescript.
-var LocateMiseTypescriptInstall = func(ctx context.Context, version string) (string, bool) {
+func LocateMiseTypescriptInstall(ctx context.Context, version string) (string, bool) {
 	toolRoot, exitErr, ok := runMiseProbe(ctx, "where", MiseNpmTypescriptTool+"@"+version)
 	if !ok || exitErr != nil || toolRoot == "" {
 		return "", false

@@ -9,11 +9,9 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// runReadinessGit is the bounded git read behind --check-project's
-// committed-file presence checks, held to the policy document's read budget.
-var runReadinessGit = func(dir string, args ...string) ([]byte, error) {
-	return gitrepo.RunBytesBounded(dir, projectconfig.MaxBytes, projectconfig.MaxGitStderr, projectconfig.GitTimeout, args...)
-}
+// readinessGit is the bounded git read behind --check-project's questions about the committed policy and the tree
+// around it. Every check takes the runner it asks, so a test hands in one that fails a question.
+func readinessGit() gitrepo.Runner { return projectconfig.NewGitRunner() }
 
 // checkProjectShape reports whether revision looks like a Node/TypeScript
 // project at all: a committed package.json at the repository root, or, once
@@ -30,8 +28,8 @@ var runReadinessGit = func(dir string, args ...string) ([]byte, error) {
 // policy lets the roots walk actually run, rather than asserting a verdict
 // this check has no basis for (R1, mirroring pkgmanager.Check's own
 // policyPassed gate).
-func checkProjectShape(dir, revision string, roots []string, policyPassed bool) (projectreadiness.Check, error) {
-	exists, err := gitrepo.FileExistsAtRevision(runReadinessGit, dir, revision, "package.json")
+func checkProjectShape(run gitrepo.Runner, dir, revision string, roots []string, policyPassed bool) (projectreadiness.Check, error) {
+	exists, err := gitrepo.FileExistsAtRevision(run, dir, revision, "package.json")
 	if err != nil {
 		return projectreadiness.Check{}, err
 	}
@@ -43,7 +41,7 @@ func checkProjectShape(dir, revision string, roots []string, policyPassed bool) 
 		return projectreadiness.Check{State: projectreadiness.NotChecked}, nil
 	}
 
-	found, err := packageJSONExistsUnderAnyRoot(dir, revision, roots)
+	found, err := packageJSONExistsUnderAnyRoot(run, dir, revision, roots)
 	if err != nil {
 		return projectreadiness.Check{}, err
 	}
@@ -60,9 +58,9 @@ func checkProjectShape(dir, revision string, roots []string, policyPassed bool) 
 // nearest-manifest resolution without mixing host state into a snapshot
 // check. roots: ["."] is skipped here because the caller already probed
 // the repository-root package.json and must not walk down.
-func packageJSONExistsUnderAnyRoot(dir, revision string, roots []string) (bool, error) {
+func packageJSONExistsUnderAnyRoot(run gitrepo.Runner, dir, revision string, roots []string) (bool, error) {
 	for _, root := range roots {
-		found, err := packageJSONExistsWalkingUp(dir, revision, root)
+		found, err := packageJSONExistsWalkingUp(run, dir, revision, root)
 		if err != nil || found {
 			return found, err
 		}
@@ -70,13 +68,13 @@ func packageJSONExistsUnderAnyRoot(dir, revision string, roots []string) (bool, 
 	return false, nil
 }
 
-func packageJSONExistsWalkingUp(dir, revision, root string) (bool, error) {
+func packageJSONExistsWalkingUp(run gitrepo.Runner, dir, revision, root string) (bool, error) {
 	current := path.Clean(strings.TrimSpace(root))
 	if current == "" || current == "." {
 		return false, nil
 	}
 	for {
-		exists, err := gitrepo.FileExistsAtRevision(runReadinessGit, dir, revision, path.Join(current, "package.json"))
+		exists, err := gitrepo.FileExistsAtRevision(run, dir, revision, path.Join(current, "package.json"))
 		if err != nil || exists {
 			return exists, err
 		}

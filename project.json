@@ -8,14 +8,16 @@
       "name": "entities",
       "prefixes": [
         "pkg/domain",
-        "pkg/semantics"
+        "pkg/semantics",
+        "internal/gitpath"
       ]
     },
     {
       "name": "usecases",
       "prefixes": [
         "pkg/usecases",
-        "pkg/codesignal"
+        "pkg/codesignal",
+        "internal/agentloop"
       ]
     },
     {
@@ -27,13 +29,46 @@
         "internal/codesignalcli",
         "internal/jsbridge",
         "internal/coachapi",
-        "internal/projectbridge"
+        "internal/projectbridge",
+        "internal/authn",
+        "internal/authz",
+        "internal/modelgateway",
+        "internal/rubrics",
+        "js/semantics"
       ]
     },
     {
       "name": "app",
       "prefixes": [
-        "cmd"
+        "cmd/coach",
+        "cmd/coach-api",
+        "cmd/coach-worker",
+        "cmd/semantics-json",
+        "cmd/codesignal-report"
+      ]
+    },
+    {
+      "name": "tooling",
+      "prefixes": [
+        "internal/acceptanceharness",
+        "internal/acceptancestyle",
+        "internal/agentworkflows",
+        "internal/claudehooks",
+        "internal/fakegithub",
+        "internal/sourcelayout",
+        "internal/tstestutil",
+        "internal/validationtasks",
+        "deploy/compose/platform/fixtures",
+        ".opencode/plugin",
+        "cmd/acceptance-guard-preflight",
+        "cmd/acceptance-style-guard",
+        "cmd/fakegithub-server",
+        "cmd/model-stub",
+        "cmd/platform-smoke",
+        "cmd/semantics-wasm-smoke",
+        "cmd/source-layout-guard",
+        "cmd/thinproof-preflight",
+        "cmd/thinproof-runner"
       ]
     }
   ],
@@ -61,6 +96,23 @@
     {
       "from": "adapters",
       "to": "app"
+    },
+    {
+      "from": "entities",
+      "to": "tooling"
+    },
+    {
+      "from": "usecases",
+      "to": "tooling"
+    },
+    {
+      "from": "adapters",
+      "to": "tooling"
+    },
+    {
+      "from": "app",
+      "to": "tooling"
     }
-  ]
+  ],
+  "required_layer": "usecases"
 }

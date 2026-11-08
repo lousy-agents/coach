@@ -68,7 +68,7 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			Expect(omittedText).To(ContainSubstring("project_config_deprecated"))
 			Expect(omittedText).To(ContainSubstring("project.json at the repository root is deprecated. Coach will keep reading it until you move it to .lousy-agents/coach.json."))
 			Expect(omittedText).To(ContainSubstring("project_config_migration_skipped"))
-			Expect(omittedText).To(ContainSubstring("mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json"))
+			Expect(omittedText).To(ContainSubstring("top=\"$(git rev-parse --show-toplevel)\" && mkdir -p \"$top\"/.lousy-agents && git -C \"$top\" mv -- project.json .lousy-agents/coach.json"))
 		})
 	})
 

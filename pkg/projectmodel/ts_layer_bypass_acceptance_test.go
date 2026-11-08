@@ -119,6 +119,8 @@ var _ = Describe("BuildTypeScriptLayerBypass", func() {
 			Expect(hasLayerBypassDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagLayerBypassAmbiguousLayer)).To(BeTrue(),
 				"expected a project_layer_bypass_ambiguous_layer diagnostic, got %+v", result.Coverage.Diagnostics)
 			Expect(result.Coverage.Complete).To(BeFalse(), "an ambiguous required layer must not report a complete search")
+			Expect(hasLayerBypassDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagLayerBypassBudgetExceeded)).To(BeFalse(),
+				"ambiguity alone must not also report a budget overrun; no budget was hit, got %+v", result.Coverage.Diagnostics)
 			Expect(result.Coverage.Counts["source_sink_pairs_evaluated"]).To(Equal(0),
 				"an ambiguous required layer must not claim any pair was evaluated, got %+v", result.Coverage.Counts)
 		})
@@ -205,6 +207,73 @@ var _ = Describe("deriving a LayerBypassResult from an already-built Model (AC-R
 
 			Expect(invocationCount(counterFile)).To(Equal(1),
 				"expected exactly one sidecar invocation: both BuildTypeScriptReachabilityFromModel and BuildTypeScriptLayerBypassFromModel must derive purely from the one already-built Model without any sidecar round trip of their own")
+		})
+	})
+})
+
+var _ = Describe("BuildTypeScriptLayerBypass with a required layer named by files", func() {
+	handlerSnapshot := func() fstest.MapFS {
+		snap := tsLayerBypassSnapshot()
+		snap["service/handler.ts"] = &fstest.MapFile{Data: []byte("export const getUsers = () => {};\n")}
+		return snap
+	}
+
+	When("the required layer's prefix is a file in the snapshot and the route handler is declared outside it", func() {
+		It("is not ambiguous, still finds the bypass witness, and reports a complete search", func() {
+			layer := projectmodel.BypassLayer{Name: "service", Prefixes: []string{"service/inventory.ts"}}
+
+			result, err := projectmodel.BuildTypeScriptLayerBypass(context.Background(), tsLayerBypassSnapshot(), testMeta(), sidecarOptsWithMode("layer_bypass_direct"), layer)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Witnesses).To(HaveLen(1), "a handler outside a file-named required layer must still produce its bypass witness, got %+v", result.Witnesses)
+			Expect(result.Witnesses[0].Source).To(Equal("file:src/handlers/app.ts#getUsers"))
+			Expect(hasLayerBypassDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagLayerBypassAmbiguousLayer)).To(BeFalse(), "got %+v", result.Coverage.Diagnostics)
+			Expect(hasLayerBypassDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagLayerBypassBudgetExceeded)).To(BeFalse(), "got %+v", result.Coverage.Diagnostics)
+			Expect(result.Coverage.Complete).To(BeTrue())
+		})
+	})
+
+	When("the route handler is declared in the file the required layer names", func() {
+		It("removes the handler from the search, so there is no witness and the search is complete", func() {
+			layer := projectmodel.BypassLayer{Name: "service", Prefixes: []string{"service/handler.ts"}}
+
+			result, err := projectmodel.BuildTypeScriptLayerBypass(context.Background(), handlerSnapshot(), testMeta(), sidecarOptsWithMode("layer_bypass_compliant"), layer)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Witnesses).To(BeEmpty(), "a handler declared in the required layer's own file must not produce a witness, got %+v", result.Witnesses)
+			Expect(hasLayerBypassDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagLayerBypassAmbiguousLayer)).To(BeFalse(), "got %+v", result.Coverage.Diagnostics)
+			Expect(result.Coverage.Complete).To(BeTrue())
+		})
+	})
+
+	When("a prefix merely shares a stem with a file name", func() {
+		It("still treats the required layer as ambiguous, because a prefix names a whole path component", func() {
+			layer := projectmodel.BypassLayer{Name: "service", Prefixes: []string{"service/inv"}}
+
+			result, err := projectmodel.BuildTypeScriptLayerBypass(context.Background(), tsLayerBypassSnapshot(), testMeta(), sidecarOptsWithMode("layer_bypass_direct"), layer)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Witnesses).To(BeEmpty())
+			Expect(hasLayerBypassDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagLayerBypassAmbiguousLayer)).To(BeTrue(), "got %+v", result.Coverage.Diagnostics)
+			Expect(result.Coverage.Complete).To(BeFalse())
+		})
+	})
+})
+
+var _ = Describe("BuildTypeScriptLayerBypassFromModel when the search runs out of time", func() {
+	When("the context is already cancelled and the required layer is well formed", func() {
+		It("reports the budget overrun without reporting the layer as ambiguous", func() {
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), tsLayerBypassSnapshot(), testMeta(), sidecarOptsWithMode("layer_bypass_direct"))
+			Expect(err).NotTo(HaveOccurred())
+			cancelled, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			result := projectmodel.BuildTypeScriptLayerBypassFromModel(cancelled, model, projectmodel.BypassLayer{Name: "service", Prefixes: []string{"service"}})
+
+			Expect(hasLayerBypassDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagLayerBypassBudgetExceeded)).To(BeTrue(), "got %+v", result.Coverage.Diagnostics)
+			Expect(hasLayerBypassDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagLayerBypassAmbiguousLayer)).To(BeFalse(),
+				"a budget overrun alone must not also report the layer as ambiguous, got %+v", result.Coverage.Diagnostics)
+			Expect(result.Coverage.Complete).To(BeFalse())
 		})
 	})
 })

@@ -1,14 +1,20 @@
 package tssetup
 
 import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/invocation"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-func alsoFailingGapLine(code, configPath string) string {
-	return code + ": also failing, run " + typescriptInvocation("--check-project", configPath)
+func alsoFailingGapLine(code string, policy policyref.Ref, rerun bool) string {
+	if !rerun {
+		return code + ": also failing"
+	}
+	return code + ": also failing, " + invocation.Command{Mode: invocation.CheckProject, Policy: policy}.Phrase("run")
 }
 
-// AlsoFailingGapLines is AC-SET-13's "report all gaps" clause: one line for
+// alsoFailingGapLines is AC-SET-13's "report all gaps" clause: one line for
 // every gap readiness itself reports other than the policy failure the scan
 // has already printed as its own message.
 //
@@ -27,7 +33,9 @@ func alsoFailingGapLine(code, configPath string) string {
 //
 // readiness.Gaps is already emitted in the epic's frozen next-action order,
 // so iterating it preserves that ordering rather than inventing one here.
-func AlsoFailingGapLines(readiness *projectreadiness.Result, configPath string) []string {
+//
+// The rerun command is left off each line when rerun is false.
+func alsoFailingGapLines(readiness *projectreadiness.Result, policy policyref.Ref, rerun bool) []string {
 	if readiness == nil {
 		return nil
 	}
@@ -38,7 +46,7 @@ func AlsoFailingGapLines(readiness *projectreadiness.Result, configPath string) 
 			continue
 		}
 		seen[gap.Code] = true
-		lines = append(lines, alsoFailingGapLine(gap.Code, configPath))
+		lines = append(lines, alsoFailingGapLine(gap.Code, policy, rerun))
 	}
 	return lines
 }
@@ -52,7 +60,11 @@ func AlsoFailingGapLines(readiness *projectreadiness.Result, configPath string) 
 // name a command that language cannot run (AC-2: an offered remediation must
 // actually be supported for the language it is offered to). It never appends
 // a --project-config suffix: validateSuggestProjectConfigFlags rejects
-// --suggest-project-config combined with --project-config.
+// --suggest-project-config combined with --project-config. A policy the user
+// named somewhere authoring does not write by default is named with --output
+// instead, because the command is offered to make that path exist: without it
+// the command would succeed, write the default location, and leave the named
+// path as missing as before.
 //
 // The TypeScript form qualifies the command rather than naming it bare,
 // because this line is printed precisely when no controlling terminal is
@@ -61,12 +73,36 @@ func AlsoFailingGapLines(readiness *projectreadiness.Result, configPath string) 
 // instruction -- draft the document, have it reviewed and committed -- is
 // the path actually open here, so it is stated alongside the command rather
 // than discovered by spending an invocation on it.
-func SuggestProjectConfigRemediation(language string) string {
+func SuggestProjectConfigRemediation(language string, policy policyref.Ref) string {
+	target := authoringTarget(policy)
 	if language == "typescript" {
-		return onATerminal(typescriptInvocation("--suggest-project-config", "")) +
+		return onATerminal(invocation.Command{Mode: invocation.SuggestProjectConfig, Target: target}.Phrase("")) +
 			" -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"
 	}
-	return "coach codesignal --baseline --suggest-project-config"
+	return invocation.BatchAuthoring(target)
+}
+
+// ReplaceGoPolicyRemediation is the appended line for a Go scan whose policy exists and cannot be used as one (its
+// document is not valid, or is over the size budget): the candidate written beside it and the move that replaces it
+// (invocation.ReplaceGoPolicy). A path the policy check refuses gets no line, since it names nothing authoring could use.
+func ReplaceGoPolicyRemediation(policyPath, candidate string) string {
+	for _, shown := range []string{policyPath, candidate} {
+		if projectconfig.ValidatePath(shown) != nil {
+			return ""
+		}
+	}
+	return invocation.ReplaceGoPolicy(policyPath, candidate)
+}
+
+// authoringTarget is where authoring has to write for the policy the user named
+// to exist: empty when nothing was named, or when the name is where authoring
+// writes by default.
+func authoringTarget(policy policyref.Ref) string {
+	named, ok := policy.NamedPath()
+	if !ok || named == projectconfig.CanonicalPath {
+		return ""
+	}
+	return named
 }
 
 // AppendedRemediationLine withholds line whenever hasControllingTerminal is

@@ -6,9 +6,10 @@ import (
 	"time"
 
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 )
 
-func runDuplicateDeliveryDoesNotCorruptState(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Clock) Queue) {
+func runDuplicateDeliveryDoesNotCorruptState(t *testing.T, newQueue func(tb testing.TB, clock clock.Clock) Queue) {
 	// ADR-006's behavioral contract promises "possible duplicate
 	// delivery" and requires workers to treat redelivery of the same
 	// job id as at-least-once. This suite has no broker-level replay

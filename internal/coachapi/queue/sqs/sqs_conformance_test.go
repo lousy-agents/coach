@@ -8,8 +8,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/credentials"
 
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
 	"github.com/lousy-agents/coach/internal/acceptanceharness/queueconformance"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
 	sqsqueue "github.com/lousy-agents/coach/internal/coachapi/queue/sqs"
 )
@@ -66,14 +66,14 @@ func TestSQSQueueConformanceAcceptance(t *testing.T) {
 		deleteLocalStackQueue(endpoint, queueURL+"-poison")
 	})
 
-	queueconformance.Run(t, func(tb testing.TB, clock acceptanceharness.Clock) queueconformance.Queue {
+	queueconformance.Run(t, func(tb testing.TB, clock clock.Clock) queueconformance.Queue {
 		return newLocalStackConformanceQueue(tb, clock, endpoint, queueURL)
 	})
 }
 
 // newLocalStackConformanceQueue builds the real adapter under test against
 // the LocalStack queue at queueURL.
-func newLocalStackConformanceQueue(tb testing.TB, clock acceptanceharness.Clock, endpoint, queueURL string) queueconformance.Queue {
+func newLocalStackConformanceQueue(tb testing.TB, clock clock.Clock, endpoint, queueURL string) queueconformance.Queue {
 	cfg := sqsqueue.Config{
 		Region:            "us-east-1",
 		QueueURL:          queueURL,

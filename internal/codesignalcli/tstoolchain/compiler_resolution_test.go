@@ -23,9 +23,9 @@ func TestEvaluateCompilerOriginsSelectsGlobalMiseAfterUnavailableProjectOrigin(t
 	}
 	compilerDir := writeFakeCompilerInstall(t, t.TempDir(), supported)
 	stubGlobalMise(t, supported)
-	stubMiseInstall(t, supported, compilerDir)
+	installed := miseInstalling(supported, compilerDir)
 
-	aggregate := EvaluateOrigins(dir, []string{"apps/web", "apps/api"})
+	aggregate := EvaluateOriginsWith(installed, dir, []string{"apps/web", "apps/api"})
 	if aggregate.Winner == nil {
 		t.Fatalf("evaluateCompilerOrigins() winner = nil, want the global-mise candidate; candidates=%+v", aggregate.candidates)
 	}

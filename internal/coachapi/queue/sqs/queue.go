@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awssqs "github.com/aws/aws-sdk-go-v2/service/sqs"
 
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
 )
 
@@ -68,7 +68,7 @@ type Queue struct {
 	queueURL          string
 	poisonQueueURL    string
 	visibilityTimeout time.Duration
-	clock             acceptanceharness.Clock
+	clock             clock.Clock
 
 	mu       sync.Mutex
 	inflight map[string]*inflightClaim // keyed by receipt handle (Claim.Token)
@@ -79,16 +79,16 @@ var _ queue.TaskQueue = (*Queue)(nil)
 // NewQueue validates cfg, constructs an SQS client pinned to cfg's explicit
 // Region/Credentials/Endpoint (never an ambient credential chain -- see the
 // package doc comment), ensures the poison-task destination queue exists,
-// and returns a ready-to-use Queue. clock drives Queue's own reclaim
-// deadline tracking; production callers pass acceptanceharness.RealClock{},
+// and returns a ready-to-use Queue. source drives Queue's own reclaim
+// deadline tracking; production callers pass clock.RealClock{},
 // and this package's conformance test passes an
 // acceptanceharness.FakeClock.
-func NewQueue(ctx context.Context, cfg Config, clock acceptanceharness.Clock) (*Queue, error) {
+func NewQueue(ctx context.Context, cfg Config, source clock.Clock) (*Queue, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	if clock == nil {
-		clock = acceptanceharness.RealClock{}
+	if source == nil {
+		source = clock.RealClock{}
 	}
 
 	httpClient := &http.Client{Timeout: cfg.httpTimeout()}
@@ -108,7 +108,7 @@ func NewQueue(ctx context.Context, cfg Config, clock acceptanceharness.Clock) (*
 		queueURL:          cfg.QueueURL,
 		poisonQueueURL:    cfg.PoisonQueueURL,
 		visibilityTimeout: cfg.VisibilityTimeout,
-		clock:             clock,
+		clock:             source,
 		inflight:          make(map[string]*inflightClaim),
 	}
 

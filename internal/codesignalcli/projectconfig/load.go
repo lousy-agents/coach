@@ -10,12 +10,6 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
-// runProjectConfigGit is the Git seam used by Load. Tests may
-// replace it to exercise timeout and bound failures without hanging.
-var runProjectConfigGit = func(dir string, args ...string) ([]byte, error) {
-	return gitrepo.RunBytesBounded(dir, MaxBytes, MaxGitStderr, GitTimeout, args...)
-}
-
 // LoadForReadiness reads and validates repoPath at revision
 // like Load, but keeps a git-read failure distinct from a
 // content/schema rejection instead of collapsing both into
@@ -35,11 +29,21 @@ var runProjectConfigGit = func(dir string, args ...string) ([]byte, error) {
 // or stderr-budget failure still reports *gitrepo.OperationalError: those indicate a
 // resource/environment condition, not a defect in the file's content.
 func LoadForReadiness(dir, revision, repoPath string) (Config, error) {
-	if err := ValidatePath(repoPath); err != nil {
-		return Config{}, invalidError(repoPath, revision, err.Error())
+	return loadForReadinessThrough(NewGitRunner(), dir, revision, repoPath)
+}
+
+// loadForReadinessThrough is LoadForReadiness with every git question asked of run.
+func loadForReadinessThrough(run gitrepo.Runner, dir, revision, repoPath string) (Config, error) {
+	config, err := loadForReadiness(run, dir, revision, repoPath)
+	return config, settledByTheWorkingCopy(run, dir, revision, repoPath, err)
+}
+
+func loadForReadiness(run gitrepo.Runner, dir, revision, repoPath string) (Config, error) {
+	if err := refuseReadinessRead(run, dir, revision, repoPath); err != nil {
+		return Config{}, err
 	}
 
-	data, err := runProjectConfigGit(dir, "show", revision+":"+repoPath)
+	data, err := run(dir, "show", revision+":"+repoPath)
 	if err != nil {
 		var boundErr *gitrepo.BoundError
 		if errors.As(err, &boundErr) && boundErr.Kind == gitrepo.BoundStdout {
@@ -61,13 +65,24 @@ func LoadForReadiness(dir, revision, repoPath string) (Config, error) {
 // configuration. Git stdout/stderr, wall time, document size, and JSON
 // nesting are bounded at this boundary.
 func Load(dir, revision, repoPath string) (json.RawMessage, error) {
-	if err := ValidatePath(repoPath); err != nil {
-		return nil, invalidError(repoPath, revision, err.Error())
+	return loadThrough(NewGitRunner(), dir, revision, repoPath)
+}
+
+// loadThrough is Load with every git question, the repository root of the not-found message included, asked of run. A
+// caller that must see or bound those questions passes its own runner; no package variable is replaced.
+func loadThrough(run gitrepo.Runner, dir, revision, repoPath string) (json.RawMessage, error) {
+	data, err := loadCommittedCopy(run, dir, revision, repoPath)
+	return data, settledByTheWorkingCopy(run, dir, revision, repoPath, err)
+}
+
+func loadCommittedCopy(run gitrepo.Runner, dir, revision, repoPath string) (json.RawMessage, error) {
+	if err := refuseScanRead(run, dir, revision, repoPath); err != nil {
+		return nil, err
 	}
 
-	data, err := runProjectConfigGit(dir, "show", revision+":"+repoPath)
+	data, err := run(dir, "show", revision+":"+repoPath)
 	if err != nil {
-		return nil, readError(dir, revision, repoPath, err)
+		return nil, readError(run, dir, revision, repoPath, err)
 	}
 	if err := validateJSON(data); err != nil {
 		return nil, invalidError(repoPath, revision, err.Error())
@@ -78,19 +93,23 @@ func Load(dir, revision, repoPath string) (json.RawMessage, error) {
 // ValidatePath validates a --project-config value's shape using
 // the same rules Load enforces, without touching Git or the
 // filesystem. --check-project's argument validation calls this before any
-// readiness check runs, so an invalid path (absolute, containing "..", or
-// using a backslash separator) is rejected at argument time rather than
-// surfacing as a false policy_missing/policy_invalid readiness gap.
+// readiness check runs, so an invalid path (absolute, containing "..",
+// using a backslash separator, or lying inside the .git directory) is
+// rejected at argument time rather than surfacing as a false
+// policy_missing/policy_invalid readiness gap.
 func ValidatePath(repoPath string) error {
 	if repoPath == "" || path.IsAbs(repoPath) {
 		return fmt.Errorf("path must be a non-empty repository-relative path")
 	}
 	clean := path.Clean(repoPath)
 	if clean != repoPath || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
-		return fmt.Errorf("path must be normalized and remain inside the repository")
+		return fmt.Errorf("path must be normalized and remain inside the repository; --project-config takes a path from the repository root, whatever directory the scan starts in")
 	}
 	if strings.Contains(repoPath, "\\") {
 		return fmt.Errorf("path must use repository-relative slash separators")
+	}
+	if insideGitDirectory(repoPath) {
+		return fmt.Errorf("path must not be inside the .git directory: git tracks nothing there, so a policy there can be neither committed nor restored")
 	}
 	return nil
 }

@@ -62,14 +62,15 @@ var _ = Describe("coach project-analysis failure reports", func() {
 		remediation := lines[len(lines)-1]
 		Expect(remediation).NotTo(ContainSubstring("--project-language typescript"), "a --project-language go scan must never be offered the TypeScript-only guided-authoring command; stderr: %s", stderr)
 
-		fields := strings.Fields(remediation)
-		Expect(fields).NotTo(BeEmpty())
+		suggest := suggestCommandIn(remediation)
+		fields := strings.Fields(suggest)
+		Expect(fields).NotTo(BeEmpty(), "the line names the authoring command: %s", remediation)
 		Expect(fields[0]).To(Equal("coach"))
 		remediationStdout, remediationStderr, remediationExit := runCoachBinary(commandPath, repo, nil, fields[1:]...)
 		Expect(remediationExit).To(Equal(0), "the printed remediation command must actually succeed for this Go repository; stdout: %s stderr: %s", remediationStdout, remediationStderr)
 	})
 
-	// loadProjectConfig runs before resolveProjectBackend and never receives
+	// The policy loads before the backend is resolved and never receives
 	// --project-language (prepareProjectAnalysis, project_analysis.go), so the underlying class-2 config
 	// message and the appended --suggest-project-config remediation stay
 	// language-independent by construction. The one exception is AC-SET-13's
@@ -107,36 +108,34 @@ var _ = Describe("coach project-analysis failure reports", func() {
 		tsLines := stderrLines(tsStderr)
 		Expect(goLines).To(HaveLen(2), "go's class-2 report is the config message plus AC-SET-9's appended remediation")
 		Expect(tsLines[0]).To(Equal(goLines[0]), "the underlying class-2 config message must stay language-independent")
-		Expect(goLines[len(goLines)-1]).To(Equal("coach codesignal --baseline --suggest-project-config"), "go's appended remediation must be a command go actually supports, not the TypeScript-only guided-authoring invocation (AC-2)")
-		Expect(tsLines[len(tsLines)-1]).To(Equal("on a terminal: coach codesignal --baseline --suggest-project-config --project-language typescript -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"), "typescript's appended remediation must still name its own guided-authoring invocation")
-		Expect(len(tsLines)).To(BeNumerically(">=", len(goLines)), "TypeScript may additionally carry AC-SET-13's readiness-gap line; it must never carry fewer lines than go's report")
+		Expect(goLines[len(goLines)-1]).To(HavePrefix("coach codesignal --baseline --suggest-project-config --output project.candidate.json"), "go's appended remediation must be a command go actually supports, not the TypeScript-only guided-authoring invocation (AC-2)")
+		Expect(goLines[len(goLines)-1]).NotTo(ContainSubstring("--project-language typescript"))
+		for _, line := range tsLines {
+			Expect(line).NotTo(ContainSubstring("guided authoring opens there"), "typescript: a document that exists is not offered a session that ends by saving over it")
+			Expect(line).NotTo(HavePrefix("on a terminal:"), "typescript: no appended line leads to guided authoring where the file exists")
+		}
+		Expect(tsLines).To(ContainElement("coach codesignal: the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one."), "typescript: the scan says in words how to get past a policy that exists and cannot be used")
 	})
 
 	// "go" and "typescript" both have registered backends now, so no real
 	// --project-language flag value can reach
 	// project_backend_unavailable through the CLI any more. This test
-	// instead overrides the loadProjectConfig/resolveProjectBackend seams
-	// in-process (see "coach codesignal project-mode exit-code
-	// classification" in project_acceptance_test.go for the same pattern)
-	// to keep exercising the full report shape a genuinely unavailable
-	// backend still produces.
+	// instead passes its own scanPorts in-process (see "coach codesignal
+	// project-mode exit-code classification" in project_acceptance_test.go for
+	// the same pattern) to keep exercising the full report shape a genuinely
+	// unavailable backend still produces.
 	It("writes a local report and structured diagnostic when the selected backend is unavailable", func() {
-		originalLoadProjectConfig := loadProjectConfig
-		originalResolveProjectBackend := resolveProjectBackend
-		DeferCleanup(func() {
-			loadProjectConfig = originalLoadProjectConfig
-			resolveProjectBackend = originalResolveProjectBackend
-		})
-		loadProjectConfig = func(string, string, string) (json.RawMessage, error) {
+		ports := defaultScanPorts()
+		ports.loadExplicit = func(string, string, string) (json.RawMessage, error) {
 			return json.RawMessage(`{"schema_version":"1","roots":["."]}`), nil
 		}
-		resolveProjectBackend = func(string) error {
+		ports.resolveBackend = func(string) error {
 			return &codesignalcli.ProjectBackendUnavailableError{
 				Message: `coach codesignal: no project-analysis backend is available for language "rust" yet (project_backend_unavailable)`,
 			}
 		}
 
-		stdout, stderr, exitCode := runInProcess("codesignal", "--baseline", "--project-config", "project.json", "--format=json")
+		stdout, stderr, exitCode := runInProcessWith(ports, "codesignal", "--baseline", "--project-config", "project.json", "--format=json")
 
 		Expect(exitCode).To(Equal(0))
 		Expect(stderr).To(BeEmpty())

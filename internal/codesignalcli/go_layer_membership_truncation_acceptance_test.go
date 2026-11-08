@@ -6,6 +6,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	. "github.com/onsi/ginkgo/v2"
@@ -29,7 +30,7 @@ var _ = Describe("Go layer membership when the project model was truncated", fun
 		sha := gitfixture.CommitFile(GinkgoT(), dir, "pkg/other/b.go", "package other\n")
 		files := []gitrepo.SelectedFile{{Path: "pkg/other/b.go", Language: "go", Status: "added"}}
 		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
+			Policy:       policyref.Discovered("project.json"),
 			Language:     "go",
 			Config:       goLayerMembershipConfigJSON,
 			ConfigDigest: projectconfig.Digest(goLayerMembershipConfigJSON),

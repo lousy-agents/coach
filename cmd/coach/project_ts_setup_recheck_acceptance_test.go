@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
@@ -77,7 +78,7 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			commitFile(repo, "coach-project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 			head := commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
 
-			before, err := projectcheck.Run(repo, head, "coach-project.json")
+			before, err := projectcheck.Run(repo, head, policyref.Named("coach-project.json"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(before.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
 			Expect(before.Checks.Compiler.Code).To(Equal(projectreadiness.GapTypescriptCompilerMissing), "the fixture must genuinely start with a missing-compiler gap, or a later pass proves nothing")
@@ -89,7 +90,7 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), repo)
 			Expect(err).NotTo(HaveOccurred())
 
-			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, true, repo, head, "coach-project.json")
+			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, true, repo, head, policyref.Named("coach-project.json"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(outcome.Kind).To(Equal(tssetup.OutcomeSucceeded))
 
@@ -143,7 +144,7 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), repo)
 			Expect(err).NotTo(HaveOccurred())
 
-			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, false, repo, head, "project.json")
+			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, false, repo, head, policyref.Named("project.json"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(outcome.Kind).To(Equal(tssetup.OutcomeCancelled))
 			Expect(outcome.PostInstallReadiness).To(BeNil(), "a cancelled setup must never rerun readiness")
@@ -166,7 +167,7 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), repo)
 			Expect(err).NotTo(HaveOccurred())
 
-			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, true, repo, head, "project.json")
+			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, true, repo, head, policyref.Named("project.json"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(outcome.Kind).To(Equal(tssetup.OutcomeFailed))
 			Expect(outcome.PostInstallReadiness).To(BeNil(), "a failed install must never trigger a post-install readiness recheck")
@@ -195,7 +196,7 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			// cannot resolve it, so the recheck errors.
 			nonexistentRevision := "0000000000000000000000000000000000000000"
 
-			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, true, repo, nonexistentRevision, "project.json")
+			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, true, repo, nonexistentRevision, policyref.Named("project.json"))
 			Expect(err).To(HaveOccurred(), "the recheck must surface its own failure to resolve the given revision")
 			Expect(outcome.Kind).To(Equal(tssetup.OutcomeSucceeded), "the install itself succeeded; only the recheck failed")
 			Expect(outcome.PostInstallReadiness).To(BeNil(), "a failed recheck must never attach a zero-valued or partial readiness result")

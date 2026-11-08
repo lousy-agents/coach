@@ -11,7 +11,7 @@ import (
 )
 
 // DiscoverTrackedFiles lists every file tracked by Git at revisionSHA (via
-// `git ls-tree -r -z --name-only`), independent of any diff or history --
+// `git ls-tree -r -z --name-only`, read as a stream, so a tree of any size is listed), independent of any diff or history --
 // this is what lets a Repository Baseline scan see a file that was
 // committed once and never touched again, which a diff against that same
 // revision would never surface. Unsupported-language files are not turned
@@ -20,26 +20,26 @@ import (
 // coverage.Unsupported, grouped by extension. A git failure (bad revision,
 // missing git executable, etc.) is returned as an *OperationalError.
 func DiscoverTrackedFiles(dir, revisionSHA string) ([]SelectedFile, codesignal.Coverage, error) {
-	output, err := RunBytes(dir, "ls-tree", "-r", "-z", "--name-only", revisionSHA)
-	if err != nil {
-		return nil, codesignal.Coverage{}, &OperationalError{Message: fmt.Sprintf("coach codesignal: git ls-tree failed: %s", err)}
-	}
-
 	var coverage codesignal.Coverage
 	var files []SelectedFile
 	unsupportedCounts := make(map[string]int)
 
-	for _, path := range SplitNULPaths(output) {
+	err := streamListing(dir, snapshotListingWallTime, []string{"ls-tree", "-r", "-z", "--name-only", revisionSHA}, func(record []byte) error {
+		path := string(record)
 		coverage.TrackedFilesDiscovered++
 
 		ext := filepath.Ext(path)
 		lang, ok := semantics.LanguageForExtension(ext)
 		if !ok {
 			unsupportedCounts[coverageLanguageLabel(ext)]++
-			continue
+			return nil
 		}
 
 		files = append(files, SelectedFile{Path: path, Language: lang})
+		return nil
+	})
+	if err != nil {
+		return nil, codesignal.Coverage{}, &OperationalError{Message: fmt.Sprintf("coach codesignal: git ls-tree failed: %s", err), Cause: err}
 	}
 
 	extensions := make([]string, 0, len(unsupportedCounts))

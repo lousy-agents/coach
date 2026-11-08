@@ -77,6 +77,11 @@ func (a compilerAggregate) originFindings() []projectreadiness.OriginFinding {
 }
 
 func EvaluateOrigins(dir string, roots []string) compilerAggregate {
+	return EvaluateOriginsWith(LocateMiseTypescriptInstall, dir, roots)
+}
+
+// EvaluateOriginsWith is EvaluateOrigins with the locator that finds a compiler mise installed given by the caller.
+func EvaluateOriginsWith(locate MiseLocator, dir string, roots []string) compilerAggregate {
 	worktreeRoot := WorktreeRoot(dir)
 	project, rootContext := evaluateProjectOrigin(worktreeRoot, roots)
 
@@ -84,9 +89,9 @@ func EvaluateOrigins(dir string, roots []string) compilerAggregate {
 	if aggregate.tryOrigin(project) {
 		return aggregate
 	}
-	if aggregate.tryOrigin(evaluateMiseProjectOriginGated(worktreeRoot)) {
+	if aggregate.tryOrigin(evaluateMiseProjectOriginGated(locate, worktreeRoot)) {
 		return aggregate
 	}
-	aggregate.tryOrigin(gatedMiseOriginEvaluation(OriginMiseGlobal, EvaluateMiseGlobalTrust(context.Background()), evaluateMiseGlobalOrigin))
+	aggregate.tryOrigin(gatedMiseOriginEvaluation(OriginMiseGlobal, EvaluateMiseGlobalTrust(context.Background()), func() originEvaluation { return evaluateMiseGlobalOrigin(locate) }))
 	return aggregate
 }

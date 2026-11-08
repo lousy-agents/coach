@@ -37,7 +37,7 @@ func (f *revisionFS) ReadFile(name string) ([]byte, error) {
 }
 
 func (f *revisionFS) readFile(clean string) ([]byte, error) {
-	data, err := runSnapshotGit(f.dir, maxSnapshotFileBytes, maxSnapshotGitStderr, snapshotGitTimeout, "show", f.revision+":"+clean)
+	data, err := f.run(f.dir, maxSnapshotFileBytes, maxSnapshotGitStderr, snapshotGitTimeout, "show", f.revision+":"+clean)
 	if err != nil {
 		return nil, &fs.PathError{Op: "read", Path: clean, Err: fmt.Errorf("git show %s:%s: %w", f.revision, clean, err)}
 	}

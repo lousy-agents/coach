@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
-	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -15,8 +15,8 @@ import (
 // classifyAnalysisError never sees a project_backend_unavailable error --
 // prepareProjectAnalysis handles that case separately by returning
 // a diagnostic instead of an error. The base ProjectConfigError message
-// stays unconditional on --project-language: loadProjectConfig runs before
-// resolveProjectBackend and never receives --project-language (see
+// stays unconditional on --project-language: the policy loads before the
+// backend is resolved and never receives --project-language (see
 // prepareProjectAnalysis), so a class-2 config failure's own message is
 // language-independent by construction
 // (project_contract_acceptance_test.go guards this invariant) and must stay
@@ -42,8 +42,8 @@ import (
 // --prepare-compiler can never run -- ScanSetupOfferRemediation (R2) names
 // rerunning this same scan on a terminal instead, so that repository is
 // still told a next step rather than only the bare --check-project line.
-func classifyAnalysisError(err error, language string, noInteractive bool, stderr *os.File) int {
-	report := analysisErrorReportFor(err, language, terminal.HasControllingTerminal(os.Stdin) && !noInteractive)
+func classifyAnalysisError(err error, language string, policy policyref.Ref, noInteractive bool, stderr *os.File, dir string) int {
+	report := analysisErrorReportFor(err, language, policy, authoringInteractive(noInteractive), dir)
 	for _, line := range report.lines {
 		fmt.Fprintln(stderr, line)
 	}
@@ -62,12 +62,12 @@ type analysisErrorReport struct {
 // analysisErrorReportFor matches err against the error classes in the order
 // their wrappers require: each *WithReadiness wrapper comes before the type
 // its Unwrap would otherwise satisfy first.
-func analysisErrorReportFor(err error, language string, hasControllingTerminal bool) analysisErrorReport {
+func analysisErrorReportFor(err error, language string, policy policyref.Ref, hasControllingTerminal bool, dir string) analysisErrorReport {
 	var unresolvedWithReadiness *tssetup.CompilerUnresolvedErrorWithReadiness
 	if errors.As(err, &unresolvedWithReadiness) {
-		remediation := tssetup.PrepareCompilerRemediationWithReadiness(unresolvedWithReadiness.Code, unresolvedWithReadiness.ConfigPath, unresolvedWithReadiness.Readiness)
+		remediation := tssetup.PrepareCompilerRemediationWithReadiness(unresolvedWithReadiness.Code, unresolvedWithReadiness.Policy, unresolvedWithReadiness.Readiness)
 		if remediation == "" {
-			remediation = tssetup.ScanSetupOfferRemediation(unresolvedWithReadiness.Code, unresolvedWithReadiness.ConfigPath, unresolvedWithReadiness.Readiness)
+			remediation = tssetup.ScanSetupOfferRemediation(unresolvedWithReadiness.Code, unresolvedWithReadiness.Policy, unresolvedWithReadiness.Readiness)
 		}
 		return classTwoReport(unresolvedWithReadiness.RemediationLine(), nil,
 			tssetup.AppendedRemediationLine(hasControllingTerminal, language, remediation))
@@ -75,7 +75,7 @@ func analysisErrorReportFor(err error, language string, hasControllingTerminal b
 	var unresolved *tstoolchain.CompilerUnresolvedError
 	if errors.As(err, &unresolved) {
 		return classTwoReport(unresolved.RemediationLine(), nil,
-			tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.PrepareCompilerRemediation(unresolved.Code, unresolved.ConfigPath)))
+			tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.PrepareCompilerRemediation(unresolved.Code, unresolved.Policy)))
 	}
 	var runtimeErr *tstoolchain.RuntimeUnresolvedError
 	if errors.As(err, &runtimeErr) {
@@ -84,13 +84,12 @@ func analysisErrorReportFor(err error, language string, hasControllingTerminal b
 	var configErrWithReadiness *tssetup.ProjectConfigErrorWithReadiness
 	if errors.As(err, &configErrWithReadiness) {
 		return classTwoReport(configErrWithReadiness.Message,
-			tssetup.AlsoFailingGapLines(configErrWithReadiness.Readiness, configErrWithReadiness.ConfigPath),
-			tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.SuggestProjectConfigRemediation(language)))
+			configErrWithReadiness.AlsoFailingLines(),
+			authoringRemediation(configErrWithReadiness.ConfigError, policy, language, hasControllingTerminal, dir))
 	}
 	var configErr *projectconfig.ConfigError
 	if errors.As(err, &configErr) {
-		return classTwoReport(configErr.Message, nil,
-			tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.SuggestProjectConfigRemediation(language)))
+		return classTwoReport(configErr.Message, nil, authoringRemediation(configErr, policy, language, hasControllingTerminal, dir))
 	}
 	var opErr *gitrepo.OperationalError
 	if errors.As(err, &opErr) {

@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 )
 
 // Task is the unit of work a Queue carries. ID is the stable idempotency
@@ -89,7 +89,7 @@ const reclaimAdvance = 24 * time.Hour
 // must return a fresh, empty Queue backed by clock; Run supplies its own
 // FakeClock per subtest so it can advance time deterministically instead
 // of using time.Sleep.
-func Run(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Clock) Queue) {
+func Run(t *testing.T, newQueue func(tb testing.TB, clock clock.Clock) Queue) {
 	t.Run("dual-worker exclusion", func(t *testing.T) {
 		runDualWorkerExclusion(t, newQueue)
 	})

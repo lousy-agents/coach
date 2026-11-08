@@ -5,7 +5,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -23,16 +22,11 @@ const (
 	layerlessOfferText                = "declares no layers"
 	layerlessOfferAccepted            = "y\n" + discoveredAuthoringSessionAnswers
 	layerlessOfferDeclined            = "n\n"
-	candidateRootsPattern             = `(?s)"roots":\s*\[\s*"\."\s*\]`
+	// cancelledAfterTheAnswer accepts the offer, gives an empty answer to the first question, which the session
+	// refuses, and cancels when it asks whether to retry, so the session ends without a candidate.
+	cancelledAfterTheAnswer = "y\n\ncancel\n"
+	candidateRootsPattern   = `(?s)"roots":\s*\[\s*"\."\s*\]`
 )
-
-func commitStubToolchainTypeScriptRepo(policyPath, policy string) string {
-	repo := newTempGitRepo()
-	commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
-	commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
-	commitFile(repo, policyPath, policy)
-	return repo
-}
 
 func commitRealCompilerTypeScriptRepo(policyPath, policy string) string {
 	repo := newTempGitRepo()
@@ -102,50 +96,10 @@ func envWithout(name string) []string {
 }
 
 var _ = Describe("coach codesignal guided policy authoring on a discovered .lousy-agents/coach.json (coach#510)", func() {
-	When("no --project-config is set, the committed canonical policy is schema-invalid, and a controlling terminal is available", func() {
-		It("replaces the scan with guided authoring: exits 2, prints the candidate on stdout, and names .lousy-agents/coach.json as the file to replace", func() {
-			repo := commitStubToolchainTypeScriptRepo(coachConfigPath, invalidPolicyText)
-			path := pathWithStubNode("v24.9.9")
-
-			stdout, stderr, _, exitCode := runCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path), discoveredAuthoringSessionAnswers,
-				"codesignal", "--baseline", "--project-language", "typescript", "--format=json")
-
-			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
-
-			var candidate map[string]any
-			Expect(json.Unmarshal(stdout, &candidate)).To(Succeed(), "stdout must carry the candidate document; stdout: %s stderr: %s", stdout, stderr)
-			Expect(candidate).To(HaveKeyWithValue("schema_version", "1"))
-			Expect(candidate).To(HaveKeyWithValue("roots", []any{"."}), "answer 1 selects the repository root")
-			Expect(candidate).NotTo(HaveKey("signals"), "no scan report may be produced on this path")
-
-			Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), "the invalid file must still be reported before the session opens; stderr: %s", stderr)
-			Expect(string(stderr)).To(ContainSubstring(coachConfigPath), "stderr: %s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("no file was created"), "a scan writes no repository file; stderr: %s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("replacing"), "the closing instruction must say the candidate replaces the existing file; stderr: %s", stderr)
-
-			onDisk, err := os.ReadFile(filepath.Join(repo, coachConfigPath))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(string(onDisk)).To(Equal(invalidPolicyText), "the existing file must never be touched")
-		})
-
-		It("exits 2 with empty stdout and leaves the file untouched when the session is declined", func() {
-			repo := commitStubToolchainTypeScriptRepo(coachConfigPath, invalidPolicyText)
-			path := pathWithStubNode("v24.9.9")
-
-			stdout, stderr, _, exitCode := runCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path), "1\n\n\n\nno\n",
-				"codesignal", "--baseline", "--project-language", "typescript", "--format=json")
-
-			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
-			Expect(stdout).To(BeEmpty(), "declining must never emit a candidate or a report; stdout: %s", stdout)
-			Expect(string(stderr)).To(ContainSubstring("authoring was cancelled or not approved"), "stderr: %s", stderr)
-
-			onDisk, err := os.ReadFile(filepath.Join(repo, coachConfigPath))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(string(onDisk)).To(Equal(invalidPolicyText))
-		})
-	})
-
-	DescribeTable("the invalid canonical policy never opens an offer when prompts are off, and stays exit 2 with empty stdout",
+	// The only session a TypeScript scan has ends by asking the user to save a candidate over the file, since a scan
+	// cannot pass --output. So a committed policy that exists and is invalid opens no session, whether prompts are on or
+	// off: the scan reports the invalid file, prints no candidate, and leaves the user's bytes alone.
+	DescribeTable("the invalid canonical policy never opens an offer, with prompts on or off, and stays exit 2 with empty stdout",
 		func(env func(path string) []string, args []string, withTerminal bool) {
 			repo := commitStubToolchainTypeScriptRepo(coachConfigPath, invalidPolicyText)
 			path := pathWithStubNode("v24.9.9")
@@ -164,11 +118,16 @@ var _ = Describe("coach codesignal guided policy authoring on a discovered .lous
 			Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), "stderr: %s", stderr)
 			Expect(string(stderr)).To(ContainSubstring(coachConfigPath), "stderr: %s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("Discovered TypeScript roots"), "no authoring session may open; stderr: %s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("replacing"), "nothing says to save a candidate over the file; stderr: %s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("coach codesignal: the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one."), "the scan says in words how to get past the policy; stderr: %s", stderr)
+			onDisk, err := os.ReadFile(filepath.Join(repo, coachConfigPath))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(onDisk)).To(Equal(invalidPolicyText), "the existing file must never be touched")
 		},
+		Entry("a controlling terminal with prompts on", func(path string) []string { return stubToolchainEnv(path) }, []string{}, true),
 		Entry("no controlling terminal", func(path string) []string { return stubToolchainEnv(path) }, []string{}, false),
 		Entry("a controlling terminal under a non-empty CI variable", func(path string) []string { return append(stubToolchainEnv(path), "CI=1") }, []string{}, true),
 		Entry("a controlling terminal with --no-interactive", func(path string) []string { return stubToolchainEnv(path) }, []string{"--no-interactive"}, true),
-		Entry("a controlling terminal with an explicit --project-config naming the invalid canonical file", func(path string) []string { return stubToolchainEnv(path) }, []string{"--project-config", coachConfigPath}, true),
 	)
 
 	When("the committed canonical policy declares no layers and coverage is incomplete", Label("ts-project-backend"), func() {
@@ -249,6 +208,18 @@ var _ = Describe("coach codesignal guided policy authoring on a discovered .lous
 			onDisk, err := os.ReadFile(filepath.Join(repo, coachConfigPath))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(onDisk)).To(Equal(singleRootPolicyJSON), "the existing file must never be touched")
+		})
+
+		It("claims no candidate when the offer is accepted and the session ends before it produces one", func() {
+			repo := commitRealCompilerTypeScriptRepo(coachConfigPath, singleRootPolicyJSON)
+
+			stdout, stderr, _, exitCode := runCoachBinaryWithControllingTerminal(commandPath, repo, envWithout("CI"), cancelledAfterTheAnswer,
+				"codesignal", "--baseline", "--project-language", "typescript", "--format=json")
+
+			Expect(exitCode).To(Equal(0), "the exit code follows the scan; stdout: %s stderr: %s", stdout, stderr)
+			Expect(decodeCoachReport(stdout).SchemaVersion).To(Equal("2"), "stdout must stay one parseable report; stdout: %s", stdout)
+			Expect(string(stderr)).To(ContainSubstring(layerlessOfferText), "stderr: %s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("no file was created"), "no candidate was approved, so none is claimed; stderr: %s", stderr)
 		})
 
 		It("accepts the offer and completes the session when the terminal delivers typed-ahead input without line buffering", func() {

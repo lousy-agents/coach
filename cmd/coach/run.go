@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 const topLevelUsage = `usage: coach <command> [flags]
@@ -13,6 +15,10 @@ commands:
 run "coach codesignal --help" for command-specific help.`
 
 func run(args []string, stdout, stderr *os.File) int {
+	return runWith(defaultScanPorts(), args, stdout, stderr)
+}
+
+func runWith(ports scanPorts, args []string, stdout, stderr *os.File) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, topLevelUsage)
 		return 2
@@ -26,14 +32,14 @@ func run(args []string, stdout, stderr *os.File) int {
 		fmt.Fprintln(stdout, version)
 		return 0
 	case "codesignal":
-		return runCodesignal(args[1:], stdout, stderr)
+		return runCodesignal(args[1:], stdout, stderr, ports)
 	default:
 		fmt.Fprintf(stderr, "%s\ncoach: unknown command %q\n", topLevelUsage, args[0])
 		return 2
 	}
 }
 
-func runCodesignal(args []string, stdout, stderr *os.File) int {
+func runCodesignal(args []string, stdout, stderr *os.File, ports scanPorts) int {
 	parsed, exitCode, ok := parseCodesignalFlags(args, stdout, stderr)
 	if !ok {
 		return exitCode
@@ -45,9 +51,14 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		return 1
 	}
 
+	if err := gitrepo.RefuseMissingObjects(gitrepo.RunBytes, dir, parsed.base); err != nil {
+		fmt.Fprintf(stderr, "coach codesignal: %s\n", err)
+		return 1
+	}
+
 	if parsed.suggestProjectConfig {
 		if parsed.projectLanguage == "typescript" {
-			return runAuthorProjectConfigTypeScript(dir, parsed, stdout, stderr)
+			return runAuthorProjectConfigTypeScript(dir, parsed, stdout, stderr, ports)
 		}
 		return runSuggestProjectConfig(dir, parsed, stdout, stderr)
 	}
@@ -60,5 +71,5 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		return runCheckProject(dir, parsed, stdout, stderr)
 	}
 
-	return runCodesignalScan(dir, parsed, os.Stdin, stdout, stderr, newScanOfferBudget())
+	return runCodesignalScan(dir, parsed, os.Stdin, stdout, stderr, newScanOfferBudget(), ports)
 }

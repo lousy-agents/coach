@@ -8,9 +8,11 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
-func reportPrepareCompilerMiseResult(result tssetup.PrepareCompilerMiseResult, stderr *os.File) int {
+func reportPrepareCompilerMiseResult(result tssetup.PrepareCompilerMiseResult, revision, policyPath string, stderr *os.File) int {
 	if result.PolicyRequired {
-		fmt.Fprintf(stderr, "%s: a reviewed, committed policy is required before compiler setup (%s); run guided policy authoring first (author_policy).\n", prepareCompilerMiseUsagePrefix, result.PolicyCode)
+		for _, line := range policyRequiredLines(prepareCompilerMiseUsagePrefix, result.PolicyCode, result.PolicyRemedy, result.CauseText, revision, policyPath) {
+			fmt.Fprintln(stderr, line)
+		}
 		return 2
 	}
 	if result.RuntimeGapCode != "" {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/render"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
@@ -199,7 +200,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		}}
 		cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
 		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
+			Policy:       policyref.Discovered("project.json"),
 			Language:     "go",
 			Config:       cfg,
 			ConfigDigest: projectconfig.Digest(cfg),
@@ -260,7 +261,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 			BaseAnalyzed: true,
 		}}
 		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
+			Policy:       policyref.Discovered("project.json"),
 			Language:     "go",
 			Config:       json.RawMessage(`{"schema_version":"1","roots":["."]}`),
 			ConfigDigest: "pcfg_test",
@@ -303,7 +304,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		}}
 		cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
 		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
+			Policy:       policyref.Discovered("project.json"),
 			Language:     "go",
 			Config:       cfg,
 			ConfigDigest: projectconfig.Digest(cfg),
@@ -331,7 +332,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		}}
 		cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
 		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
+			Policy:       policyref.Discovered("project.json"),
 			Language:     "go",
 			Config:       cfg,
 			ConfigDigest: projectconfig.Digest(cfg),
@@ -363,7 +364,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		}}
 		cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
 		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
+			Policy:       policyref.Discovered("project.json"),
 			Language:     "go",
 			Config:       cfg,
 			ConfigDigest: projectconfig.Digest(cfg),
@@ -398,7 +399,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		}}
 		cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
 		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
+			Policy:       policyref.Discovered("project.json"),
 			Language:     "go",
 			Config:       cfg,
 			ConfigDigest: projectconfig.Digest(cfg),

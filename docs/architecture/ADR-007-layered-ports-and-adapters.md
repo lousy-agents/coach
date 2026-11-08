@@ -49,22 +49,23 @@ flowchart LR
 
 The direction is enforced at two grains.
 
-**Rings across the module.** `project.json` is the repository's own project-analysis policy. It places top-level trees in four rings and forbids every outward import between them, and `coach codesignal --baseline --project-config project.json` reports any crossing as `architecture.layer_violation`. It reports none.
+**Rings across the module.** `.lousy-agents/coach.json` is the repository's own project-analysis policy. It places top-level trees in five rings: four production rings (entities, usecases, adapters, app) and a tooling ring for test-support trees, which no production ring may import. It forbids every outward import between the production rings and every import into tooling, and `coach codesignal --baseline --project-config .lousy-agents/coach.json` reports any crossing as `architecture.layer_violation`. Outside test files it reports none. Test files may import the tooling ring, and each such edge is reported as `architecture.layer_violation` with the importee in tooling; they are known and tracked in coach#602 and coach#627, and an edge into tooling from a file that is not a test file is a failure.
 
-| Ring (`project.json`) | Trees |
+| Ring (`.lousy-agents/coach.json`) | Trees |
 | --- | --- |
-| entities | `pkg/domain`, `pkg/semantics` |
-| usecases | `pkg/codesignal` |
-| adapters | `pkg/githubingest`, `pkg/projectmodel`, `internal/codesignalcli`, `internal/coachapi`, `internal/jsbridge`, `internal/projectbridge` |
-| app | `cmd/*` |
+| entities | `pkg/domain`, `pkg/semantics`, `internal/gitpath` |
+| usecases | `pkg/usecases`, `pkg/codesignal`, `internal/agentloop` |
+| adapters | `internal/adapters`, `pkg/githubingest`, `pkg/projectmodel`, `internal/codesignalcli`, `internal/coachapi`, `internal/jsbridge`, `internal/projectbridge`, `internal/authn`, `internal/authz`, `internal/modelgateway`, `internal/rubrics`, `js/semantics` |
+| app | `cmd/coach`, `cmd/coach-api`, `cmd/coach-worker`, `cmd/semantics-json`, `cmd/codesignal-report` |
+| tooling | `internal/acceptanceharness`, `internal/acceptancestyle`, `internal/agentworkflows`, `internal/claudehooks`, `internal/fakegithub`, `internal/sourcelayout`, `internal/tstestutil`, `internal/validationtasks`, `deploy/compose/platform/fixtures`, `.opencode/plugin`, and the repository's test and guard commands under `cmd/` (`acceptance-guard-preflight`, `acceptance-style-guard`, `fakegithub-server`, `model-stub`, `platform-smoke`, `semantics-wasm-smoke`, `source-layout-guard`, `thinproof-preflight`, `thinproof-runner`) |
 
 **Layers inside the application shells.** `internal/codesignalcli` (the CLI) and `internal/coachapi` (the platform API and worker) each sit in the adapters ring as a whole, because each wraps the inner rings for one delivery mechanism. Inside each shell, the same four-layer shape repeats at package grain:
 
 | Layer | `internal/codesignalcli/…` | `internal/coachapi/…` |
 | --- | --- | --- |
-| Model | `projectreadiness` (readiness result), `projectconfig` (policy schema) | root (job, report, API contract, `JobStore` / `WorkerJobStore` ports) |
+| Model | `projectreadiness` (readiness result), `projectconfig` (policy schema), `policyref` (the policy a run reads and who chose it; imports only the standard library), `shellword` (quoting and printability), `invocation` (the commands remediation lines name) | root (job, report, API contract, `JobStore` / `WorkerJobStore` ports) |
 | Use case | root (scans, `ProjectBackend` port), `projectcheck`, `tssetup`, `configauthoring`, `sourcescope` | `baseline`, `worker` |
-| Driven adapter | `gitrepo`, `revisionfs`, `tstoolchain`, `pkgmanager`, `subprocess`, `terminal`, `prompt` | `store/memory`, `store/postgres`, `queue/redisstream`, `queue/sqs` |
+| Driven adapter | `gitrepo`, `revisionfs`, `tstoolchain`, `pkgmanager`, `subprocess`, `terminal`, `prompt` | `store/memory`, `store/postgres`, `queue/redisstream`, `queue/sqs`, `clock` (the production `Clock` and `RealClock`) |
 | Entry | `render` (wired from `cmd/coach`) | `httpapi` (wired from `cmd/coach-api`) |
 
 `internal/codesignalcli/layering_test.go` pins the CLI shell's graph, so a new import edge between its packages fails a test rather than eroding silently. The domain libraries keep their I/O in private adapter packages: `pkg/semantics/internal/engine` (Tree-sitter) and `pkg/projectmodel/internal/tssidecar` and `ssaload`.
@@ -72,6 +73,8 @@ The direction is enforced at two grains.
 Where the migration stopped short of the rule, and why:
 
 - The CLI use cases (`projectcheck`, `tssetup`, `configauthoring`, root `codesignalcli`) import `gitrepo` directly, and `projectcheck`/`tssetup` call `tstoolchain` and `pkgmanager` probes. Each git read goes through a function-typed seam owned by its consumer, but the toolchain probes are still package variables that tests override; replacing them with constructor-injected ports means reshaping the use-case signatures and is the next step.
+- `projectconfig` is placed in the model layer but also probes the working tree (`os.OpenRoot`, `Lstat`), asks git whether a path exists at a revision and what the index holds for it, and renders the restore command ([ADR-008](ADR-008-explicit-policy-disk-and-revision.md)). Moving that I/O to a driven-adapter package is tracked in [coach#613](https://github.com/lousy-agents/coach/issues/613).
+- `internal/coachapi/clock` holds the `Clock` port and its production implementation, `RealClock`, in one package that imports only `time`. The table lists it with the driven adapters because `RealClock` is one, while `worker` (a use case) imports it for the port and the queue adapters take it as a constructor argument. It stays whole because the port is two methods over `time`, `RealClock` is a few lines, and the only other implementation is the test double in `acceptanceharness`; splitting them would add a package with nothing to separate.
 - `internal/coachapi/baseline` constructs its local smoke-fixture tree source itself, because `ScanConfig.SmokeFixturePath` selects it; injecting the source would change worker configuration.
 - `internal/rubrics` uses `internal/modelgateway`'s `Gateway` interface rather than declaring its own port.
 - `pkg/projectmodel`'s exported entry points wire their default adapters (`tssidecar`, `ssaload`) because their signatures have no injection point and are public API.

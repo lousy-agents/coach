@@ -6,10 +6,11 @@ import (
 	"time"
 
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
 )
 
-func newTestQueue(t *testing.T, api sqsAPI, clock acceptanceharness.Clock) *Queue {
+func newTestQueue(t *testing.T, api sqsAPI, clock clock.Clock) *Queue {
 	t.Helper()
 	return &Queue{
 		client:            api,

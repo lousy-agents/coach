@@ -71,7 +71,7 @@ func writeStatefulStubMiseOnPath(t *testing.T, installDir, version string) {
 
 // locateInstalledTypescriptUnder stands in for `mise where`: it finds the
 // compiler only once the stub mise's install has populated installDir.
-func locateInstalledTypescriptUnder(installDir string) func(context.Context, string) (string, bool) {
+func locateInstalledTypescriptUnder(installDir string) tstoolchain.MiseLocator {
 	return func(context.Context, string) (string, bool) {
 		pkgDir := filepath.Join(installDir, "node_modules", "typescript")
 		if _, statErr := os.Stat(filepath.Join(pkgDir, "package.json")); statErr != nil {

@@ -20,32 +20,21 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []gitre
 	if err != nil {
 		return nil, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal: starting git cat-file --batch failed: %s", err)}
 	}
-	defer func() { _ = reader.Close() }()
+	defer reader.Close()
 
 	var fileChanges []codesignal.FileChange
 	diagnostics := append([]codesignal.Diagnostic(nil), extraDiagnostics...)
 
 	for _, sf := range files {
-		headBytes, err := reader.Next(sf.Path)
+		fileChange, fileDiagnostics, err := analyzeBaselineFile(ctx, analyzer, reader, sf)
 		if err != nil {
-			diagnostics = append(diagnostics, readFailedDiagnostic(sf.Path, "head", err))
-			coverage.FilesUnanalyzable++
-			continue
+			return nil, err
 		}
-
-		headResult, headErr := analyzer.AnalyzeBytes(ctx, semantics.FileInput{Path: sf.Path, Language: sf.Language, Content: headBytes})
-		if headErr != nil && !errors.Is(headErr, semantics.ErrSyntax) {
-			diagnostics = append(diagnostics, mapSemanticsError(sf.Path, headErr))
-			coverage.FilesUnanalyzable++
-			continue
+		diagnostics = append(diagnostics, fileDiagnostics...)
+		if fileChange != nil {
+			fileChanges = append(fileChanges, *fileChange)
 		}
-
-		fileChanges = append(fileChanges, codesignal.FileChange{Path: sf.Path, SourceScope: sf.SourceScope, Head: headResult})
-		if headResult.ParseStatus == "ok" {
-			coverage.FilesAnalyzed++
-		} else {
-			coverage.FilesUnanalyzable++
-		}
+		coverage = countedBaselineFile(coverage, fileChange)
 	}
 
 	opts := codesignal.Options{Baseline: true}
@@ -64,14 +53,6 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []gitre
 		return nil, err
 	}
 	return builder.Build(ctx, input)
-}
-
-func readFailedDiagnostic(path, side string, err error) codesignal.Diagnostic {
-	return codesignal.Diagnostic{
-		Path:    path,
-		Kind:    side + "_read_failed",
-		Message: fmt.Sprintf("reading %s content for %q: %s", side, path, err),
-	}
 }
 
 func baseSyntaxDiagnostics(path string, baseErr error) []codesignal.Diagnostic {

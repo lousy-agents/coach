@@ -5,14 +5,14 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill/message"
 
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 )
 
 // newTestQueue builds a Queue whose state machine (pending map, clock,
 // claimAfter) can be exercised directly, with no Redis client/publisher/
 // subscriber involved -- Claim/Nack/Complete's reclaim and token
 // invalidation logic never touches those fields.
-func newTestQueue(clock acceptanceharness.Clock, claimAfter time.Duration) *Queue {
+func newTestQueue(clock clock.Clock, claimAfter time.Duration) *Queue {
 	return &Queue{
 		claimAfter: claimAfter,
 		clock:      clock,

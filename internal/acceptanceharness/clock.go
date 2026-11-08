@@ -7,31 +7,6 @@ import (
 	"time"
 )
 
-// Clock abstracts the subset of the stdlib time package that consumers
-// doing heartbeats, timeouts, and reconciliation actually need: reading the
-// current time and waiting for a duration to elapse. Production code
-// depends on this interface (satisfied by RealClock) so that acceptance
-// tests can substitute FakeClock and drive time forward with explicit,
-// broker-visible Advance calls instead of time.Sleep polling.
-type Clock interface {
-	// Now returns the clock's current time.
-	Now() time.Time
-	// After returns a channel that fires exactly once, with the deadline
-	// time (Now() at the moment After was called, plus d), once that
-	// deadline has been reached.
-	After(d time.Duration) <-chan time.Time
-}
-
-// RealClock is a zero-value-usable Clock backed by the real time.Now and
-// time.After. Use it in production code; use FakeClock in tests.
-type RealClock struct{}
-
-// Now returns time.Now().
-func (RealClock) Now() time.Time { return time.Now() }
-
-// After returns time.After(d).
-func (RealClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
-
 // waiter is a single pending After() call: it fires ch, exactly once, once
 // the FakeClock's Now() reaches or passes deadline.
 type waiter struct {
@@ -39,7 +14,7 @@ type waiter struct {
 	ch       chan time.Time
 }
 
-// FakeClock is a test-only Clock whose Now() only changes when a test calls
+// FakeClock is a test-only clock.Clock whose Now() only changes when a test calls
 // Advance: it never drifts with wall-clock time. It is safe for concurrent
 // use, so a goroutine calling After (e.g. a heartbeat ticker under test) may
 // race with the test goroutine calling Advance.

@@ -108,12 +108,12 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 	if err != nil {
 		var unresolved *tstoolchain.CompilerUnresolvedError
 		if errors.As(err, &unresolved) {
-			unresolved.ConfigPath = req.ConfigPath
+			unresolved.Policy = req.Policy
 			return nil, unresolved
 		}
 		var runtimeErr *tstoolchain.RuntimeUnresolvedError
 		if errors.As(err, &runtimeErr) {
-			runtimeErr.ConfigPath = req.ConfigPath
+			runtimeErr.Policy = req.Policy
 			return nil, runtimeErr
 		}
 		return nil, err

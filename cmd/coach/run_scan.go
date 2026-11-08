@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -17,36 +18,32 @@ func shouldRenderAfterOptionalPreparation(result optionalPreparationResult) bool
 	return !result.Cancelled && !result.Failed
 }
 
-var runOptionalScanPreparation = func(dir string, f codesignalFlags, stdout, stderr *os.File) optionalPreparationResult {
-	return optionalPreparationResult{}
-}
-
-func runCodesignalScan(dir string, f codesignalFlags, stdin, stdout, stderr *os.File, budget scanOfferBudget) int {
-	report, err := runOneScan(dir, f, stdin, stderr)
+func runCodesignalScan(dir string, f codesignalFlags, stdin, stdout, stderr *os.File, budget scanOfferBudget, ports scanPorts) int {
+	report, err := runOneScan(dir, f, stdin, stderr, ports)
 	if err != nil {
 		noInteractive := nonInteractiveRequested(f)
-		if scanShouldAuthorProjectConfig(err, f.projectLanguage, f.projectConfig, noInteractive) ||
-			scanShouldAuthorDiscoveredProjectConfig(err, f, noInteractive) {
-			return runScanProjectConfigAuthoring(dir, f, err, stdout, stderr)
+		if offerAuthoring(err, f.projectLanguage, authoringInteractive(noInteractive)) == authoringSession {
+			return runScanProjectConfigAuthoring(dir, f, err, stdout, stderr, ports)
 		}
 		if wrapped, ok := scanShouldOfferCompilerSetup(err, noInteractive); budget.allows(scanOfferCompilerSetup) && ok {
-			return runScanCompilerSetupOffer(dir, f, stdin, stdout, stderr, wrapped, budget)
+			return runScanCompilerSetupOffer(dir, f, stdin, stdout, stderr, wrapped, budget, ports)
 		}
-		return classifyAnalysisError(err, f.projectLanguage, noInteractive, stderr)
+		err = wordBlobReadFailure(gitrepo.RunBytes, dir, err, scanPrefix)
+		return classifyAnalysisError(err, f.projectLanguage, f.namedPolicy, noInteractive, stderr, dir)
 	}
-	if result := runOptionalScanPreparation(dir, f, stdout, stderr); !shouldRenderAfterOptionalPreparation(result) {
+	if result := ports.optionalPreparation(dir, f, stdout, stderr); !shouldRenderAfterOptionalPreparation(result) {
 		return 2
 	}
 	exitCode := renderScanResult(report, f, stdout, stderr)
 	if exitCode == 0 {
-		offerAuthoringForLayerlessDiscoveredPolicy(dir, f, report, stderr)
+		offerAuthoringForLayerlessDiscoveredPolicy(dir, f, report, stderr, ports)
 	}
 	return exitCode
 }
 
-func runOneScan(dir string, f codesignalFlags, stdin, stderr *os.File) (*codesignal.Report, error) {
+func runOneScan(dir string, f codesignalFlags, stdin, stderr *os.File, ports scanPorts) (*codesignal.Report, error) {
 	if f.baseline {
-		return runBaselineAnalysis(dir, f, stdin, stderr)
+		return runBaselineAnalysis(dir, f, stdin, stderr, ports)
 	}
-	return runDiffAnalysis(dir, f, stdin, stderr)
+	return runDiffAnalysis(dir, f, stdin, stderr, ports)
 }
