@@ -5,6 +5,10 @@ import "testing"
 const (
 	defaultSpelling = ".lousy-agents/coach.json"
 	namedDefault    = ".lousy-agents/COACH.json"
+
+	// runAgainWithTheDefault ends the advice that has git record the policy at the default spelling: the flag as typed
+	// would refuse that policy, so the next run is told what it takes to read it.
+	runAgainWithTheDefault = `then commit and run again with ".lousy-agents/coach.json" passed or --project-config left off`
 )
 
 // The default policy's path is the one a scan without --project-config reads, so a policy named with that path in another
@@ -26,7 +30,7 @@ func TestTheDefaultPolicyNamedInAnotherCaseIsNotToldToRenameItToMatch(t *testing
 // oneSpellingMessageToDefault is the message for a policy named with the default path in another case, committed under
 // a spelling that is not the default: git is to record it at the default spelling, which both callers read.
 func oneSpellingMessageToDefault(committed string) string {
-	return "coach codesignal: the policy is committed as " + quoted(committed) + ", but Coach reads " + quoted(namedDefault) + ", so it is not read: pass the committed spelling, " + quoted(committed) + ", or " + recordedAs(defaultSpelling) + ", then commit and run again." + aDirectoryInCase + " " + aRenameOverAFile(defaultSpelling) + " (project_config_invalid)"
+	return "coach codesignal: the policy is committed as " + quoted(committed) + ", but Coach reads " + quoted(namedDefault) + ", so it is not read: pass the committed spelling, " + quoted(committed) + ", or " + recordedAs(defaultSpelling) + ", " + runAgainWithTheDefault + "." + aDirectoryInCase + " " + aRenameOverAFile(defaultSpelling) + " (project_config_invalid)"
 }
 
 func quoted(s string) string { return `"` + s + `"` }

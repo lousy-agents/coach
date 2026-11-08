@@ -59,9 +59,10 @@ func directoryInCase(from, to string) string {
 	return " A directory whose name changes only in case cannot be renamed in one step on a disk that folds case: rename it to another name first, then to the one you want."
 }
 
-// recordTheRename is the advice for the policy committed under one other spelling.
-func recordTheRename(committed, repoPath string, chooser pathChooser) string {
-	return chooser.passTheCommittedSpelling(committed) + makeGitRecord(repoPath) + ", then commit and run again." + directoryInCase(committed, repoPath) + " " + mindWhatStandsThere(repoPath)
+// recordTheRename is the advice for the policy committed under one other spelling: typed is the path Coach reads, and
+// record the path git is to record the policy at.
+func recordTheRename(committed, typed, record string, chooser pathChooser) string {
+	return chooser.passTheCommittedSpelling(committed) + makeGitRecord(record) + thenRunAgain(typed, record) + "." + directoryInCase(committed, record) + " " + mindWhatStandsThere(record)
 }
 
 // severalSpellingsReason names every spelling the revision holds besides the one Coach reads, so that none stays
@@ -74,13 +75,13 @@ func severalSpellingsReason(others []string, truncated bool, repoPath, record st
 	if truncated {
 		named += ", and more"
 	}
-	reason := fmt.Sprintf("the analyzed revision holds the policy under several spellings, %s, and Coach reads %q: %skeep one of them at that path and remove the others", named, repoPath, chooser.passOneOfTheCommittedSpellings())
+	reason := fmt.Sprintf("the analyzed revision holds the policy under several spellings, %s, and Coach reads %q: %skeep one of them at %s and remove the others", named, repoPath, chooser.passOneOfTheCommittedSpellings(), keptAt(repoPath, record))
 	if truncated {
-		return reason + ", then commit and run again. " + mindWhatStandsThere(record)
+		return reason + thenRunAgain(repoPath, record) + ". " + mindWhatStandsThere(record)
 	}
 	keep := keptSpelling(others, record)
 	rest := slices.DeleteFunc(slices.Clone(listed), func(spelling string) bool { return spelling == keep })
-	return fmt.Sprintf("%s. To keep %q, %s, delete %s from the repository, then commit and run again.%s %s", reason, keep, makeGitRecord(record), quotedList(rest), directoryInCase(keep, record), mindWhatStandsThere(record))
+	return fmt.Sprintf("%s. To keep %q, %s, delete %s from the repository%s.%s %s", reason, keep, makeGitRecord(record), quotedList(rest), thenRunAgain(repoPath, record), directoryInCase(keep, record), mindWhatStandsThere(record))
 }
 
 // keptSpelling is the spelling to keep when several are committed: the one that needs the fewest components

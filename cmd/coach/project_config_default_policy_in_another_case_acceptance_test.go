@@ -69,9 +69,27 @@ var _ = Describe("coach codesignal: the default policy's path named in another c
 
 		Expect(stderr).To(ContainSubstring(`but Coach reads ".lousy-agents/COACH.json", so it is not read: pass the committed spelling, ".Lousy-Agents/Coach.json", or `+makeGitRecordIt(committed)), "stderr:\n%s", stderr)
 		Expect(stderr).NotTo(ContainSubstring(makeGitRecordIt(named)), "the spelling typed is not the one the default scan reads:\n%s", stderr)
+		Expect(stderr).To(ContainSubstring(runAgainWithTheDefaultSpelling), "the flag as typed would refuse the policy once it is recorded:\n%s", stderr)
 
 		renameInTheRepository(repo, ".Lousy-Agents/Coach.json", committed)
 		gitInWithIdentity(repo, "commit", "-q", "-m", "make git record the policy at the default spelling")
 		expectBothScansReadThePolicy()
 	})
+
+	It("is told to keep one of several spellings at the default spelling, and not at the one typed, when none of them is the default", func() {
+		commitPolicyUnderSpellings(repo, ".lousy-agents/Coach.json", ".lousy-agents/COACH.JSON")
+
+		stderr := string(scanExplicitPolicy(repo, named))
+
+		Expect(stderr).To(ContainSubstring(`or keep one of them at ".lousy-agents/coach.json", which a scan without --project-config reads by itself, and remove the others`), "stderr:\n%s", stderr)
+		Expect(stderr).NotTo(ContainSubstring("keep one of them at that path"), "the path Coach reads is not the one to keep the policy at:\n%s", stderr)
+		Expect(stderr).To(ContainSubstring(runAgainWithTheDefaultSpelling), "the flag as typed would refuse the policy once it is recorded:\n%s", stderr)
+		expectNoRunnableCommand(stderr)
+
+		commitPolicyUnderSpellings(repo, committed)
+		Expect(string(scanExplicitPolicy(repo, named))).To(ContainSubstring("or leave --project-config off"), "the flag as typed still refuses the policy, as the advice said")
+		expectBothScansReadThePolicy()
+	})
 })
+
+const runAgainWithTheDefaultSpelling = `then commit and run again with ".lousy-agents/coach.json" passed or --project-config left off`

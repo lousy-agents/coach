@@ -72,6 +72,10 @@ var _ = Describe("the CLI contract: the case rule it describes is the one the sc
 		Expect(rule).To(ContainSubstring("It is told to pass the committed spelling or to leave the flag off; when the revision commits the default spelling beside others it is told to keep that one and delete the others, and the default spelling is never the one to delete; when only another spelling is committed, git is to record the policy at the default spelling."))
 	})
 
+	It("says that where git is to record the policy at the default spelling, the next run is told to pass it or leave the flag off", func() {
+		Expect(rule).To(ContainSubstring("Where git is to record the policy at the default spelling instead of the one typed, the message names the default spelling throughout, so with several spellings committed it says to keep one of them at the default spelling and not at \"that path\", and it ends by saying that the next run is to pass the default spelling or leave `--project-config` off, because the flag as typed would still refuse the policy."))
+	})
+
 	It("says what is listed when the revision commits several spellings, and the limit of 16", func() {
 		Expect(rule).To(ContainSubstring("the message lists every one of them (up to 16, then \"and more\"), says to keep one of them at that path and remove the others, names the one to keep and the ones to delete, and gives the same warning; past 16 spellings it names none to keep, and says only to keep one of them at that path and remove the others"))
 	})

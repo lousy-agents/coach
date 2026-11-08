@@ -23,6 +23,24 @@ func whereToRecord(repoPath string, chooser pathChooser) string {
 	return repoPath
 }
 
+// keptAt is where the advice says to keep one of several spellings: the path Coach reads, which "that path" names, or
+// the spelling git is to record when that is not the path Coach reads.
+func keptAt(repoPath, record string) string {
+	if record == repoPath {
+		return "that path"
+	}
+	return fmt.Sprintf("%q, which a scan without --project-config reads by itself,", record)
+}
+
+// thenRunAgain closes the steps that make git record the policy at record. A run with the flag as typed still refuses
+// when record is not the path Coach reads, so the user is told what the next run needs to be.
+func thenRunAgain(repoPath, record string) string {
+	if record == repoPath {
+		return ", then commit and run again"
+	}
+	return fmt.Sprintf(", then commit and run again with %q passed or --project-config left off", record)
+}
+
 // keepsTheDefaultSpelling is whether the default policy's path was named in another case while the revision commits
 // the default spelling: nothing is renamed then, and the default spelling is never the one to delete.
 func keepsTheDefaultSpelling(repoPath string, others []string, chooser pathChooser) bool {
