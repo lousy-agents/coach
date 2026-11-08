@@ -23,6 +23,10 @@ func TestSeveralSpellingsOfTheDefaultPolicyNamedInAnotherCaseAreToldToBeKeptAtTh
 			severalToDefaultMessage(`".lousy-agents/COACH.JSON", ".lousy-agents/Coach.json"`, ".lousy-agents/COACH.JSON", `".lousy-agents/Coach.json"`, shape{})},
 		{"the spelling to keep has a directory to rename", namedDefault, renamedDirectory, chosenByTheUser,
 			severalToDefaultMessage(`".LOUSY-AGENTS/coach.json", ".Lousy-Agents/Coach.json"`, ".LOUSY-AGENTS/coach.json", `".Lousy-Agents/Coach.json"`, shape{directory: true})},
+		{"the default directory holds one spelling and another directory holds the other", namedDefault, fakeRevision{"": {".Lousy-Agents", ".lousy-agents"}, ".Lousy-Agents": {"Coach.json"}, ".lousy-agents": {"Coach.json"}}.entries, chosenByTheUser,
+			severalToDefaultMessage(`".Lousy-Agents/Coach.json", ".lousy-agents/Coach.json"`, ".lousy-agents/Coach.json", `".Lousy-Agents/Coach.json"`, shape{})},
+		{"the spelling to keep is the one nearest the default spelling, not the one typed", namedDefault, fakeRevision{"": {".Lousy-Agents"}, ".Lousy-Agents": {"coach.json", "COACH.json"}}.entries, chosenByTheUser,
+			severalToDefaultMessage(`".Lousy-Agents/COACH.json", ".Lousy-Agents/coach.json"`, ".Lousy-Agents/coach.json", `".Lousy-Agents/COACH.json"`, shape{directory: true})},
 	} {
 		assertWrongCaseRefusal(t, c)
 	}
