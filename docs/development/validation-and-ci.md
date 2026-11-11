@@ -13,19 +13,22 @@ agent can otherwise derive from `mise.toml` and `.github/workflows/ci.yml`.
 | `ci-gate` | gofmt / go-vet / style | no | no |
 | `ci-fast` | Go slice + agent-tooling suites, sidecar built first | yes | no |
 | `ci` | `ci-go` + `js-ci` | no — sidecar is not built first | no |
-| `ci-all` | sidecar, then `ci-go` + `js-ci` + `wasm-build` | yes | yes |
+| `ci-all` | sidecar, then `ci-go` + `js-ci` + `wasm-build` + `vulncheck` | yes | yes |
 
 `ci-all` reaches `js-install` through `project-sidecar-build`, so the sidecar and TypeScript-backend specs do run inside `test` rather than being absent. What `ci-all` lacks is the proof: `test` carries no `-ginkgo.fail-on-empty`, so those specs skip gracefully when their compiler preconditions fail and `ci-all` stays green anyway. The `projectmodel-sidecar` and `ts-project-backend` leaves add that flag, which is what turns a silent skip into a failure. Run `mise run ts-project-backend-acceptance` directly when you touch `cmd/coach` or `internal/codesignalcli`; it needs `strace` on PATH, because the specs assert on the analyzer subtree's file syscalls.
 
-Two gaps `mise run ci` alone does not close, which is why `ci-all` exists:
+Gaps `mise run ci` alone does not close, which is why `ci-all` exists:
 
-- `wasm-build` is in no task's closure, so a `GOOS=js GOARCH=wasm` break passes `ci`.
+- `wasm-build` is in no task's closure except `ci-all`, so a `GOOS=js GOARCH=wasm` break passes `ci`.
+- `vulncheck` is the same shape: a required leaf, present in `ci-all`, absent from `ci`, `ci-go`, `ci-fast`, and `ci-gate`. It calls the vulnerability database and loads the whole module, which is the wrong cost for the smoke check and the edit loop.
 - `ci` runs `test` before anything builds the sidecar, so `pkg/projectmodel`'s
   TypeScript sidecar acceptance suite skips silently unless Node and the binary
   are already present. A green `ci` does not mean that suite ran.
 
-`ci-gate` deliberately runs no tests and no `tidy-check`, because `tidy-check`
-rewrites `go.mod`/`go.sum` in place and a smoke check should not mutate the tree.
+`ci-gate` deliberately runs no tests, no `tidy-check`, and no `vulncheck`.
+`tidy-check` rewrites `go.mod`/`go.sum` in place, and a smoke check should not
+mutate the tree. `vulncheck` is a network scan of the whole module, not a
+check that finishes in seconds.
 
 `ci-all` deliberately excludes `test-acceptance-fast` (its ambient-credential
 preflight cannot pass where `GITHUB_TOKEN`/`GH_TOKEN` or `~/.aws/config` are
@@ -67,7 +70,7 @@ GHA is a parallel scheduler of atomic `mise run <task>` steps. The local
 `ci` / `ci-fast` / `ci-all` composites are serial bundles of the same tasks; the
 workflow does not invoke those composites.
 
-Seven independent leaf jobs plus a `status` aggregator:
+Eight independent leaf jobs plus a `status` aggregator:
 
 - `verify` — `ci-go`: gofmt / go-vet / tidy-check / acceptance-style-check /
   source-layout-check / test / test-examples. `install_args` names Go, pnpm,
@@ -77,7 +80,7 @@ Seven independent leaf jobs plus a `status` aggregator:
   `cmd/coach`'s real-execution sentinel-script proofs for the frozen adapter
   rows, and those fail rather than skip when their binary is absent; npm needs
   no entry because it ships with Node. Toolchain comes from `mise.toml`
-  (`go = "1.26.6"`), not `go.mod`'s language version.
+  (`go = "1.27.4"`), not `go.mod`'s language version.
 - `js-verify` — `mise run js-ci` only.
 - `projectmodel-sidecar` — `mise run projectmodel-sidecar-acceptance` (builds
   the sidecar, then the real suite). Parallel with `js-verify`.
@@ -91,6 +94,7 @@ Seven independent leaf jobs plus a `status` aggregator:
   running, because a mise regression that declined the override would otherwise re-run the
   Node 24 leg and stay green, leaving the supported {24,26} set half-proven.
 - `wasm-build` — `mise run wasm-build`.
+- `vulncheck` — `mise run vulncheck`. Symbol-level source scan, text output, so a reachable vulnerable symbol exits 3 and fails the job. `install_args` names Go and the pinned `govulncheck`; the Go module cache matches the other Go jobs. The vulnerability database is not cached. SARIF is not uploaded: that format exits 0 when findings exist, and an upload would need code-scanning write on a workflow whose grant is `contents: read`.
 - `platform-smoke` — `platform-up` / `platform-smoke` / `platform-down` as three
   steps, so teardown still runs on failure.
 - `status` — `if: always()` plus `needs` on every leaf; inspects `toJSON(needs)`
