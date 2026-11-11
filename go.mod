@@ -11,7 +11,7 @@ require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-github/v93 v93.0.0
-	github.com/jackc/pgx/v5 v5.12.0
+	github.com/jackc/pgx/v5 v5.13.0
 	github.com/odvcencio/gotreesitter v0.57.0
 	github.com/onsi/ginkgo/v2 v2.34.0
 	github.com/onsi/gomega v1.44.0
