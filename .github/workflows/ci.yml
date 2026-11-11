@@ -233,12 +233,48 @@ jobs:
         if: always()
         run: mise run platform-down
 
+  # Parallel with verify. govulncheck loads the whole module, and verify is
+  # already the race-test job, so the scan is its own leaf (same split as
+  # wasm-build). install_args names Go and the pinned govulncheck; the task
+  # needs neither Node, pnpm, nor bun. As on verify, the first mise run may
+  # still install other tools mise.toml declares.
+  #
+  # Findings fail the job because the task uses text output. A SARIF file
+  # would not (that format exits 0 when findings exist), and uploading one
+  # would ask for code-scanning write on the job token. This job adds no
+  # permissions of its own, so it keeps the workflow contents read grant.
+  # The vulnerability database is not part of the cache below; a new
+  # advisory should fail the next run rather than ride a warm cache.
+  vulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: "2026.11.6"
+          install_args: "go go:golang.org/x/vuln/cmd/govulncheck"
+          experimental: true
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: vulncheck
+        run: mise run vulncheck
+
   # Single required check for branch protection. Leaf jobs stay parallel;
   # this job fails if any required leaf is not success. if: always() so a
   # failed leaf still produces a failed status rather than a missing check.
   status:
     if: always()
-    needs: [verify, js-verify, projectmodel-sidecar, ts-project-backend, ts-project-backend-node26, wasm-build, platform-smoke]
+    needs: [verify, js-verify, projectmodel-sidecar, ts-project-backend, ts-project-backend-node26, wasm-build, vulncheck, platform-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

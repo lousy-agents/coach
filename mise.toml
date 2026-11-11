@@ -14,6 +14,12 @@ node = "24"
 # support matrix (SA-280-012).
 pnpm = "10"
 bun = "1"
+# v1.9.0 requires Go 1.26+, so mise builds it with the go pin above.
+# aqua-registry's recipe is type go_install, which the aqua backend refuses,
+# and golang/vuln publishes no GitHub release assets for a github-backend or
+# ubi install (ubi itself is deprecated). An exact module version, not
+# "latest", so a laptop and CI cannot install different builds.
+"go:golang.org/x/vuln/cmd/govulncheck" = "v1.9.0"
 
 [tasks.gofmt]
 description = "Fail if any Go file needs formatting"
@@ -247,9 +253,30 @@ echo ""
 echo "Linux fallback: model container on the compose network; set AIGW_OPENAI_BASE_URL in .env to that service."
 """
 
+# Symbol-level source scan of the module the linux GOOS build compiles, which
+# is the configuration CI and the release archives ship. Text output is the
+# gate: -format json, sarif, and openvex exit 0 even when findings exist,
+# while text exits 3 only when a finding matches the scan level. At symbol
+# level that means a vulnerable function is reachable. -show verbose adds
+# progress and finding detail to the log and does not change the exit.
+#
+# -test stays off. Test files are not in a shipped binary, and the thinproof
+# and foreignclone tags sit only on acceptance tests, so they add packages
+# only together with -test. -tags stays unset: unix and linux files are
+# already selected by GOOS. The wasm grammar_subset tags belong to
+# wasm-build's GOOS=js compile, not this native module. The windows console
+# shim is outside this GOOS, so it is not in the call graph. govulncheck has
+# no ignore list (https://go.dev/issue/61211); a finding here is a dependency
+# bump, not a suppression.
+[tasks.vulncheck]
+description = "Fail if a vulnerable symbol is reachable in the module (govulncheck source mode, symbol level, text output)"
+run = "govulncheck -mode source -scan symbol -show verbose ./..."
+
 # Atomic Go slice matching the verify job's steps. The sidecar suite still
 # skips inside `test` unless Node and the sidecar binary are already present
 # (verify installs only Go; local `ci-all` / `ci-fast` build the sidecar first).
+# vulncheck is its own leaf, like wasm-build, so it is not a verify step and
+# stays out of this list. ci-all runs it.
 [tasks.ci-go]
 description = "Go slice matching the verify job: gofmt/vet/tidy/style/test/examples"
 run = [
@@ -274,6 +301,8 @@ run = [
 # already present. `ci-fast` and `ci-all` put the sidecar first; the GHA
 # `projectmodel-sidecar` job runs `projectmodel-sidecar-acceptance` in
 # parallel with `js-verify` so that suite is never a silent skip in CI.
+# vulncheck is not in this loop: it calls the vulnerability database and
+# loads the whole module, and CI runs that scan as its own leaf.
 [tasks.ci-fast]
 description = "Per-cycle validation for the implement/review loop: Go slice with the TS sidecar built first, plus the agent-tooling suites (no silent skips)"
 run = [
@@ -296,9 +325,11 @@ run = [
 # proves a strict superset (plus platform-smoke) in ~426s wall clock on compute
 # that is not the session's.
 #
-# Do not add `test`, `ci-go`, `ci-fast` or `ci-all` here -- `test` is
+# Do not add `test`, `ci-go`, `ci-fast`, `ci-all`, or `vulncheck` here -- `test` is
 # `go test -race ./...`, which with the sidecar built includes pkg/projectmodel,
-# the exact cost this split removes. Do not add `tidy-check` either: it rewrites
+# the exact cost this split removes. `vulncheck` calls the vulnerability
+# database and loads the whole module; it is not a seconds-long check.
+# Do not add `tidy-check` either: it rewrites
 # go.mod/go.sum in place, dirtying the tree mid-check. GHA runs both, as
 # required checks.
 [tasks.ci-gate]
@@ -319,11 +350,14 @@ run = [
 # present -- always true in Claude Code remote environments -- and it adds no
 # coverage, since `test` is `go test -race ./...` unfiltered, a superset of
 # -run Acceptance. Excludes platform-smoke: needs Docker and live services.
+# Includes vulncheck because that leaf is required in CI and is not part of
+# ci-go (ci-go stays the verify job's step list).
 [tasks.ci-all]
-description = "Broadest local run: sidecar-first Go slice + js-ci + wasm-build. Not everything CI proves -- no platform-smoke, and no -ginkgo.fail-on-empty, so the sidecar and ts-project-backend specs can skip silently and still leave this green"
+description = "Broadest local run: sidecar-first Go slice + js-ci + wasm-build + vulncheck. Not everything CI proves -- no platform-smoke, and no -ginkgo.fail-on-empty, so the sidecar and ts-project-backend specs can skip silently and still leave this green"
 run = [
   { task = "project-sidecar-build" },
   { task = "ci-go" },
   { task = "js-ci" },
   { task = "wasm-build" },
+  { task = "vulncheck" },
 ]

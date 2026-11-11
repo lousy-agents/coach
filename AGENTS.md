@@ -73,7 +73,7 @@ All tasks are defined in `mise.toml`; run them with `mise run <task>`, and list 
 | `ci-gate` | fast local smoke (gofmt/vet/style, no tests, ~1s warm) |
 | `ci-fast` | the implement/review loop's per-cycle check: Go slice plus agent-tooling suites, sidecar built first. Narrower than CI, but not quick: `cmd/coach` alone runs minutes |
 | `ci` | `ci-go` + `js-ci`. No `wasm-build`, and it builds the sidecar only after `test` has already run |
-| `ci-all` | sidecar-first Go slice + `js-ci` + `wasm-build`; not `platform-smoke` |
+| `ci-all` | sidecar-first Go slice + `js-ci` + `wasm-build` + `vulncheck`; not `platform-smoke` |
 | `test` | `go test -race ./...` |
 | `test-acceptance-fast` | the fast in-process Ginkgo/Gomega suites (offline, no real credentials) |
 
@@ -150,6 +150,7 @@ mise run js-ci
 mise run projectmodel-sidecar-acceptance
 mise run ts-project-backend-acceptance
 mise run wasm-build
+mise run vulncheck
 ```
 
 Run `ci-fast` inside an implement/review loop and `ci-all` for the broadest local run. Neither is the pre-PR gate. `ci-all` reaches `js-install` through its sidecar build, so the sidecar and TypeScript-backend specs do run inside `test` — but `test` carries no `-ginkgo.fail-on-empty`, so if their compiler preconditions fail they skip and `ci-all` stays green. The `projectmodel-sidecar` and `ts-project-backend` leaves exist to make that skip a failure. `platform-smoke` has no local equivalent at all, and no local composite pins Node 26, so `ts-project-backend-node26` proves nothing a local run can reproduce without writing that `mise.local.toml`.
@@ -240,4 +241,4 @@ A PR title follows the same rule as its commits. Agent tooling changes the way t
 
 ## CI shape (`.github/workflows/ci.yml`)
 
-Seven independent leaf jobs (`verify`, `js-verify`, `projectmodel-sidecar`, `ts-project-backend`, `ts-project-backend-node26`, `wasm-build`, `platform-smoke`) plus a `status` aggregator, which is the single required check. The two `ts-project-backend` leaves run the same `mise run ts-project-backend-acceptance` task on different Node majors — the node26 leg writes a `mise.local.toml` pinning Node 26 and asserts the resolved major before running, so the supported Node {24,26} set carries execution evidence on both rather than on 24 alone. Branch protection should require `status` only. Adding a leaf means adding it to `status.needs`, or the new leaf can fail while the required check stays green. The job graph is detailed in [`docs/development/validation-and-ci.md`](docs/development/validation-and-ci.md).
+Eight independent leaf jobs (`verify`, `js-verify`, `projectmodel-sidecar`, `ts-project-backend`, `ts-project-backend-node26`, `wasm-build`, `vulncheck`, `platform-smoke`) plus a `status` aggregator, which is the single required check. `vulncheck` is a symbol-level `govulncheck` source scan of the module; it is not part of `verify`, because that job is already the race-test slice. The two `ts-project-backend` leaves run the same `mise run ts-project-backend-acceptance` task on different Node majors — the node26 leg writes a `mise.local.toml` pinning Node 26 and asserts the resolved major before running, so the supported Node {24,26} set carries execution evidence on both rather than on 24 alone. Branch protection should require `status` only. Adding a leaf means adding it to `status.needs`, or the new leaf can fail while the required check stays green. The job graph is detailed in [`docs/development/validation-and-ci.md`](docs/development/validation-and-ci.md).
