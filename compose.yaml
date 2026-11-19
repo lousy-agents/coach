@@ -86,7 +86,7 @@ services:
   # inference; upstream is OPENAI_BASE_URL (model-stub by default).
   ai-gateway:
     profiles: ["core", "llm"]
-    image: envoyproxy/ai-gateway-cli:v1.2.1@sha256:8cf74cf68ffdda6c7458ddb92686d24b7a954e98eb805e7a6faa4cd8303b7a74
+    image: envoyproxy/ai-gateway-cli:v1.3.0@sha256:efaa8b0bc8a3fd43131dbcadab98cb260bd17487a020f3ea0c5b6d9babb2522e
     depends_on:
       model-stub:
         condition: service_healthy
