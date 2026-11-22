@@ -1,5 +1,6 @@
 Repository Baseline for revision {head} (not a diff comparison)
 tracked files discovered: 3, analyzed: 2, unsupported: 1, excluded: 0, unanalyzable: 0, active signals: 0, diagnostics: 0
+policy: .lousy-agents/coach.json (pcfg_24ee6328b822), same as HEAD.
 No active CodeSignal findings.
 Project summary: active=0, introduced=0, existing=0, resolved=0, baseline=0
 

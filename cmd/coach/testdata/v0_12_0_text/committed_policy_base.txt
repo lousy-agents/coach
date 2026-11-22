@@ -1,4 +1,5 @@
 scope: production, filtered: 0, files analyzed: 1, active signals: 0, diagnostics: 0
+policy: .lousy-agents/coach.json (pcfg_24ee6328b822), same as HEAD.
 No active CodeSignal findings.
 Project summary: active=0, introduced=0, existing=0, resolved=0, baseline=0
 

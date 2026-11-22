@@ -35,7 +35,7 @@ var _ = Describe("coach codesignal discloses the policy a scan used in scope.pol
 			Expect(string(text)).NotTo(MatchRegexp(`(?i)policy`))
 		})
 
-		It("#168 item 5: a clean committed policy under "+mode.name+" is disclosed as {path, digest, matches_head:true} with no text line or WARNING", func() {
+		It("#168 item 5: a clean committed policy under "+mode.name+" is disclosed as {path, digest, matches_head:true} and as same as HEAD in the text, with no WARNING", func() {
 			repo, base := scopePolicyRepo(scopePolicyFile{coachConfigPath, singleRootPolicyJSON})
 
 			jsonOut, stderr, exitCode := mode.run(repo, base, "--format=json")
@@ -48,62 +48,76 @@ var _ = Describe("coach codesignal discloses the policy a scan used in scope.pol
 
 			text, stderr, exitCode := mode.run(repo, base)
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-			Expect(string(text)).NotTo(MatchRegexp(`WARNING|(?i)policy`))
+			expectDiskPolicyDisclosure(mode, text, diskPolicyLine(coachConfigPath, singleRootPolicyJSON, "same as HEAD."), "")
 		})
 	}
 
 	type policyOnDisk struct {
-		description  string
-		policies     []scopePolicyFile
-		arrange      func(repo string)
-		extraArgs    []string
-		wantPath     string
-		wantDigest   string
+		description string
+		policies    []scopePolicyFile
+		arrange     func(repo string)
+		extraArgs   []string
+		wantPath    string
+		// usedBody is the policy bytes the scan used, whose digest scope.policy.digest carries.
+		usedBody     string
 		wantMatching bool
+		wantLine     string
+		wantWarning  string
 	}
+	const customPolicyPath = "policies/custom.json"
 	scenarios := []policyOnDisk{
 		{
 			description: "a file rewritten with the same bytes (guard: only the content decides, not that the file was touched)",
 			policies:    []scopePolicyFile{{coachConfigPath, singleRootPolicyJSON}},
 			arrange:     func(repo string) { scopePolicyRewrite(repo, coachConfigPath, singleRootPolicyJSON) },
-			wantPath:    coachConfigPath, wantDigest: digestOf(singleRootPolicyJSON), wantMatching: true,
+			wantPath:    coachConfigPath, usedBody: singleRootPolicyJSON, wantMatching: true,
+			wantLine: diskPolicyLine(coachConfigPath, singleRootPolicyJSON, "same as HEAD."),
 		},
 		{
 			description: "a file edited on disk (guard: the digest alone differs, the path is the same)",
 			policies:    []scopePolicyFile{{coachConfigPath, singleRootPolicyJSON}},
 			arrange:     func(repo string) { scopePolicyRewrite(repo, coachConfigPath, reordered) },
-			wantPath:    coachConfigPath, wantDigest: digestOf(singleRootPolicyJSON), wantMatching: false,
+			wantPath:    coachConfigPath, usedBody: reordered, wantMatching: false,
+			wantLine:    diskPolicyLine(coachConfigPath, reordered, "differs from HEAD."),
+			wantWarning: diskPolicyDiffersWarning,
 		},
 		{
 			description: "a file deleted on disk with no other policy",
 			policies:    []scopePolicyFile{{coachConfigPath, singleRootPolicyJSON}},
 			arrange:     func(repo string) { Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed()) },
-			wantPath:    coachConfigPath, wantDigest: digestOf(singleRootPolicyJSON), wantMatching: false,
+			wantPath:    coachConfigPath, usedBody: singleRootPolicyJSON, wantMatching: false,
+			wantLine:    diskPolicyLine(coachConfigPath, singleRootPolicyJSON, "differs from HEAD."),
+			wantWarning: diskPolicyMissingOnDiskWarning(coachConfigPath),
 		},
 		{
 			description: "the canonical file deleted on disk while a root project.json with the same bytes is committed (guard: the digest is equal, only the selected path differs)",
 			policies:    []scopePolicyFile{{coachConfigPath, singleRootPolicyJSON}, {legacyConfigPath, singleRootPolicyJSON}},
 			arrange:     func(repo string) { Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed()) },
-			wantPath:    coachConfigPath, wantDigest: digestOf(singleRootPolicyJSON), wantMatching: false,
+			wantPath:    coachConfigPath, usedBody: singleRootPolicyJSON, wantMatching: false,
+			wantLine:    diskPolicyLine(coachConfigPath, singleRootPolicyJSON, "differs from HEAD."),
+			wantWarning: diskPolicyMissingOnDiskWarning(coachConfigPath),
 		},
 		{
 			description: "a policy named with --project-config and left alone",
-			policies:    []scopePolicyFile{{"policies/custom.json", singleRootPolicyJSON}},
+			policies:    []scopePolicyFile{{customPolicyPath, singleRootPolicyJSON}},
 			arrange:     func(string) {},
-			extraArgs:   []string{"--project-config", "policies/custom.json"},
-			wantPath:    "policies/custom.json", wantDigest: digestOf(singleRootPolicyJSON), wantMatching: true,
+			extraArgs:   []string{"--project-config", customPolicyPath},
+			wantPath:    customPolicyPath, usedBody: singleRootPolicyJSON, wantMatching: true,
+			wantLine: diskPolicyLine(customPolicyPath, singleRootPolicyJSON, "same as HEAD."),
 		},
 		{
 			description: "a policy named with --project-config and edited on disk",
-			policies:    []scopePolicyFile{{"policies/custom.json", singleRootPolicyJSON}},
-			arrange:     func(repo string) { scopePolicyRewrite(repo, "policies/custom.json", reordered) },
-			extraArgs:   []string{"--project-config", "policies/custom.json"},
-			wantPath:    "policies/custom.json", wantDigest: digestOf(singleRootPolicyJSON), wantMatching: false,
+			policies:    []scopePolicyFile{{customPolicyPath, singleRootPolicyJSON}},
+			arrange:     func(repo string) { scopePolicyRewrite(repo, customPolicyPath, reordered) },
+			extraArgs:   []string{"--project-config", customPolicyPath},
+			wantPath:    customPolicyPath, usedBody: reordered, wantMatching: false,
+			wantLine:    diskPolicyLine(customPolicyPath, reordered, "differs from HEAD."),
+			wantWarning: diskPolicyDiffersWarning,
 		},
 	}
 	for _, mode := range scopePolicyModes {
 		for _, scenario := range scenarios {
-			It("#168 item 5: scope.policy.matches_head is "+boolWord(scenario.wantMatching)+" for "+scenario.description+", under "+mode.name+", and no WARNING is added to the text", func() {
+			It("#168 item 5: scope.policy.matches_head is "+boolWord(scenario.wantMatching)+" for "+scenario.description+", under "+mode.name+", with its policy line, and a WARNING when the policy differs or is missing, in the text", func() {
 				repo, base := scopePolicyRepo(scenario.policies...)
 				scenario.arrange(repo)
 				jsonArgs := append(append([]string{}, scenario.extraArgs...), "--format=json")
@@ -112,13 +126,13 @@ var _ = Describe("coach codesignal discloses the policy a scan used in scope.pol
 				Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 				Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(map[string]any{
 					"path":         scenario.wantPath,
-					"digest":       scenario.wantDigest,
+					"digest":       digestOf(scenario.usedBody),
 					"matches_head": scenario.wantMatching,
 				})))
 
 				text, stderr, exitCode := mode.run(repo, base, scenario.extraArgs...)
 				Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-				Expect(string(text)).NotTo(ContainSubstring("WARNING"), "a policy mismatch is disclosed in JSON only; the text carries no WARNING")
+				expectDiskPolicyDisclosure(mode, text, scenario.wantLine, scenario.wantWarning)
 			})
 		}
 	}

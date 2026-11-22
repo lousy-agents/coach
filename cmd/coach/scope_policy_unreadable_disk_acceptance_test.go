@@ -36,7 +36,7 @@ var _ = Describe("coach codesignal scope.policy when the on-disk policy cannot b
 
 	for _, mode := range scopePolicyModes {
 		for _, scenario := range scenarios {
-			It("#168 item 5: "+scenario.description+" overwritten on disk past the size budget is disclosed as matches_head:false, under "+mode.name+", and the scan neither fails nor prints", func() {
+			It("#168 item 5: "+scenario.description+" overwritten on disk past the size budget is disclosed as matches_head:false, under "+mode.name+", with a policy line, and the scan does not fail", func() {
 				repo, base := scopePolicyRepo(scopePolicyFile{scenario.policyPath, singleRootPolicyJSON})
 				scopePolicyRewrite(repo, scenario.policyPath, oversized)
 				jsonArgs := append(append([]string{}, scenario.extraArgs...), "--format=json")
@@ -53,23 +53,8 @@ var _ = Describe("coach codesignal scope.policy when the on-disk policy cannot b
 				text, stderr, exitCode := mode.run(repo, base, scenario.extraArgs...)
 				Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 				Expect(string(stderr)).To(BeEmpty())
-				Expect(string(text)).NotTo(ContainSubstring("WARNING"))
-				if len(mode.args) > 0 && len(scenario.extraArgs) == 0 {
-					// --worktree already diagnoses a dirty discovered policy independently of the policy disclosure, so that line is excluded from the policy-free check below.
-					var others []string
-					diagnosed := false
-					for _, line := range strings.Split(string(text), "\n") {
-						if strings.Contains(line, "kind: worktree_changes_not_analyzed") {
-							diagnosed = true
-							continue
-						}
-						others = append(others, line)
-					}
-					Expect(diagnosed).To(BeTrue(), "text: %s", text)
-					Expect(strings.Join(others, "\n")).NotTo(MatchRegexp(`(?i)policy`))
-				} else {
-					Expect(string(text)).NotTo(MatchRegexp(`(?i)policy`))
-				}
+				Expect(diskPolicyLinesAfterSummary(mode, text, 1)).To(ConsistOf(
+					diskPolicyLine(scenario.policyPath, singleRootPolicyJSON, "differs from HEAD.")), "text: %s", text)
 			})
 		}
 	}

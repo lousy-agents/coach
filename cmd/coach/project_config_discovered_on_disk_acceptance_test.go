@@ -9,10 +9,10 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// A policy Coach would discover that is on disk and not committed is judged by the scan and by the project check
-// with the same question about the path, so they name the same cause. The scan does not read the working tree for a
-// discovered policy, so it continues without one and says so in a diagnostic; the check reports the gap. For each
-// state of the path the cause the scan's diagnostic names is the cause the check's gap carries.
+// A policy Coach would discover that is on disk is judged by the scan and by the project check with the same question
+// about the path, so they name the same cause. The scan reads a regular file from disk and says nothing about the path;
+// for a path it cannot read it continues without a policy and says so in a diagnostic, and the check reports the gap.
+// For each state of the path the cause the scan's diagnostic names is the cause the check's gap carries.
 type canonicalState struct {
 	arrange   func(repo string)
 	wantCause string // "" when nothing is on disk
@@ -47,7 +47,7 @@ func causeOfThePolicyGap(repo string) string {
 
 func requireTheScanToNameTheCause(diagnostics []string, s canonicalState) {
 	if s.wantKind == "" {
-		ExpectWithOffset(1, diagnostics).To(BeEmpty(), "nothing is on disk, so the scan has nothing to say about the path")
+		ExpectWithOffset(1, diagnostics).To(BeEmpty(), "the scan has nothing to say about a path that holds nothing or a regular file it read")
 		return
 	}
 	ExpectWithOffset(1, diagnostics).To(HaveLen(1), "diagnostics: %v", diagnostics)
@@ -98,7 +98,7 @@ func requireOneCauseInBothModes(s canonicalState) {
 
 var _ = Describe("coach codesignal: a discovered policy on disk that is not committed, in the scan and in --check-project", func() {
 	DescribeTable("names one cause in both", requireOneCauseInBothModes,
-		Entry("a regular file, not committed", canonicalState{writeTheCanonicalFile, "not_committed", "project_config_uncommitted"}),
+		Entry("a regular file, not committed", canonicalState{writeTheCanonicalFile, "not_committed", ""}),
 		Entry("a directory", canonicalState{makeTheCanonicalDirectory, "not_a_regular_file", "project_config_unusable"}),
 		Entry("a symbolic link", canonicalState{linkTheCanonicalPath, "symbolic_link", "project_config_unusable"}),
 		Entry("a file where the directory should be", canonicalState{putAFileInPlaceOfTheDirectory, "parent_not_directory", "project_config_unusable"}),

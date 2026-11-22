@@ -9,7 +9,8 @@ import (
 )
 
 // These specs pin behavior that already holds on v0.12.0 and must keep holding when scope.policy is added, so
-// adding the field cannot change the text output or the flag surface. The specs for the scope.policy field itself are
+// adding the field cannot change the text output or the flag surface. The one deliberate text change is the policy
+// line a committed policy now adds directly after the summary line, which its goldens carry. The specs for the scope.policy field itself are
 // in scope_policy_disclosure_acceptance_test.go.
 var _ = Describe("coach codesignal keeps its v0.12.0 text and flag surface when scope.policy is added (#168 A1)", func() {
 	policyFixtures := []struct {
@@ -21,7 +22,7 @@ var _ = Describe("coach codesignal keeps its v0.12.0 text and flag surface when 
 	}
 	for _, mode := range scopePolicyModes {
 		for _, fixture := range policyFixtures {
-			It("#168 item 10: the text of a clean "+fixture.label+" run with "+mode.name+" is byte-identical to v0.12.0's", func() {
+			It("#168 item 10: the text of a clean "+fixture.label+" run with "+mode.name+" is byte-identical to its golden, which is v0.12.0's plus the policy line when a policy is committed", func() {
 				repo, base := scopePolicyRepo(fixture.policies...)
 				golden, err := os.ReadFile(filepath.Join("testdata", "v0_12_0_text", fixture.label+"_"+mode.golden+".txt"))
 				Expect(err).NotTo(HaveOccurred())

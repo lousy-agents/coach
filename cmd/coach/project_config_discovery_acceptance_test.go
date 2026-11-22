@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -193,40 +192,34 @@ var _ = Describe("coach project config discovery", func() {
 	})
 
 	When("the canonical policy is only in the worktree and a valid project.json is committed", func() {
-		It("emits both project_config_uncommitted and project_config_deprecated and reports schema 2", func() {
+		It("reads the canonical policy from disk, reports schema 2, and emits neither project_config_uncommitted nor project_config_deprecated", func() {
 			repo := commitScannableGoRepo()
 			commitFile(repo, legacyConfigPath, singleRootPolicyJSON)
 			writeWorktreeFile(repo, coachConfigPath, singleRootPolicyJSON)
-			revision := headRevision(repo)
 
 			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json")
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 
 			report := decodeCoachReport(stdout)
 			Expect(report.SchemaVersion).To(Equal("2"))
-			deprecated, ok := diagnosticFor(report, "project_config_deprecated", legacyConfigPath)
-			Expect(ok).To(BeTrue(), "diagnostics: %+v", report.Diagnostics)
-			Expect(deprecated.Message).To(Equal("project.json at the repository root is deprecated. Coach will keep reading it until you move it to .lousy-agents/coach.json."))
-			uncommitted, ok := diagnosticFor(report, "project_config_uncommitted", coachConfigPath)
-			Expect(ok).To(BeTrue(), "diagnostics: %+v", report.Diagnostics)
-			Expect(uncommitted.Message).To(Equal(uncommittedCanonicalMessage(revision)))
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, singleRootPolicyJSON, false))))
+			Expect(report.Diagnostics).NotTo(ContainElement(HaveField("Kind", "project_config_uncommitted")))
+			Expect(report.Diagnostics).NotTo(ContainElement(HaveField("Kind", "project_config_deprecated")))
 		})
 	})
 
 	When("the canonical policy is only in the worktree and no valid legacy policy is committed", func() {
-		It("stays schema 1 and emits project_config_uncommitted", func() {
+		It("reads the canonical policy from disk, reports schema 2, and emits no project_config_uncommitted", func() {
 			repo := commitScannableGoRepo()
 			writeWorktreeFile(repo, coachConfigPath, singleRootPolicyJSON)
-			revision := headRevision(repo)
 
 			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json")
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 
 			report := decodeCoachReport(stdout)
-			Expect(report.SchemaVersion).To(Equal("1"))
-			uncommitted, ok := diagnosticFor(report, "project_config_uncommitted", coachConfigPath)
-			Expect(ok).To(BeTrue(), "diagnostics: %+v", report.Diagnostics)
-			Expect(uncommitted.Message).To(ContainSubstring(revision))
+			Expect(report.SchemaVersion).To(Equal("2"))
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, singleRootPolicyJSON, false))))
+			Expect(report.Diagnostics).NotTo(ContainElement(HaveField("Kind", "project_config_uncommitted")))
 		})
 	})
 
@@ -306,10 +299,6 @@ func commitScannableGoRepo() string {
 	repo := newTempGitRepo()
 	commitFile(repo, "a.go", minimalGoSource)
 	return repo
-}
-
-func uncommittedCanonicalMessage(revision string) string {
-	return fmt.Sprintf(".lousy-agents/coach.json is in the worktree but is not committed at %s, so this scan did not read it.", revision)
 }
 
 func expectSchema1WithoutDeprecation(repo string) *codesignal.Report {

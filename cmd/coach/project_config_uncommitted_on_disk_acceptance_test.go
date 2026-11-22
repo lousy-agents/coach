@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("coach codesignal: an explicit policy that is on disk but not committed is committed, not authored again", func() {
+var _ = Describe("coach codesignal: an explicit policy that is on disk but not committed is read, not refused", func() {
 	const uncommittedPolicy = "un.json"
 	var repo string
 
@@ -16,26 +16,22 @@ var _ = Describe("coach codesignal: an explicit policy that is on disk but not c
 		writeWorktreeFile(repo, uncommittedPolicy, singleRootPolicyJSON)
 	})
 
-	scan := func(language string) (stderr []byte) {
-		args := []string{"codesignal", "--baseline", "--project-config", uncommittedPolicy, "--format=json"}
-		if language != "" {
-			args = append(args, "--project-language", language)
-		}
-		stdout, stderr, exitCode := runCoachBinary(commandPath, repo, stubToolchainEnv(pathWithStubNode("v24.9.9")), args...)
-		ExpectWithOffset(1, exitCode).To(Equal(2), "stdout=%s stderr=%s", stdout, stderr)
-		ExpectWithOffset(1, string(stderr)).To(ContainSubstring("exists in the worktree but is not committed"))
-		return stderr
-	}
+	It("reads the file, exits 0, discloses it as not committed, and offers no new policy for a Go scan", func() {
+		stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", uncommittedPolicy, "--format=json")
 
-	It("says to commit the file and offers no new policy for a Go scan", func() {
-		stderr := scan("")
-
-		Expect(string(stderr)).NotTo(ContainSubstring(suggestCommand), "a file is already there; a new policy cannot be written at the path:\n%s", stderr)
+		Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(uncommittedPolicy, singleRootPolicyJSON, false))))
+		Expect(string(stderr)).NotTo(ContainSubstring(suggestCommand), "stderr:\n%s", stderr)
+		text, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", uncommittedPolicy)
+		Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+		expectDiskPolicyDisclosure(scopePolicyModes[0], text, diskPolicyLine(uncommittedPolicy, singleRootPolicyJSON, "not committed at HEAD."), diskPolicyNotCommittedWarning(uncommittedPolicy))
 	})
 
-	It("says to commit the file and offers no new policy for a TypeScript scan", func() {
-		stderr := scan("typescript")
+	It("no longer refuses with the not-committed message, and offers no new policy, for a TypeScript scan", func() {
+		args := []string{"codesignal", "--baseline", "--project-config", uncommittedPolicy, "--format=json", "--project-language", "typescript"}
+		stdout, stderr, _ := runCoachBinary(commandPath, repo, stubToolchainEnv(pathWithStubNode("v24.9.9")), args...)
 
+		Expect(string(stderr)).NotTo(ContainSubstring("exists in the worktree but is not committed"), "stdout=%s stderr=%s", stdout, stderr)
 		Expect(string(stderr)).NotTo(ContainSubstring(suggestCommand), "stderr:\n%s", stderr)
 	})
 
