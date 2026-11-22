@@ -10,12 +10,12 @@ import (
 )
 
 // hidesInScope says whether any hidden path is one the scan would have analyzed:
-// a project configuration file the overlay reads, the policy file the user named, or
+// a project configuration file the overlay reads, the policy file the scan selected, or
 // source the scan's own scope filter keeps.
 func (v *WorktreeView) hidesInScope(hidden []string) string {
 	var sources []gitrepo.SelectedFile
 	for _, name := range hidden {
-		if name == v.namedPolicy || (!withinNodeModules(name) && projectmodel.IsConfigInput(name)) {
+		if name == v.selectedPolicy || (!withinNodeModules(name) && projectmodel.IsConfigInput(name)) {
 			return codesignal.HidesInScopeYes
 		}
 		if language, ok := semantics.LanguageForExtension(filepath.Ext(name)); ok && !withinNodeModules(name) {

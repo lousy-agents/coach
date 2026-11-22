@@ -47,8 +47,7 @@ func statusWarningCauses(warnings gitrepo.StatusWarnings) []string {
 // sparseGuard makes the scan incomplete when git hides tracked paths from the
 // working-tree status the overlay is built from. Such a path is served from
 // its committed bytes, so a clean committed file would give a false all-clear
-// over a violating edit on disk. Hidden paths are reported per reason and root;
-// the other causes stay one joined entry until they get their own.
+// over a violating edit on disk. Hidden paths are reported per reason and root.
 func (v *WorktreeView) sparseGuard(dir string) []codesignal.Diagnostic {
 	state, err := v.sparseState(dir)
 	if err != nil {

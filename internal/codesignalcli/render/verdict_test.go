@@ -81,7 +81,7 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
 			},
 			wantContains: []string{"No active CodeSignal findings.\n"},
-			wantAbsent:   []string{"analysis is incomplete"},
+			wantAbsent:   []string{"incomplete"},
 		},
 		{
 			name: "names the unanalyzed count from Summary, not every diagnostic path",
@@ -204,7 +204,7 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
 			},
 			wantContains: []string{"No active CodeSignal findings."},
-			wantAbsent:   []string{"analysis is incomplete"},
+			wantAbsent:   []string{"incomplete"},
 		},
 		{
 			name: "still qualifies the verdict for an unknown diagnostic that sits beside the informational count",
@@ -263,7 +263,7 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 				ProjectCoverage:    &projectmodel.Coverage{Phase: "final", Complete: true},
 			},
 			wantContains: []string{"Complete scan found no configured covered match."},
-			wantAbsent:   []string{"analysis is incomplete"},
+			wantAbsent:   []string{"incomplete"},
 		},
 		{
 			name: "counts several unresolved imports across both sides of a diff",

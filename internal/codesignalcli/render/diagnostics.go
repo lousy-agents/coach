@@ -19,7 +19,7 @@ func renderDiagnostic(b *strings.Builder, diagnostic codesignal.Diagnostic) {
 		fmt.Fprintf(b, ", reason: %s", diagnostic.Reason)
 	}
 	if diagnostic.Root != "" {
-		fmt.Fprintf(b, ", root: %s/", diagnostic.Root)
+		fmt.Fprintf(b, ", root: %s", terminalText(diagnostic.Root+"/"))
 	}
 	if diagnostic.HidesInScope != "" {
 		fmt.Fprintf(b, ", hides_in_scope: %s", diagnostic.HidesInScope)

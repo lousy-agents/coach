@@ -18,11 +18,11 @@ func failToFilter([]gitrepo.SelectedFile) ([]gitrepo.SelectedFile, error) {
 
 func TestHidesInScopeFailsClosedWhenTheScopeCannotBeConsulted(t *testing.T) {
 	tests := []struct {
-		name        string
-		scope       ScopeFilter
-		namedPolicy string
-		hidden      []string
-		want        string
+		name           string
+		scope          ScopeFilter
+		selectedPolicy string
+		hidden         []string
+		want           string
 	}{
 		{"a source file with no scope filter is unknown", nil, "", []string{"lib/a.go"}, codesignal.HidesInScopeUnknown},
 		{"a source file whose scope filter fails is unknown", failToFilter, "", []string{"lib/a.go"}, codesignal.HidesInScopeUnknown},
@@ -37,7 +37,7 @@ func TestHidesInScopeFailsClosedWhenTheScopeCannotBeConsulted(t *testing.T) {
 		{"nothing hidden is no", nil, "", nil, codesignal.HidesInScopeNo},
 	}
 	for _, tt := range tests {
-		view := &WorktreeView{scope: tt.scope, namedPolicy: tt.namedPolicy}
+		view := &WorktreeView{scope: tt.scope, selectedPolicy: tt.selectedPolicy}
 
 		if got := view.hidesInScope(tt.hidden); got != tt.want {
 			t.Errorf("%s: hidesInScope(%q) = %q, want %q", tt.name, tt.hidden, got, tt.want)
