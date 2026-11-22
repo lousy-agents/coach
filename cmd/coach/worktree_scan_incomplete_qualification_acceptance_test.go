@@ -68,7 +68,7 @@ var _ = Describe("coach codesignal --worktree qualifies the verdict when any rea
 
 		Expect(run.ofReason("skip_worktree")).To(HaveLen(2))
 		Expect(run.only("assume_unchanged")).To(HaveKey("hides_in_scope"))
-		Expect(run.summary).To(HaveKeyWithValue("files_unanalyzed", BeNumerically("==", 0)))
+		Expect(run.summary["files_unanalyzed"]).To(Or(BeNil(), BeNumerically("==", 0)), "the key is omitted when the count is zero")
 	})
 
 	DescribeTable("reads hides_in_scope from a report's JSON: only \"no\" lets the report stay complete (#168 item 22)",

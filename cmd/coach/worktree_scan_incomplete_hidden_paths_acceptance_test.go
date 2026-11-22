@@ -46,7 +46,8 @@ var _ = Describe("coach codesignal --worktree names each cause that hides tracke
 			Expect(entry).To(HaveKeyWithValue("hides_in_scope", "no"))
 			Expect(pathOf(entry)).To(BeEmpty())
 			Expect(run.exitCode).To(Equal(0))
-			Expect(noFindingsHeadline(text)).To(Equal(unqualifiedAllClear))
+			Expect(noFindingsHeadline(text)).To(And(HavePrefix("No active CodeSignal findings"), Not(ContainSubstring("incomplete"))),
+				"a layer-reach suffix may follow the all-clear; the verdict is still not qualified")
 			Expect(text).To(MatchRegexp(hiddenLine(m.label)))
 			Expect(text).To(ContainSubstring(root + "/"))
 			Expect(text).To(ContainSubstring(m.hint))
