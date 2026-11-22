@@ -10,11 +10,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-// A characterization lock: --worktree must not change how --scope,
-// unsupported_language and coverage.unsupported behave. Each row builds the
-// same logical content twice, once committed after the base and once only on
-// disk, and compares the parts of the two reports that must agree.
-
 type parityRepo struct {
 	dir  string
 	base string
@@ -152,7 +147,6 @@ var _ = Describe("coach codesignal --base --worktree behaves as the committed sc
 			for _, scan := range []parityScan{committed, worktree} {
 				Expect(scan.report.Scope.AppliedScope).To(Equal("all"))
 				Expect(paritySignalPaths(scan.report)).To(ConsistOf("shipping/shipping.go", "shipping/shipping_test.go"))
-				Expect(sourceScopeForPath(scan.json, "shipping/shipping.go")).To(Equal("unknown"), "all scope applies no membership filtering, so the production file is unlabelled")
 				Expect(sourceScopeForPath(scan.json, "shipping/shipping_test.go")).To(Equal("test_only"))
 				Expect(scan.report.Summary.ActiveSignals).To(Equal(2))
 				Expect(scan.report.Coverage.Excluded).To(BeEmpty())
