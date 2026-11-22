@@ -5,7 +5,7 @@
 | Status | Accepted |
 | Date | 2026-11-22 |
 | Deciders | Repository owner and maintainers ([#168](https://github.com/lousy-agents/coach/issues/168)) |
-| Supersedes | In part, [ADR-008](ADR-008-explicit-policy-disk-and-revision.md): its decision 2 ("What does the policy say? The analyzed revision answers"), and its rule that a discovered policy is judged at the revision and, when deleted on disk, scanned from its committed copy. ADR-008's decisions 1 and 3 stand. Also the sentence "The selected file is read at the selected revision" in [`docs/conventions/lousy-agents-config.md`](../conventions/lousy-agents-config.md) |
+| Supersedes | In part, [ADR-008](ADR-008-explicit-policy-disk-and-revision.md): its decision 2 ("What does the policy say? The analyzed revision answers"), and its sentence "A policy found by discovery keeps its source: `.lousy-agents/coach.json` and the root `project.json` are judged at the revision, and a discovered policy deleted on disk is scanned from its committed copy". ADR-008's decisions 1 and 3, and its case and kind refusals for discovery, stand. Also the sentence "The selected file is read at the selected revision" in [`docs/conventions/lousy-agents-config.md`](../conventions/lousy-agents-config.md) |
 
 ## Context
 
@@ -26,7 +26,7 @@ The PRD already states the rule (section 7): "The project policy is read from di
    - An invalid `.lousy-agents/coach.json` on disk: the scan exits `2` with `project_config_invalid`, and `project.json` is not read.
 4. **Disclosure replaces reproducibility from the commit.** JSON `scope.policy` is present in every scan. It gives the path and digest of the policy used, and `matches_head`. `matches_head` is `true` when the policy selected from disk has the same path and digest as the policy selected at `HEAD`. The text output names the policy when one is selected. When the policy on disk differs from `HEAD`, the text says so as a WARNING, and the WARNING qualifies any clean result. Exit codes are unchanged.
 
-ADR-008's decision 1 stands: an explicit path must be a usable regular file on disk, or the scan exits `2`. Its decision 3 stands: the analyzed revision decides which spelling a path names, and a policy committed in another case is refused as `name_case_differs`.
+ADR-008's decision 1 stands: an explicit path must be a usable regular file on disk, or the scan exits `2`. Its decision 3 stands: the analyzed revision decides which spelling a path names, and a policy committed in another case is refused as `name_case_differs`. Decision 3 assumed a committed policy. When the analyzed revision commits nothing at the path or at a case variant of it, the path as written is read from disk, and its spelling is checked against the directory listing on disk, as the worktree overlay already checks source paths; a mismatch is refused as `name_case_differs`. ADR-008's refusals of a discovered canonical path that the revision commits in another case, or as a directory or another entry a policy cannot be, also stand.
 
 ## Options considered
 
@@ -48,4 +48,5 @@ ADR-008 rejected a "disk only" option because it "breaks `--base` and reproducib
 - A local edit to the policy changes a local run's result. CI reads its own checkout, so it enforces the policy committed in the change under test. A change that edits the policy is reviewed like an ESLint configuration change.
 - A scan of an old revision with `--base` uses today's policy on disk, not the one committed at that revision.
 - The project fingerprints of an unchanged policy edit are restored when the edit is committed, because the identity of a finding does not depend on the mode.
+- Open implementation details, left to the code slices of #168: how `--check-project` maps its `policy_missing` cause `not_committed` (ADR-008) once an uncommitted policy is read, and whether the WARNING for the root `project.json` fallback is its own diagnostic or part of `project_config_deprecated`.
 - Until the code that implements this lands with its acceptance tests, the shipped CLI reads the content at the revision, as ADR-008 describes, and the PRD's status table marks policy-from-disk as planned.

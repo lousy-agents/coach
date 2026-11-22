@@ -24,7 +24,7 @@ A TypeScript scan that finds an invalid canonical document opens no guided polic
 Diagnostic names are `<tool>_config_*`. Coach's names today:
 
 - `project_config_deprecated`
-- `project_config_uncommitted`
+- `project_config_uncommitted` (removed by ADR-009 once policy-from-disk ships)
 - `project_config_unusable`
 - `project_config_migration_skipped`
 - `project_config_migration_failed`
