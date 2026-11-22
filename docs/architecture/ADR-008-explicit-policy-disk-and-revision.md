@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Accepted |
+| Status | Accepted. Superseded in part by [ADR-009](ADR-009-policy-content-read-from-disk.md): decision 2, and the reading of a discovered policy at the revision |
 | Date | 2026-11-04 |
 | Deciders | Repository maintainers |
 | Supersedes | The sentence "The selected file is read at the selected revision" in [`docs/conventions/lousy-agents-config.md`](../conventions/lousy-agents-config.md), for an explicit flag only |
