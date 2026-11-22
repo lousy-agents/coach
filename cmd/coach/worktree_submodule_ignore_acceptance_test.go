@@ -31,14 +31,14 @@ var _ = Describe("coach codesignal --worktree reports a dirty submodule whatever
 		Expect(gitPorcelain(repo)).NotTo(ContainSubstring("third/lib"))
 	})
 
-	It("qualifies the verdict, names the submodule and exits 3 under --fail-on-incomplete-coverage", func() {
+	It("still discloses the submodule, as hiding no in-scope source, and exits 0 (#168 item 22)", func() {
 		repo := ignoringDirtySubmodule()
 
-		stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--worktree", "--format=json", "--fail-on-incomplete-coverage")
+		run := runWorktreeScan(repo, nil)
 
-		Expect(exitCode).To(Equal(3), "stderr: %s", stderr)
-		diagnostics := diagnosticsOfKind(decodeCoachReport(stdout).Diagnostics, "worktree_scan_incomplete")
-		Expect(diagnostics).To(HaveLen(1), "a submodule edit that the repository's own ignore setting hides must still be reported")
-		Expect(diagnostics[0].Message).To(ContainSubstring("submodule"))
+		entry := run.only(submoduleReasonOnInstalledGit())
+		Expect(entry).To(HaveKeyWithValue("root", "third/lib"), "a submodule edit that the repository's own ignore setting hides must still be reported")
+		Expect(entry).To(HaveKeyWithValue("hides_in_scope", "no"))
+		Expect(run.exitCode).To(Equal(0))
 	})
 })
