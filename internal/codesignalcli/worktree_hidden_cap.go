@@ -15,8 +15,8 @@ const maxRootsListed = 20
 // reasonDiagnostics gives reason one entry per root in sorted order, up to
 // maxRootsListed. The entry for the roots left out has no root, and says
 // whether any of them hides in-scope source: the verdict of a reason cannot be
-// settled by the roots it listed alone. A reason with no roots at all still gets
-// its one root-less entry.
+// settled by the roots it listed alone. An empty root key yields the root-less
+// entry; callers pass at least one key.
 func reasonDiagnostics(reason hiddenReason, verdicts map[string]string) []codesignal.Diagnostic {
 	roots := slices.Sorted(maps.Keys(verdicts))
 	listed := roots[:min(len(roots), maxRootsListed)]

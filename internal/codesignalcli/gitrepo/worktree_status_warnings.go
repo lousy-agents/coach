@@ -11,19 +11,20 @@ import (
 // StatusWarnings is what `git status` said on stderr while it still succeeded.
 // The scan treats any warning as part of the tree it may not have read.
 type StatusWarnings struct {
-	// UnreadableDirectories names, once each and without the trailing slash git
-	// prints, the directories git could not open. Every name is safe to print: one with a control character or bytes
-	// that are not UTF-8 is quoted and escaped, and one that cannot be extracted
-	// from the line is "a directory whose name cannot be shown".
+	// UnreadableDirectories names, once each, the directories git could not
+	// open. A name is stored without git's trailing slash and printable-escaped:
+	// one with a control character or bytes that are not UTF-8 is quoted, and
+	// one that cannot be extracted from the line is "a directory whose name
+	// cannot be shown".
 	UnreadableDirectories []string
-	// Unrecognized is true when git printed a warning this parser does not
-	// know, which could be about anything the scan did not read.
-	Unrecognized bool
+	// Unrecognized counts the warnings this parser does not know, repeats
+	// included, which could be about anything the scan did not read.
+	Unrecognized int
 }
 
 // None is true when git warned about nothing.
 func (w StatusWarnings) None() bool {
-	return len(w.UnreadableDirectories) == 0 && !w.Unrecognized
+	return len(w.UnreadableDirectories) == 0 && w.Unrecognized == 0
 }
 
 const (
@@ -42,7 +43,7 @@ func ParseStatusWarnings(stderr []byte) StatusWarnings {
 		case strings.HasPrefix(line, unreadableDirectoryPrefix):
 			warnings.UnreadableDirectories = addDirectory(warnings.UnreadableDirectories, line)
 		case strings.HasPrefix(line, "warning:"):
-			warnings.Unrecognized = true
+			warnings.Unrecognized++
 		}
 	}
 	return warnings
