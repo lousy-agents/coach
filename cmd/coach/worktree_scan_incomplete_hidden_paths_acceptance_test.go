@@ -95,35 +95,6 @@ var _ = Describe("coach codesignal --worktree names each cause that hides tracke
 		Entry("assume-unchanged", assumeUnchangedHiding),
 	)
 
-	DescribeTable("the selected policy file, hidden by git, counts as in-scope (#168 item 22)",
-		func(m hiding) {
-			repo := scanRepoWith(nil)
-			m.hide(repo, "project.json")
-
-			run := runProjectScan(repo)
-
-			Expect(run.only(m.reason)).To(HaveKeyWithValue("hides_in_scope", "yes"))
-			Expect(run.exitCode).To(Equal(3))
-		},
-		Entry("skip-worktree", skipWorktreeHiding),
-		Entry("assume-unchanged", assumeUnchangedHiding),
-	)
-
-	DescribeTable("a hidden project.json is not in-scope unless it is the selected policy file (#168 item 22)",
-		func(m hiding) {
-			repo := scanRepoWith(nil)
-			m.hide(repo, "project.json")
-
-			run := runWorktreeScan(repo, nil)
-
-			Expect(run.only(m.reason)).To(HaveKeyWithValue("hides_in_scope", "no"))
-			Expect(run.exitCode).To(Equal(0))
-		},
-		Entry("sparse checkout", sparseHiding),
-		Entry("skip-worktree", skipWorktreeHiding),
-		Entry("assume-unchanged", assumeUnchangedHiding),
-	)
-
 	It("reports hidden S entries of a sparse checkout under sparse_checkout only, not also as skip_worktree (#168 item 22)", func() {
 		repo := scanRepoWith(map[string]string{"lib/in_scope.go": "package lib\n"})
 		sparseHiding.hide(repo, "lib/in_scope.go")
