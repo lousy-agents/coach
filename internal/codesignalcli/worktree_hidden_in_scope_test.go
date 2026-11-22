@@ -32,8 +32,8 @@ func TestHidesInScopeFailsClosedWhenTheScopeCannotBeConsulted(t *testing.T) {
 		{"a tsconfig.json inside node_modules is no", keepEverything, "", []string{"node_modules/x/tsconfig.json"}, codesignal.HidesInScopeNo},
 		{"a source file outside node_modules is yes", keepEverything, "", []string{"x/index.ts"}, codesignal.HidesInScopeYes},
 		{"a source file inside node_modules is no", keepEverything, "", []string{"node_modules/x/index.ts"}, codesignal.HidesInScopeNo},
-		{"the named policy is yes whatever the scope filter says", keepNothing, "project.json", []string{"project.json"}, codesignal.HidesInScopeYes},
-		{"a file that is not the named policy is no", keepNothing, "project.json", []string{"other.json"}, codesignal.HidesInScopeNo},
+		{"the selected policy is yes whatever the scope filter says", keepNothing, "project.json", []string{"project.json"}, codesignal.HidesInScopeYes},
+		{"a file that is not the selected policy is no", keepNothing, "project.json", []string{"other.json"}, codesignal.HidesInScopeNo},
 		{"nothing hidden is no", nil, "", nil, codesignal.HidesInScopeNo},
 	}
 	for _, tt := range tests {
