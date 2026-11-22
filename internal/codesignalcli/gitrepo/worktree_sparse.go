@@ -31,7 +31,8 @@ func WorktreeSparseState(dir string) (SparseState, error) {
 }
 
 // ParseIndexTags sorts the paths of `git ls-files -v -z` output by tag. S is the
-// skip-worktree tag; -v spells assume-unchanged as a lowercase letter.
+// skip-worktree tag; -v spells assume-unchanged as a lowercase letter, so a path
+// with both bits is tagged s and belongs to both lists.
 func ParseIndexTags(output []byte) SparseState {
 	var state SparseState
 	for _, record := range SplitNULPaths(output) {
@@ -43,6 +44,9 @@ func ParseIndexTags(output []byte) SparseState {
 		switch tag := record[0]; {
 		case tag == 'S':
 			state.SkipWorktree = append(state.SkipWorktree, path)
+		case tag == 's':
+			state.SkipWorktree = append(state.SkipWorktree, path)
+			state.AssumeUnchanged = append(state.AssumeUnchanged, path)
 		case tag >= 'a' && tag <= 'z':
 			state.AssumeUnchanged = append(state.AssumeUnchanged, path)
 		}

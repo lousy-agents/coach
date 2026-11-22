@@ -13,21 +13,21 @@ func TestWorktreeViewQualifiesTheVerdictForWhatGitWarnedAbout(t *testing.T) {
 	tests := []struct {
 		name     string
 		warnings gitrepo.StatusWarnings
-		want     []string
+		want     []codesignal.Diagnostic
 	}{
-		{"a directory git could not open", gitrepo.StatusWarnings{UnreadableDirectories: []string{"pkg/y/"}}, []string{"git could not open pkg/y/", "make it readable"}},
-		{"a directory whose name is escaped", gitrepo.StatusWarnings{UnreadableDirectories: []string{`"tab\there/"`}}, []string{`git could not open "tab\there/"`}},
-		{"a warning coach does not recognize", gitrepo.StatusWarnings{Unrecognized: true}, []string{"does not recognize", "may not have been read"}},
-		{"both", gitrepo.StatusWarnings{UnreadableDirectories: []string{"a/"}, Unrecognized: true}, []string{"git could not open a/", "does not recognize"}},
+		{"a directory git could not open", gitrepo.StatusWarnings{UnreadableDirectories: []string{"pkg/y"}}, []codesignal.Diagnostic{{Reason: "unreadable_directory", Root: "pkg/y"}}},
+		{"a directory whose name is escaped", gitrepo.StatusWarnings{UnreadableDirectories: []string{`"tab\there"`}}, []codesignal.Diagnostic{{Reason: "unreadable_directory", Root: `"tab\there"`}}},
+		{"a warning coach does not recognize", gitrepo.StatusWarnings{Unrecognized: true}, []codesignal.Diagnostic{{Reason: "unrecognized_git_warning"}}},
+		{"both", gitrepo.StatusWarnings{UnreadableDirectories: []string{"a"}, Unrecognized: true}, []codesignal.Diagnostic{{Reason: "unreadable_directory", Root: "a"}, {Reason: "unrecognized_git_warning"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertScanIncompleteCause(t, tt.warnings, tt.want)
+			assertScanIncompleteEntries(t, tt.warnings, tt.want)
 		})
 	}
 }
 
-func assertScanIncompleteCause(t *testing.T, warnings gitrepo.StatusWarnings, want []string) {
+func assertScanIncompleteEntries(t *testing.T, warnings gitrepo.StatusWarnings, want []codesignal.Diagnostic) {
 	t.Helper()
 	view := newWorktreeViewForTest(t, worktreeViewDeps{
 		status:    WorktreeStatus{Warnings: warnings},
@@ -35,19 +35,17 @@ func assertScanIncompleteCause(t *testing.T, warnings gitrepo.StatusWarnings, wa
 		disk:      absentDisk{},
 	})
 
-	var messages []string
-	for _, diagnostic := range view.Disclosure(".", "HEAD", "") {
-		if diagnostic.Kind == codesignal.DiagKindWorktreeScanIncomplete {
-			messages = append(messages, diagnostic.Message)
-		}
-	}
+	got := scanIncompleteEntries(view.Disclosure(".", "HEAD", ""))
 
-	if len(messages) != 1 {
-		t.Fatalf("worktree_scan_incomplete diagnostics = %v, want exactly one", messages)
+	if len(got) != len(want) {
+		t.Fatalf("worktree_scan_incomplete diagnostics = %+v, want %d", got, len(want))
 	}
-	for _, fragment := range want {
-		if !strings.Contains(messages[0], fragment) {
-			t.Errorf("message %q does not contain %q", messages[0], fragment)
+	for i, entry := range got {
+		if entry.Reason != want[i].Reason || entry.Root != want[i].Root || entry.HidesInScope != codesignal.HidesInScopeUnknown || entry.Path != "" {
+			t.Errorf("entry %d = %+v, want reason %q at root %q, unknown, with no path", i, entry, want[i].Reason, want[i].Root)
+		}
+		if strings.Contains(entry.Message, "warning:") || strings.Contains(entry.Message, entry.Root+"/") && entry.Root != "" {
+			t.Errorf("message %q relays git's words or the directory", entry.Message)
 		}
 	}
 }

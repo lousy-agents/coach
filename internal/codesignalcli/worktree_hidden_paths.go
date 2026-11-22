@@ -1,21 +1,17 @@
 package codesignalcli
 
 import (
-	"maps"
-	"slices"
-
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-// hiddenReason is one way git keeps tracked paths out of `git status`. cause is
-// what the verdict says when in-scope source may be among them; the disclosure
-// that does not qualify the verdict is built from label and remedy.
+// hiddenReason is one cause of a worktree_scan_incomplete entry. cause is what
+// the verdict says when in-scope source may be hidden; disclosure is what the
+// report says when none is, which leaves the verdict unqualified.
 type hiddenReason struct {
-	name   string
-	label  string
-	cause  string
-	remedy string
+	name       string
+	cause      string
+	disclosure string
 }
 
 const (
@@ -26,24 +22,43 @@ const (
 
 var (
 	sparseCheckoutReason = hiddenReason{
-		name: "sparse_checkout", label: "sparse checkout", remedy: sparseCheckoutRemedy,
-		cause: "sparse checkout is enabled, so the worktree scan uses the committed version of the files outside the checkout, not their working-tree bytes (" + sparseCheckoutRemedy + ")",
+		name:       "sparse_checkout",
+		cause:      "sparse checkout is enabled, so the worktree scan uses the committed version of the files outside the checkout, not their working-tree bytes (" + sparseCheckoutRemedy + ")",
+		disclosure: hiddenFromStatus("sparse checkout", sparseCheckoutRemedy),
 	}
 	skipWorktreeReason = hiddenReason{
-		name: "skip_worktree", label: "skip-worktree", remedy: skipWorktreeRemedy,
-		cause: "skip-worktree entries are present, so the worktree scan uses the committed version of those files, not their working-tree bytes (" + skipWorktreeRemedy + ")",
+		name:       "skip_worktree",
+		cause:      "skip-worktree entries are present, so the worktree scan uses the committed version of those files, not their working-tree bytes (" + skipWorktreeRemedy + ")",
+		disclosure: hiddenFromStatus("skip-worktree", skipWorktreeRemedy),
 	}
 	assumeUnchangedReason = hiddenReason{
-		name: "assume_unchanged", label: "assume-unchanged", remedy: assumeUnchangedRemedy,
-		cause: "assume-unchanged entries are present, so the worktree scan uses the committed version of those files, not their working-tree bytes (" + assumeUnchangedRemedy + ")",
+		name:       "assume_unchanged",
+		cause:      "assume-unchanged entries are present, so the worktree scan uses the committed version of those files, not their working-tree bytes (" + assumeUnchangedRemedy + ")",
+		disclosure: hiddenFromStatus("assume-unchanged", assumeUnchangedRemedy),
 	}
 )
+
+func hiddenFromStatus(label, remedy string) string {
+	return label + " keeps tracked paths out of git status; no in-scope source is hidden, so the verdict is not qualified (" + remedy + ")"
+}
 
 func (r hiddenReason) message(hidesInScope string) string {
 	if hidesInScope != codesignal.HidesInScopeNo {
 		return r.cause
 	}
-	return r.label + " keeps tracked paths out of git status; no in-scope source is hidden, so the verdict is not qualified (" + r.remedy + ")"
+	return r.disclosure
+}
+
+// entry leaves Path empty: a path would count as an unanalyzed file, and these
+// entries name directories.
+func (r hiddenReason) entry(root, hidesInScope string) codesignal.Diagnostic {
+	return codesignal.Diagnostic{
+		Kind:         codesignal.DiagKindWorktreeScanIncomplete,
+		Reason:       r.name,
+		Root:         root,
+		HidesInScope: hidesInScope,
+		Message:      r.message(hidesInScope),
+	}
 }
 
 // hiddenPathDiagnostics reports each reason git hides tracked paths from the
@@ -66,23 +81,10 @@ func (v *WorktreeView) hiddenPathDiagnostics(state gitrepo.SparseState, policyPa
 	return diagnostics
 }
 
-// hiddenReasonDiagnostics leaves Path empty: a path would count as an
-// unanalyzed file, and these entries name directories.
 func (v *WorktreeView) hiddenReasonDiagnostics(reason hiddenReason, hidden, tracked []string, policyPath string) []codesignal.Diagnostic {
 	byRoot := hiddenPathsByRoot(hidden, tracked)
 	if len(byRoot) == 0 {
 		byRoot = map[string][]string{"": nil}
 	}
-	verdicts := v.hidesInScope(byRoot, policyPath)
-	diagnostics := make([]codesignal.Diagnostic, 0, len(byRoot))
-	for _, root := range slices.Sorted(maps.Keys(byRoot)) {
-		diagnostics = append(diagnostics, codesignal.Diagnostic{
-			Kind:         codesignal.DiagKindWorktreeScanIncomplete,
-			Reason:       reason.name,
-			Root:         root,
-			HidesInScope: verdicts[root],
-			Message:      reason.message(verdicts[root]),
-		})
-	}
-	return diagnostics
+	return reasonDiagnostics(reason, v.hidesInScope(byRoot, policyPath))
 }

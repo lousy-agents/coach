@@ -11,8 +11,8 @@ import (
 // StatusWarnings is what `git status` said on stderr while it still succeeded.
 // The scan treats any warning as part of the tree it may not have read.
 type StatusWarnings struct {
-	// UnreadableDirectories names, once each, the directories git could not
-	// open. Every name is safe to print: one with a control character or bytes
+	// UnreadableDirectories names, once each and without the trailing slash git
+	// prints, the directories git could not open. Every name is safe to print: one with a control character or bytes
 	// that are not UTF-8 is quoted and escaped, and one that cannot be extracted
 	// from the line is "a directory whose name cannot be shown".
 	UnreadableDirectories []string
@@ -52,7 +52,7 @@ func addDirectory(directories []string, line string) []string {
 	rest := strings.TrimPrefix(line, unreadableDirectoryPrefix)
 	name := unnameableDirectory
 	if end := strings.LastIndex(rest, "': "); end >= 0 {
-		name = printable(rest[:end])
+		name = printable(strings.TrimSuffix(rest[:end], "/"))
 	}
 	if slices.Contains(directories, name) {
 		return directories
