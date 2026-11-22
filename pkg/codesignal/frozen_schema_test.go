@@ -44,6 +44,8 @@ var frozenReportJSONFieldNames = map[string]struct{}{
 	"inclusion_rule": {}, "pattern_set": {},
 	"roots": {}, "matched_layers": {}, "unmatched_layers": {},
 	"root": {}, "candidate_files": {}, "analyzed_files": {},
+
+	"policy": {}, "matches_head": {},
 }
 
 // jsonFieldWalker walks a type's json struct tags, following pointers,
