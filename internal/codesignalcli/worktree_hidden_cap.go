@@ -12,13 +12,15 @@ import (
 // hidden directories does not turn the report into a listing of them.
 const maxRootsListed = 20
 
-// reasonDiagnostics gives reason one entry per root in sorted order, up to
-// maxRootsListed. The entry for the roots left out has no root, and says
-// whether any of them hides in-scope source: the verdict of a reason cannot be
-// settled by the roots it listed alone. An empty root key yields the root-less
-// entry; callers pass at least one key.
+// reasonDiagnostics gives reason one entry per root, up to maxRootsListed. The
+// roots that hide in-scope source come first, so a reader sees them before the
+// cap cuts the listing; name only orders roots of equal severity. The entry for
+// the roots left out has no root, and says whether any of them hides in-scope
+// source: the verdict of a reason cannot be settled by the roots it listed
+// alone. An empty root key yields the root-less entry; callers pass at least
+// one key.
 func reasonDiagnostics(reason hiddenReason, verdicts map[string]string) []codesignal.Diagnostic {
-	roots := slices.Sorted(maps.Keys(verdicts))
+	roots := orderRootsBySeverity(verdicts)
 	listed := roots[:min(len(roots), maxRootsListed)]
 	unlisted := roots[len(listed):]
 	diagnostics := make([]codesignal.Diagnostic, 0, len(listed)+1)
@@ -31,6 +33,25 @@ func reasonDiagnostics(reason hiddenReason, verdicts map[string]string) []codesi
 	truncation := reason.entry("", mostSevereVerdict(unlisted, verdicts))
 	truncation.RootsNotListed = len(unlisted)
 	return append(diagnostics, truncation)
+}
+
+func orderRootsBySeverity(verdicts map[string]string) []string {
+	roots := slices.Sorted(maps.Keys(verdicts))
+	slices.SortStableFunc(roots, func(a, b string) int {
+		return verdictRank(verdicts[a]) - verdictRank(verdicts[b])
+	})
+	return roots
+}
+
+func verdictRank(verdict string) int {
+	switch verdict {
+	case codesignal.HidesInScopeYes:
+		return 0
+	case codesignal.HidesInScopeNo:
+		return 2
+	default:
+		return 1
+	}
 }
 
 // mostSevereVerdict orders yes above unknown above no, and reads any value it
