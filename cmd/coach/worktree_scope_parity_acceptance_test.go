@@ -187,7 +187,9 @@ var _ = Describe("coach codesignal --base --worktree behaves as the committed sc
 			expectSameReportOutcome(committed, worktree)
 
 			Expect(committed.report.Scope.Worktree).To(BeNil(), "the committed run is not a --worktree scan")
-			expectedWorktree.Revision = worktree.report.Scope.Revision
+			Expect(worktree.report.Scope.Worktree).NotTo(BeNil(), "the second run must be the --worktree scan")
+			expectedWorktree.Revision = worktreeRepo.base
+			Expect(worktree.report.Scope.Revision).To(Equal(worktreeRepo.base))
 			Expect(*worktree.report.Scope.Worktree).To(Equal(expectedWorktree), "the working-tree run must have reached the change through the intended git-status category")
 		},
 		Entry("a tracked file edited after the base",
