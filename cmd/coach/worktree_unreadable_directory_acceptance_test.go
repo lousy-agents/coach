@@ -21,23 +21,23 @@ var _ = Describe("coach codesignal --worktree for an untracked directory git can
 		return repo
 	}
 
-	It("qualifies the verdict and exits 3, naming the directory, instead of reporting a clean tree", func() {
+	It("qualifies the verdict and exits 3, naming the directory in its own entry, instead of reporting a clean tree", func() {
 		repo := unreadableDirectoryRepo()
 
-		text, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--worktree", "--fail-on-incomplete-coverage")
-		jsonOut, _, _ := runCoachCodesignalBaselineRaw(repo, "--worktree", "--fail-on-incomplete-coverage", "--format=json")
+		text, stderr, _ := runCoachCodesignalBaselineRaw(repo, "--worktree")
+		run := runWorktreeScan(repo, nil)
 
-		Expect(exitCode).To(Equal(3), "stderr: %s stdout: %s", stderr, text)
+		Expect(run.exitCode).To(Equal(3), "stderr: %s stdout: %s", stderr, text)
 		Expect(string(text)).NotTo(MatchRegexp(`worktree: no uncommitted changes`),
 			"git could not read part of the tree, so it cannot say there are no changes")
-		incomplete := diagnosticsOfKind(decodeCoachReport(jsonOut).Diagnostics, "worktree_scan_incomplete")
-		Expect(incomplete).To(HaveLen(1))
-		Expect(incomplete[0].Message).To(ContainSubstring("pkg/y/"))
-		Expect(incomplete[0].Message).NotTo(ContainSubstring("warning:"), "the message states the cause; it does not relay git's stderr")
+		entry := run.only("unreadable_directory")
+		Expect(entry).To(HaveKeyWithValue("root", "pkg/y"))
+		Expect(entry["message"]).NotTo(ContainSubstring("warning:"), "the message states the cause; it does not relay git's stderr")
+		Expect(string(text)).To(ContainSubstring("pkg/y/"))
 	})
 
-	DescribeTable("never drops a directory whose name git quotes oddly, and never prints it raw",
-		func(name, shown string) {
+	DescribeTable("never drops a directory whose name git quotes oddly, and never prints it raw (#168 item 22)",
+		func(name, root, shown string) {
 			if os.Geteuid() == 0 {
 				Skip("root opens a directory whatever its mode")
 			}
@@ -47,16 +47,16 @@ var _ = Describe("coach codesignal --worktree for an untracked directory git can
 			Expect(os.Chmod(directory, 0o000)).To(Succeed())
 			DeferCleanup(os.Chmod, directory, os.FileMode(0o755))
 
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--worktree", "--fail-on-incomplete-coverage", "--format=json")
+			text, _, _ := runCoachCodesignalBaselineRaw(repo, "--worktree")
+			run := runWorktreeScan(repo, nil)
 
-			Expect(exitCode).To(Equal(3), "stderr: %s stdout: %s", stderr, stdout)
-			incomplete := diagnosticsOfKind(decodeCoachReport(stdout).Diagnostics, "worktree_scan_incomplete")
-			Expect(incomplete).To(HaveLen(1))
-			Expect(incomplete[0].Message).To(ContainSubstring(shown))
-			Expect(incomplete[0].Message).NotTo(ContainSubstring("\t"), "a control character in a name is escaped, never relayed")
+			Expect(run.exitCode).To(Equal(3), "stdout: %s", text)
+			Expect(run.only("unreadable_directory")).To(HaveKeyWithValue("root", root), "the JSON root is the real directory name")
+			Expect(string(text)).To(ContainSubstring(shown))
+			Expect(string(text)).NotTo(ContainSubstring("\t"), "a control character in a name is escaped, never relayed")
 		},
-		Entry("an apostrophe", "it's", "pkg/it's/"),
-		Entry("a tab", "tab\there", `"pkg/tab\there/"`),
+		Entry("an apostrophe", "it's", "pkg/it's", "pkg/it's/"),
+		Entry("a tab", "tab\there", "pkg/tab\there", `"pkg/tab\there/"`),
 	)
 
 	It("leaves a readable untracked directory alone (control)", func() {
