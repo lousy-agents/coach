@@ -1,0 +1,3 @@
+Repository Baseline for revision {head} (not a diff comparison)
+tracked files discovered: 2, analyzed: 2, unsupported: 0, excluded: 0, unanalyzable: 0, active signals: 0, diagnostics: 0
+No active CodeSignal findings.

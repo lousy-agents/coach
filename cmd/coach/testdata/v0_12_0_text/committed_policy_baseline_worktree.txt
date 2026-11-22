@@ -1,0 +1,23 @@
+Repository Baseline for revision {head} with working-tree changes (not a diff comparison)
+worktree: no uncommitted changes on revision {head12}.
+files discovered (tracked and new): 3, analyzed: 2, unsupported: 1, excluded: 0, unanalyzable: 0, active signals: 0, diagnostics: 0
+No active CodeSignal findings.
+Project summary: active=0, introduced=0, existing=0, resolved=0, baseline=0
+
+Coverage:
+  unsupported: 1 .json files
+
+Project coverage: phase=go_model_build, complete=true
+  count: excluded_edges=0
+  count: files_seen=0
+  count: files_skipped=0
+  count: packages_seen=0
+  count: roots_seen=0
+  count: unresolved_edges=0
+  budget: graph_edges=500000
+  budget: graph_nodes=100000
+  budget: input_bytes=52428800
+  budget: input_files=5000
+  budget: stderr_bytes=0
+  budget: wall_time_ms=60000
+  budget: working_set_bytes=536870912

@@ -1,0 +1,3 @@
+scope: production, filtered: 0, files analyzed: 1, active signals: 0, diagnostics: 0
+worktree: no uncommitted changes on revision {head12}, compared with merge-base {base12}.
+No active CodeSignal findings.
