@@ -1,6 +1,8 @@
 {
   "schema_version": "1",
-  "scope": {},
+  "scope": {
+    "policy": null
+  },
   "summary": {
     "files_analyzed": 1,
     "files_with_diagnostics": 0,

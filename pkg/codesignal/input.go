@@ -109,6 +109,19 @@ type Scope struct {
 	Baseline     bool   `json:"baseline,omitempty"`
 	// Worktree is present only for a --worktree scan.
 	Worktree *WorktreeScope `json:"worktree,omitempty"`
+	// Policy is always serialized; null means the scan used no policy file.
+	Policy *PolicyScope `json:"policy"`
+}
+
+// PolicyScope names the policy file a scan used.
+type PolicyScope struct {
+	// Path is repository-relative.
+	Path string `json:"path"`
+	// Digest is the pcfg_-prefixed sha256 of the policy bytes the scan used.
+	Digest string `json:"digest"`
+	// MatchesHead is true when the policy selected from disk has the same path
+	// and digest as the one the scan used (the policy at HEAD).
+	MatchesHead bool `json:"matches_head"`
 }
 
 // WorktreeScope says what a --worktree scan read from disk and what the working

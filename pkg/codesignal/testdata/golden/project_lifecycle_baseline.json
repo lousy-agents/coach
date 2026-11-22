@@ -3,7 +3,8 @@
   "scope": {
     "repository": "example/repo",
     "revision": "stu901",
-    "baseline": true
+    "baseline": true,
+    "policy": null
   },
   "summary": {
     "files_analyzed": 0,
