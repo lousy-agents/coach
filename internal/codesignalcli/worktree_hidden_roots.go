@@ -12,16 +12,21 @@ import (
 // root and a directory with visible files in it names itself. A root that widens
 // to the repository root is ".".
 func hiddenRoots(hidden, tracked []string) []string {
+	return slices.Sorted(maps.Keys(hiddenPathsByRoot(hidden, tracked)))
+}
+
+// hiddenPathsByRoot groups the hidden paths by the root that names them.
+func hiddenPathsByRoot(hidden, tracked []string) map[string][]string {
 	total, hiddenUnder := countUnder(tracked), countUnder(hidden)
-	roots := map[string]bool{}
+	byRoot := map[string][]string{}
 	for _, name := range hidden {
 		dir := path.Dir(name)
 		for dir != "." && hiddenUnder[path.Dir(dir)] == total[path.Dir(dir)] {
 			dir = path.Dir(dir)
 		}
-		roots[dir] = true
+		byRoot[dir] = append(byRoot[dir], name)
 	}
-	return slices.Sorted(maps.Keys(roots))
+	return byRoot
 }
 
 // countUnder counts each name once against every directory above it, the

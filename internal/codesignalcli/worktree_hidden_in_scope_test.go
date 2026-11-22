@@ -37,9 +37,9 @@ func TestHidesInScopeFailsClosedWhenTheScopeCannotBeConsulted(t *testing.T) {
 		{"nothing hidden is no", nil, "", nil, codesignal.HidesInScopeNo},
 	}
 	for _, tt := range tests {
-		view := &WorktreeView{scope: tt.scope, selectedPolicy: tt.selectedPolicy}
+		view := &WorktreeView{scope: tt.scope}
 
-		if got := view.hidesInScope(tt.hidden); got != tt.want {
+		if got := view.hidesInScope(map[string][]string{"root": tt.hidden}, tt.selectedPolicy)["root"]; got != tt.want {
 			t.Errorf("%s: hidesInScope(%q) = %q, want %q", tt.name, tt.hidden, got, tt.want)
 		}
 	}

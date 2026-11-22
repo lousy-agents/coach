@@ -25,7 +25,7 @@ func (v *WorktreeView) ReadFromDisk(name string) bool {
 // analyzed, so they are not left in. An uncommitted edit to policyPath is
 // always disclosed, because the policy is read from the commit.
 func (v *WorktreeView) Disclosure(dir, revision, policyPath string) []codesignal.Diagnostic {
-	return append(v.sparseGuard(dir), v.unreadDisclosure(dir, revision, policyPath)...)
+	return append(v.sparseGuard(dir, policyPath), v.unreadDisclosure(dir, revision, policyPath)...)
 }
 
 // statusWarningCauses names what git warned about while reading the status. A
@@ -48,7 +48,7 @@ func statusWarningCauses(warnings gitrepo.StatusWarnings) []string {
 // working-tree status the overlay is built from. Such a path is served from
 // its committed bytes, so a clean committed file would give a false all-clear
 // over a violating edit on disk. Hidden paths are reported per reason and root.
-func (v *WorktreeView) sparseGuard(dir string) []codesignal.Diagnostic {
+func (v *WorktreeView) sparseGuard(dir, policyPath string) []codesignal.Diagnostic {
 	state, err := v.sparseState(dir)
 	if err != nil {
 		return []codesignal.Diagnostic{worktreeStatusFailureDiagnostic(err)}
@@ -57,7 +57,7 @@ func (v *WorktreeView) sparseGuard(dir string) []codesignal.Diagnostic {
 	if err != nil {
 		return []codesignal.Diagnostic{worktreeStatusFailureDiagnostic(err)}
 	}
-	diagnostics := v.hiddenPathDiagnostics(state)
+	diagnostics := v.hiddenPathDiagnostics(state, policyPath)
 	causes = append(causes, statusWarningCauses(v.status.Warnings)...)
 	if len(causes) == 0 {
 		return diagnostics
