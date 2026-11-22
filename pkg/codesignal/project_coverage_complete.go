@@ -90,7 +90,8 @@ func hasProjectBackendUnavailable(diags []Diagnostic) bool {
 // in every language. Four kinds say so: a skipped symbolic link, a changed
 // path that nothing analyzed or accounted for, Git state the scan cannot see
 // through (sparse checkout, skip-worktree, assume-unchanged, a dirty
-// submodule or an untracked nested repository), and a failed status read.
+// submodule or an untracked nested repository), and a failed status read. A
+// scan-incomplete entry that says it hides no in-scope source does not count.
 //
 // Other diagnostics that qualify a --worktree verdict, such as
 // unsupported_language and continuity_not_determined, describe what the scan
@@ -105,8 +106,11 @@ func hasWorktreeScanIncomplete(scope Scope, diags []Diagnostic) bool {
 	}
 	for _, d := range diags {
 		switch d.Kind {
-		case DiagKindWorktreeScanIncomplete, DiagKindWorktreeSymlinkSkipped,
-			DiagKindWorktreeChangesNotAnalyzed, DiagKindWorktreeStatusCheckFailed:
+		case DiagKindWorktreeScanIncomplete:
+			if d.QualifiesVerdict() {
+				return true
+			}
+		case DiagKindWorktreeSymlinkSkipped, DiagKindWorktreeChangesNotAnalyzed, DiagKindWorktreeStatusCheckFailed:
 			return true
 		}
 	}

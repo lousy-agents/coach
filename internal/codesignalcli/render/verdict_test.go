@@ -25,6 +25,28 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 			wantAbsent: []string{"incomplete"},
 		},
 		{
+			name: "a scan-incomplete reason that hides no in-scope source keeps the all-clear",
+			report: &codesignal.Report{
+				Diagnostics: []codesignal.Diagnostic{
+					{Kind: codesignal.DiagKindWorktreeScanIncomplete, Reason: "skip_worktree", Root: "docs", HidesInScope: codesignal.HidesInScopeNo, Message: "skip-worktree keeps docs out"},
+				},
+			},
+			wantContains: []string{"No active CodeSignal findings.\n", "reason: skip_worktree, root: docs/, hides_in_scope: no"},
+			wantAbsent:   []string{"analysis is incomplete"},
+		},
+		{
+			name: "a qualifying reason is named once however many roots it hides",
+			report: &codesignal.Report{
+				Diagnostics: []codesignal.Diagnostic{
+					{Kind: codesignal.DiagKindWorktreeScanIncomplete, Reason: "skip_worktree", Root: "a", HidesInScope: codesignal.HidesInScopeYes, Message: "skip cause"},
+					{Kind: codesignal.DiagKindWorktreeScanIncomplete, Reason: "skip_worktree", Root: "b", HidesInScope: codesignal.HidesInScopeYes, Message: "skip cause"},
+					{Kind: codesignal.DiagKindWorktreeScanIncomplete, Reason: "assume_unchanged", Root: "c", HidesInScope: codesignal.HidesInScopeNo, Message: "assume disclosure"},
+				},
+			},
+			wantContains: []string{"the analysis is incomplete: skip cause."},
+			wantAbsent:   []string{"skip cause; skip cause"},
+		},
+		{
 			name: "unsupported-only dirty trees keep the all-clear and do not say analysis is incomplete",
 			report: &codesignal.Report{
 				Diagnostics: []codesignal.Diagnostic{
@@ -59,7 +81,7 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
 			},
 			wantContains: []string{"No active CodeSignal findings.\n"},
-			wantAbsent:   []string{"incomplete"},
+			wantAbsent:   []string{"analysis is incomplete"},
 		},
 		{
 			name: "names the unanalyzed count from Summary, not every diagnostic path",
@@ -182,7 +204,7 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
 			},
 			wantContains: []string{"No active CodeSignal findings."},
-			wantAbsent:   []string{"incomplete"},
+			wantAbsent:   []string{"analysis is incomplete"},
 		},
 		{
 			name: "still qualifies the verdict for an unknown diagnostic that sits beside the informational count",
@@ -241,7 +263,7 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 				ProjectCoverage:    &projectmodel.Coverage{Phase: "final", Complete: true},
 			},
 			wantContains: []string{"Complete scan found no configured covered match."},
-			wantAbsent:   []string{"incomplete"},
+			wantAbsent:   []string{"analysis is incomplete"},
 		},
 		{
 			name: "counts several unresolved imports across both sides of a diff",

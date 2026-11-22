@@ -100,5 +100,6 @@ func withWorktree(input codesignal.Input, project *ProjectAnalysis, dir, revisio
 	if view == nil {
 		return input
 	}
+	view.namedPolicy, _ = project.Policy.NamedPath()
 	return withWorktreeScope(withWorktreeDiagnostics(input, view, dir, revision, project.policyPath()), view)
 }
