@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Accepted. Superseded in part by [ADR-009](ADR-009-policy-content-read-from-disk.md): decision 2 ("What does the policy say? The analyzed revision answers"); decision 3; the refusals of a discovered policy committed in another case or as another kind of entry; and the sentence "A policy found by discovery keeps its source: `.lousy-agents/coach.json` and the root `project.json` are judged at the revision, and a discovered policy deleted on disk is scanned from its committed copy". Decision 1 stands |
+| Status | Accepted. Superseded in part by [ADR-009](ADR-009-policy-content-read-from-disk.md): decision 2 ("What does the policy say? The analyzed revision answers"); decision 3; the refusals of a discovered policy committed in another case or as another kind of entry; and the sentence "A policy found by discovery keeps its source: `.lousy-agents/coach.json` and the root `project.json` are judged at the revision, and a discovered policy deleted on disk is scanned from its committed copy"; the consequence "A scan of a non-HEAD revision (`--base`) still reads the policy at that revision"; and the statement that the scan "still reads nothing from disk" and says `project_config_uncommitted`. Decision 1 stands |
 | Date | 2026-11-04 |
 | Deciders | Repository maintainers |
 | Supersedes | The sentence "The selected file is read at the selected revision" in [`docs/conventions/lousy-agents-config.md`](../conventions/lousy-agents-config.md), for an explicit flag only |
