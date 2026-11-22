@@ -118,7 +118,7 @@ var _ = Describe("coach codesignal discloses the policy a scan used in scope.pol
 
 				text, stderr, exitCode := mode.run(repo, base, scenario.extraArgs...)
 				Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-				Expect(string(text)).NotTo(ContainSubstring("WARNING"), "this slice only sets the JSON field")
+				Expect(string(text)).NotTo(ContainSubstring("WARNING"), "a policy mismatch is disclosed in JSON only; the text carries no WARNING")
 			})
 		}
 	}

@@ -8,9 +8,9 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// These specs pin behavior that already holds on v0.12.0 and must keep holding when scope.policy is added. They
-// cannot be red first: there is no missing behavior to demonstrate. The red-first specs for the same slice are in
-// scope_policy_disclosure_acceptance_test.go.
+// These specs pin behavior that already holds on v0.12.0 and must keep holding when scope.policy is added, so
+// adding the field cannot change the text output or the flag surface. The specs for the scope.policy field itself are
+// in scope_policy_disclosure_acceptance_test.go.
 var _ = Describe("coach codesignal keeps its v0.12.0 text and flag surface when scope.policy is added (#168 A1)", func() {
 	policyFixtures := []struct {
 		label    string

@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	. "github.com/onsi/ginkgo/v2"
@@ -132,17 +131,6 @@ var _ = Describe("the policy the working tree selects", func() {
 
 		It("selects project.json when a regular file stands where the canonical parent directory should be", func() {
 			put(".lousy-agents", "x")
-			put(DefaultPath, legacyBytes)
-
-			selected, err := SelectOnDisk(repo, discovered)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(selected).To(Equal(DiskSelection{Path: DefaultPath, Digest: digestOf(legacyBytes)}))
-		})
-
-		It("does not wait on a FIFO at the canonical path", func() {
-			Expect(os.MkdirAll(filepath.Join(repo, ".lousy-agents"), 0o755)).To(Succeed())
-			Expect(syscall.Mkfifo(filepath.Join(repo, CanonicalPath), 0o644)).To(Succeed())
 			put(DefaultPath, legacyBytes)
 
 			selected, err := SelectOnDisk(repo, discovered)

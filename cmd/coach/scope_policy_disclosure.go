@@ -7,7 +7,7 @@ import (
 )
 
 func withScopePolicy(report *codesignal.Report, dir string, project *codesignalcli.ProjectAnalysis) *codesignal.Report {
-	if report == nil || project == nil || project.Policy.Path == "" {
+	if project == nil || project.Policy.Path == "" {
 		return report
 	}
 	out := *report

@@ -55,7 +55,7 @@ var _ = Describe("coach codesignal scope.policy when the on-disk policy cannot b
 				Expect(string(stderr)).To(BeEmpty())
 				Expect(string(text)).NotTo(ContainSubstring("WARNING"))
 				if len(mode.args) > 0 && len(scenario.extraArgs) == 0 {
-					// --worktree already diagnoses a dirty discovered policy before the disclosure runs; that is not this slice's output.
+					// --worktree already diagnoses a dirty discovered policy independently of the policy disclosure, so that line is excluded from the policy-free check below.
 					var others []string
 					diagnosed := false
 					for _, line := range strings.Split(string(text), "\n") {
