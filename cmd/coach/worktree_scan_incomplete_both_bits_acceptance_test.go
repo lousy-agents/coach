@@ -8,7 +8,8 @@ import (
 var _ = Describe("coach codesignal --worktree names both causes of a path git tags skip-worktree and assume-unchanged (#168 item 22)", func() {
 	It("gives one entry under each of skip_worktree and assume_unchanged, both yes at the same root (#168 item 22)", func() {
 		repo := scanRepoWith(map[string]string{"lib/in_scope.go": "package lib\n"})
-		runGitInRepo(repo, "update-index", "--skip-worktree", "--assume-unchanged", "--", "lib/in_scope.go")
+		runGitInRepo(repo, "update-index", "--skip-worktree", "--", "lib/in_scope.go")
+		runGitInRepo(repo, "update-index", "--assume-unchanged", "--", "lib/in_scope.go")
 
 		run := runProjectScan(repo)
 
