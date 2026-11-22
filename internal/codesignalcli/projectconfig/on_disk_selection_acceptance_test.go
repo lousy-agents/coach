@@ -107,6 +107,16 @@ var _ = Describe("the policy the working tree selects", func() {
 			Expect(selected).To(Equal(DiskSelection{Path: CanonicalPath, Digest: digestOf(canonicalBytes)}))
 		})
 
+		It("selects a canonical file of exactly the size bound", func() {
+			atBound := strings.Repeat(" ", MaxBytes)
+			put(CanonicalPath, atBound)
+
+			selected, err := SelectOnDisk(repo, discovered)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(selected).To(Equal(DiskSelection{Path: CanonicalPath, Digest: digestOf(atBound)}))
+		})
+
 		It("refuses a canonical file over the size bound and selects nothing", func() {
 			put(CanonicalPath, strings.Repeat("a", MaxBytes+1))
 
@@ -212,6 +222,16 @@ var _ = Describe("the policy the working tree selects", func() {
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(selected).To(Equal(DiskSelection{Path: namedPath, Digest: digestOf(legacyBytes)}))
+		})
+
+		It("selects a named file of exactly the size bound", func() {
+			atBound := strings.Repeat(" ", MaxBytes)
+			put(namedPath, atBound)
+
+			selected, err := SelectOnDisk(repo, named)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(selected).To(Equal(DiskSelection{Path: namedPath, Digest: digestOf(atBound)}))
 		})
 
 		It("refuses a named file over the size bound", func() {
