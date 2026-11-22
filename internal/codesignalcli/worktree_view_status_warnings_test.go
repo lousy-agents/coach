@@ -16,7 +16,7 @@ func TestWorktreeViewQualifiesTheVerdictForWhatGitWarnedAbout(t *testing.T) {
 		want     []codesignal.Diagnostic
 	}{
 		{"a directory git could not open", gitrepo.StatusWarnings{UnreadableDirectories: []string{"pkg/y"}}, []codesignal.Diagnostic{{Reason: "unreadable_directory", Root: "pkg/y"}}},
-		{"a directory whose name is escaped", gitrepo.StatusWarnings{UnreadableDirectories: []string{`"tab\there"`}}, []codesignal.Diagnostic{{Reason: "unreadable_directory", Root: `"tab\there"`}}},
+		{"a directory whose name holds a control character", gitrepo.StatusWarnings{UnreadableDirectories: []string{"tab\there"}}, []codesignal.Diagnostic{{Reason: "unreadable_directory", Root: "tab\there"}}},
 		{"a warning coach does not recognize", gitrepo.StatusWarnings{Unrecognized: 1}, []codesignal.Diagnostic{{Reason: "unrecognized_git_warning"}}},
 		{"both", gitrepo.StatusWarnings{UnreadableDirectories: []string{"a"}, Unrecognized: 1}, []codesignal.Diagnostic{{Reason: "unreadable_directory", Root: "a"}, {Reason: "unrecognized_git_warning"}}},
 	}
