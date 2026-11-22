@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 
@@ -52,6 +53,11 @@ var _ = Describe("coach codesignal --worktree for an untracked directory git can
 
 			Expect(run.exitCode).To(Equal(3), "stdout: %s", text)
 			Expect(run.only("unreadable_directory")).To(HaveKeyWithValue("root", root), "the JSON root is the real directory name")
+			rawJSON, _, _ := runCoachCodesignalBaselineRaw(repo, "--worktree", "--format=json")
+			encodedRoot, err := json.Marshal(root)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(rawJSON)).To(ContainSubstring(`"root":`+string(encodedRoot)), "control characters are escaped in the JSON bytes")
+			Expect(string(rawJSON)).NotTo(ContainSubstring("\t"), "no raw control character reaches the JSON")
 			Expect(string(text)).To(ContainSubstring(shown))
 			Expect(string(text)).NotTo(ContainSubstring("\t"), "a control character in a name is escaped, never relayed")
 		},
