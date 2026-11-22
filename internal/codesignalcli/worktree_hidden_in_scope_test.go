@@ -2,6 +2,7 @@ package codesignalcli
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
@@ -41,6 +42,22 @@ func TestHidesInScopeFailsClosedWhenTheScopeCannotBeConsulted(t *testing.T) {
 
 		if got := view.hidesInScope(map[string][]string{"root": tt.hidden}, tt.selectedPolicy)["root"]; got != tt.want {
 			t.Errorf("%s: hidesInScope(%q) = %q, want %q", tt.name, tt.hidden, got, tt.want)
+		}
+	}
+}
+
+func TestHidesInScopeJudgesEachRootByItsOwnPathsWhenTheScopeCannotBeConsulted(t *testing.T) {
+	hidden := map[string][]string{"cfg": {"x/tsconfig.json"}, "src": {"lib/a.go"}, "doc": {"docs/a.md"}}
+	want := map[string]string{
+		"cfg": codesignal.HidesInScopeYes,
+		"src": codesignal.HidesInScopeUnknown,
+		"doc": codesignal.HidesInScopeNo,
+	}
+	for name, scope := range map[string]ScopeFilter{"no scope filter": nil, "failing scope filter": failToFilter} {
+		view := &WorktreeView{scope: scope}
+
+		if got := view.hidesInScope(hidden, ""); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: hidesInScope = %v, want %v", name, got, want)
 		}
 	}
 }
