@@ -32,6 +32,21 @@ var _ = Describe("coach codesignal --worktree text names each cause once, per re
 		Expect(text).NotTo(ContainSubstring("warning:"))
 	})
 
+	It("lists the root that hides in-scope source in the text although it sorts after the 20 listed (#168 item 22)", func() {
+		files := rootedFiles("d", 24, "zz_hidden_name.md", "# notes\n")
+		files["d25/zz_hidden_name.go"] = "package d\n"
+		repo := scanRepoWith(files)
+		hidePaths(repo, skipWorktreeHiding, rootsNamed("d", 1, 24), "zz_hidden_name.md")
+		skipWorktreeHiding.hide(repo, "d25/zz_hidden_name.go")
+
+		text := runProjectText(repo)
+
+		Expect(text).To(ContainSubstring("d25/"))
+		Expect(text).To(ContainSubstring("d19/"))
+		Expect(text).NotTo(ContainSubstring("d20/"))
+		Expect(text).To(MatchRegexp(notListedFive))
+	})
+
 	It("groups 25 roots that hide no source into one disclosed line, leaving the all-clear unqualified (#168 item 22)", func() {
 		repo := scanRepoWith(rootedFiles("d", 25, "zz_hidden_name.md", "# notes\n"))
 		hidePaths(repo, sparseHiding, rootsNamed("d", 1, 25), "zz_hidden_name.md")

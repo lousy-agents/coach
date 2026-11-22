@@ -44,56 +44,38 @@ var _ = Describe("coach codesignal --worktree lists at most 20 roots per reason 
 		Expect(run.exitCode).To(Equal(0))
 	})
 
-	It("makes the truncation entry yes when the one unlisted root hides in-scope source, and exits 3 (#168 item 22)", func() {
-		files := rootedFiles("d", 20, hiddenName, "# notes\n")
-		files["z-dir/hidden.go"] = "package z\n"
+	It("lists the one root that hides in-scope source first, so the cap drops a no root rather than it, and exits 3 (#168 item 22)", func() {
+		files := rootedFiles("d", 24, hiddenName, "# notes\n")
+		files["d25/hidden.go"] = "package d\n"
 		repo := scanRepoWith(files)
-		hidePaths(repo, skipWorktreeHiding, rootsNamed("d", 1, 20), hiddenName)
-		skipWorktreeHiding.hide(repo, "z-dir/hidden.go")
+		hidePaths(repo, skipWorktreeHiding, rootsNamed("d", 1, 24), hiddenName)
+		skipWorktreeHiding.hide(repo, "d25/hidden.go")
 
 		run := runProjectScan(repo)
 
-		Expect(run.roots("skip_worktree")).To(Equal(rootsNamed("d", 1, 20)))
-		Expect(run.listed("skip_worktree")).To(HaveEach(HaveKeyWithValue("hides_in_scope", "no")))
+		Expect(run.roots("skip_worktree")).To(Equal(append([]string{"d25"}, rootsNamed("d", 1, 19)...)))
+		Expect(run.listed("skip_worktree")[0]).To(HaveKeyWithValue("hides_in_scope", "yes"))
 		truncation, truncated := run.truncation("skip_worktree")
 		Expect(truncated).To(BeTrue(), "entries: %v", run.entries)
-		Expect(truncation).To(And(HaveKeyWithValue("roots_not_listed", BeNumerically("==", 1)), HaveKeyWithValue("hides_in_scope", "yes")))
-		Expect(run.exitCode).To(Equal(3))
-	})
-
-	It("makes the truncation entry no when only a listed root hides in-scope source, and still exits 3 from that root (#168 item 22)", func() {
-		files := rootedFiles("d", 21, hiddenName, "# notes\n")
-		files["d01/notes.go"] = "package d\n"
-		repo := scanRepoWith(files)
-		hidePaths(repo, skipWorktreeHiding, rootsNamed("d", 2, 21), hiddenName)
-		skipWorktreeHiding.hide(repo, "d01/notes.go")
-
-		run := runProjectScan(repo)
-
-		Expect(run.roots("skip_worktree")).To(Equal(rootsNamed("d", 1, 20)))
-		Expect(run.hidesInScopeByRoot("skip_worktree")).To(HaveKeyWithValue("d01", "yes"))
-		truncation, truncated := run.truncation("skip_worktree")
-		Expect(truncated).To(BeTrue(), "entries: %v", run.entries)
-		Expect(truncation).To(And(HaveKeyWithValue("roots_not_listed", BeNumerically("==", 1)), HaveKeyWithValue("hides_in_scope", "no")),
+		Expect(truncation).To(And(HaveKeyWithValue("roots_not_listed", BeNumerically("==", 5)), HaveKeyWithValue("hides_in_scope", "no")),
 			"the truncation entry is decided by the unlisted roots alone")
-		Expect(run.exitCode).To(Equal(3), "the listed d01 entry qualifies the verdict")
+		Expect(run.exitCode).To(Equal(3), "the listed d25 entry qualifies the verdict")
 	})
 
-	It("makes the truncation entry yes when a yes root sits between no roots among the unlisted ones (#168 item 22)", func() {
-		files := rootedFiles("d", 21, hiddenName, "# notes\n")
-		files["d22/hidden.go"] = "package d\n"
-		files["d23/notes.md"] = "# notes\n"
+	It("makes the truncation entry yes when 22 roots hide in-scope source and 20 are listed, whatever the other roots read (#168 item 22)", func() {
+		files := rootedFiles("y", 22, "hidden.go", "package y\n")
+		maps.Copy(files, rootedFiles("n", 3, hiddenName, "# notes\n"))
 		repo := scanRepoWith(files)
-		hidePaths(repo, skipWorktreeHiding, rootsNamed("d", 1, 21), hiddenName)
-		skipWorktreeHiding.hide(repo, "d22/hidden.go", "d23/notes.md")
+		hidePaths(repo, skipWorktreeHiding, rootsNamed("y", 1, 22), "hidden.go")
+		hidePaths(repo, skipWorktreeHiding, rootsNamed("n", 1, 3), hiddenName)
 
 		run := runProjectScan(repo)
 
-		Expect(run.roots("skip_worktree")).To(Equal(rootsNamed("d", 1, 20)))
+		Expect(run.roots("skip_worktree")).To(Equal(rootsNamed("y", 1, 20)))
+		Expect(run.listed("skip_worktree")).To(HaveEach(HaveKeyWithValue("hides_in_scope", "yes")))
 		truncation, truncated := run.truncation("skip_worktree")
 		Expect(truncated).To(BeTrue(), "entries: %v", run.entries)
-		Expect(truncation).To(And(HaveKeyWithValue("roots_not_listed", BeNumerically("==", 3)), HaveKeyWithValue("hides_in_scope", "yes")),
-			"the first unlisted root (d21) and the last (d23) both read no, so only an OR over every unlisted root says yes")
+		Expect(truncation).To(And(HaveKeyWithValue("roots_not_listed", BeNumerically("==", 5)), HaveKeyWithValue("hides_in_scope", "yes")))
 		Expect(run.exitCode).To(Equal(3))
 	})
 
