@@ -698,7 +698,8 @@ The platform groundwork phase produced additional load-bearing decisions that ar
 | [ADR-005](ADR-005-agent-loop-orchestration-split.md) | Agent loop orchestration split (+ 2026-07-25 amendment: local-LLM judgment packing, judgment wall, partial agent persist, priority cap) | Accepted |
 | [ADR-006](ADR-006-watermill-queue-abstraction.md) | Watermill TaskQueue/EventBus ports with Redis Streams and SQS adapters | Accepted for groundwork phase |
 | [ADR-007](ADR-007-layered-ports-and-adapters.md) | Layered ports-and-adapters architecture; source files and packages named for their responsibility | Accepted |
-| [ADR-008](ADR-008-explicit-policy-disk-and-revision.md) | An explicit policy path is judged on disk; its content is read at the revision | Accepted |
+| [ADR-008](ADR-008-explicit-policy-disk-and-revision.md) | An explicit policy path is judged on disk; its content is read at the revision | Accepted, superseded in part by ADR-009 |
+| [ADR-009](ADR-009-policy-content-read-from-disk.md) | The project policy is read from disk in every scan, with disclosure against `HEAD` | Accepted |
 | Spec delta | [Local-LLM judgment effectiveness](../../.github/specs/coach-api-platform-local-llm-judgment.spec.md) | Draft / implement next |
 
 ## 16. Final adversarial-review summary
