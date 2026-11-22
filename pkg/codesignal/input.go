@@ -109,7 +109,8 @@ type Scope struct {
 	Baseline     bool   `json:"baseline,omitempty"`
 	// Worktree is present only for a --worktree scan.
 	Worktree *WorktreeScope `json:"worktree,omitempty"`
-	// Policy is always serialized; null means the scan used no policy file.
+	// Policy is always serialized; null means no policy was used for the analysis. A policy that was
+	// found but not analyzed is named by a project_backend_unavailable diagnostic instead.
 	Policy *PolicyScope `json:"policy"`
 }
 

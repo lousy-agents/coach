@@ -35,5 +35,5 @@ func runDiffAnalysis(dir string, f codesignalFlags, stdin, stderr *os.File, port
 	if err != nil {
 		return nil, wrapScanAnalysisError(err, dir, headSHA, f.namedPolicy, stderr)
 	}
-	return withScopePolicy(withProjectDiagnostic(report, nil, diags...), dir, project), nil
+	return withScopePolicy(withProjectDiagnostic(report, nil, diags...), dir, headSHA, project), nil
 }
