@@ -126,10 +126,10 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid, wit
 		Expect(exitCode).To(Equal(0), "command: %s\noutput: %s", suggest, output)
 		writeWorktreeFile(repo, policy, validPolicyWithLayers)
 
-		_, second := scanExpectingRefusal(repo, "--project-config", policy)
-		pasteWhatCoachPrints(repo, second)
+		stdout, second, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json", "--project-config", policy)
 
-		expectNoRunnableCommand(string(second))
+		Expect(exitCode).To(Equal(0), "the valid policy the user added is used (ADR-009): stdout: %s stderr: %s", stdout, second)
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policy, validPolicyWithLayers, diskCauseDiffersFromHead))))
 		Expect(string(second)).NotTo(ContainSubstring("replace the policy with it"), "a replacement would discard the layers the user added:\n%s", second)
 		content, err := os.ReadFile(filepath.Join(repo, policy))
 		Expect(err).NotTo(HaveOccurred())

@@ -143,6 +143,8 @@ const (
 	PolicyCauseNotCommitted PolicyCause = "not_committed"
 	// PolicyCauseMissingOnDisk means the policy is committed at HEAD and absent on disk, so the scan used the committed copy.
 	PolicyCauseMissingOnDisk PolicyCause = "missing_on_disk"
+	// PolicyCauseHeadUnreadable means the scan used a usable policy on disk and HEAD's copy at its path could not be read to compare.
+	PolicyCauseHeadUnreadable PolicyCause = "head_unreadable"
 )
 
 // WorktreeScope says what a --worktree scan read from disk and what the working

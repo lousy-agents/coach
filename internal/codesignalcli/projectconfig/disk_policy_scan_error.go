@@ -42,7 +42,8 @@ func (refusal *DiskPolicyRefusal) ScanError(explicit, unmerged bool, committed e
 }
 
 // CauseWorded is err with the refusal's stable cause appended, for a committed pipeline's words that name the entry
-// but not the cause the disk has. Words that carry the cause, and a refusal with none, are returned as they are.
+// but not the cause the disk has. The cause goes before the final period, so a finished sentence stays finished.
+// Words that carry the cause, and a refusal with none, are returned as they are.
 func (refusal *DiskPolicyRefusal) CauseWorded(err error) error {
 	var held *ConfigError
 	cause := refusal.Cause()
@@ -50,7 +51,11 @@ func (refusal *DiskPolicyRefusal) CauseWorded(err error) error {
 		return err
 	}
 	worded := *held
-	worded.Message += fmt.Sprintf(" (cause=%s)", cause)
+	body, finished := strings.CutSuffix(worded.Message, ".")
+	worded.Message = body + fmt.Sprintf(" (cause=%s)", cause)
+	if finished {
+		worded.Message += "."
+	}
 	return &worded
 }
 

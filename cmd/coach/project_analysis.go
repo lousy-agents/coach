@@ -1,8 +1,12 @@
 package main
 
 import (
+	"errors"
+
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
@@ -31,12 +35,20 @@ func prepareProjectAnalysis(dir, revision string, named policyref.Ref, language 
 	if err != nil {
 		return preparedProject{}, withReadinessForLanguage(err, dir, revision, policyref.Ref{}, language)
 	}
-	if selection.Fatal != nil {
+	if selection.Fatal != nil && !supersededByDisk(selection.Fatal, disk) {
 		// Path stays empty: Load rejected the canonical file. The TypeScript
 		// wrap is what prints the gaps that rejection would otherwise hide.
 		return preparedProject{}, withReadinessForLanguage(selection.Fatal, dir, revision, policyref.Ref{}, language)
 	}
 	return loadPreparedProject(dir, revision, policyref.Discovered(selection.Path), language, projectSelectionDiagnostics(selection), disk, ports)
+}
+
+// supersededByDisk is whether a refusal of the committed canonical policy gives way to a canonical policy that is usable
+// on disk, which the scan uses whatever the revision holds there. A refusal that is about the path, not about the copy
+// the revision holds at it, stands: a policy committed in another case is a policy the scan cannot read.
+func supersededByDisk(fatal error, disk projectconfig.DiskSelection) bool {
+	var refusal *projectconfig.ConfigError
+	return disk.Path == projectconfig.CanonicalPath && errors.As(fatal, &refusal) && refusal.PolicyCause != projectreadiness.CauseNameCaseDiffers
 }
 
 func withReadinessForLanguage(err error, dir, revision string, policy policyref.Ref, language string) error {

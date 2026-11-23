@@ -30,7 +30,7 @@ func effectivePolicyCause(policy *codesignal.PolicyScope) codesignal.PolicyCause
 		return codesignal.PolicyCauseSameAsHead
 	}
 	switch policy.Cause {
-	case codesignal.PolicyCauseNotCommitted, codesignal.PolicyCauseMissingOnDisk:
+	case codesignal.PolicyCauseNotCommitted, codesignal.PolicyCauseMissingOnDisk, codesignal.PolicyCauseHeadUnreadable:
 		return policy.Cause
 	}
 	return codesignal.PolicyCauseDiffersFromHead
@@ -50,6 +50,8 @@ func policyHeadRelation(cause codesignal.PolicyCause) string {
 		return "same as HEAD."
 	case codesignal.PolicyCauseNotCommitted:
 		return "not committed at HEAD."
+	case codesignal.PolicyCauseHeadUnreadable:
+		return "not compared with HEAD."
 	}
 	return "differs from HEAD."
 }
@@ -60,6 +62,8 @@ func policyWarning(policy *codesignal.PolicyScope, cause codesignal.PolicyCause)
 		return "WARNING: the project policy on disk differs from HEAD's; this scan used the policy on disk, so its result can differ from CI, which reads the committed policy."
 	case codesignal.PolicyCauseNotCommitted:
 		return fmt.Sprintf("WARNING: the project policy %s is on disk and not committed at HEAD; this scan used it.", terminalText(policy.Path))
+	case codesignal.PolicyCauseHeadUnreadable:
+		return fmt.Sprintf("WARNING: HEAD's copy of the project policy %s could not be read; this scan used the policy on disk, so its result can differ from CI, which reads the committed policy.", terminalText(policy.Path))
 	case codesignal.PolicyCauseMissingOnDisk:
 		return fmt.Sprintf("WARNING: %s is committed at HEAD and missing on disk; this scan used the committed copy.", terminalText(policy.Path))
 	}
@@ -78,6 +82,8 @@ func policyVerdictClause(report *codesignal.Report) string {
 		return "the project policy on disk is not committed at HEAD"
 	case codesignal.PolicyCauseMissingOnDisk:
 		return "the project policy is missing on disk and the committed copy was used"
+	case codesignal.PolicyCauseHeadUnreadable:
+		return "HEAD's copy of the project policy could not be read"
 	}
 	return "the project policy on disk differs from HEAD"
 }
