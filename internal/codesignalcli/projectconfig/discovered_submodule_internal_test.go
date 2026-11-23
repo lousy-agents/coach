@@ -2,7 +2,6 @@ package projectconfig
 
 import (
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
@@ -24,18 +23,6 @@ func TestAFileAtTheDefaultPathInsideASubmoduleIsSetAsideAsTheSubmodules(t *testi
 	}
 	if !settled.CanonicalPathTaken() {
 		t.Error("CanonicalPathTaken = false; the path is taken, so project.json is not to be moved there")
-	}
-}
-
-func TestTheMessageForAFileInsideASubmoduleNamesTheSubmoduleAndTheCause(t *testing.T) {
-	refusal := &ConfigError{PolicyCause: projectreadiness.CauseInSubmodule, Blocker: ".lousy-agents"}
-
-	message := UnusableCanonicalMessage(refusal)
-
-	for _, want := range []string{"cause=in_submodule", `the submodule ".lousy-agents"`, "cannot be committed here"} {
-		if !strings.Contains(message, want) {
-			t.Errorf("message %q; want it to contain %q", message, want)
-		}
 	}
 }
 

@@ -26,7 +26,7 @@ func judgePolicy(run gitrepo.Runner, dir, revision string, policy policyref.Ref)
 	}
 	namedPath, _ := policy.NamedPath()
 	discovered := namedPath == ""
-	selection, err := projectconfig.SelectOnDisk(dir, namedPath)
+	selection, err := projectconfig.SelectOnDiskForCheck(dir, namedPath)
 	if err != nil {
 		failedAt := selectionFailurePath(dir, namedPath)
 		if discovered && failedAt == projectconfig.DefaultPath {

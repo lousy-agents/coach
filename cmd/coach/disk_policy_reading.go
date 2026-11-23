@@ -1,56 +1,78 @@
 package main
 
 import (
+	"errors"
+
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 )
 
-// readDiskPolicy is what the working tree selects for the policy source: the named file alone, or whichever of the
-// discovery candidates is a regular file. A file that is there and cannot be used is a refusal, not a missing policy.
-func readDiskPolicy(dir string, source policyref.Ref, ports scanPorts) diskPolicy {
-	namedPath, _ := source.NamedPath()
-	selection, err := ports.selectOnDisk(dir, namedPath)
-	if err != nil {
-		return diskPolicy{refusal: projectconfig.ClassifyDiskPolicyError(unreadablePolicyPath(dir, namedPath, ports), err)}
-	}
-	if selection.Path == "" || selection.Path == source.Path || discoveryFellBackFromCanonical(selection, source) {
-		if refusal := committedEntryRefusal(dir, source); refusal != nil {
-			return diskPolicy{refusal: refusal}
-		}
-	}
-	if selection.Path == "" {
-		return diskPolicy{}
-	}
-	if _, err := projectconfig.UsableDiskPolicy(selection); err != nil {
-		return diskPolicy{refusal: projectconfig.ClassifyDiskPolicyError(selection.Path, err)}
-	}
-	return diskPolicy{selection: selection}
+// diskQuestion is what the working tree is asked before anything the revision commits is consulted: which policy file
+// it holds, for a discovered policy or for the one named. A refusal ends the scan whatever the revision commits, so no
+// committed copy and no other policy file stands in for an entry that is there and cannot be used.
+type diskQuestion struct {
+	namedPath string
+	// matters says whether a refusal at the path is the scan's to report. A file the scan would not have read anyway
+	// is not: a refusal at a root project.json that is not committed is dropped, while a usable one is still selected.
+	matters func(path string) bool
+	refuse  func(refusal *projectconfig.DiskPolicyRefusal) error
 }
 
-// discoveryFellBackFromCanonical is true when the committed canonical policy has no regular file on disk and discovery
-// reached the root project.json instead; the entry at the canonical path decides whether that policy is missing or unusable.
-func discoveryFellBackFromCanonical(selection projectconfig.DiskSelection, source policyref.Ref) bool {
-	return selection.Path == projectconfig.DefaultPath && source.Path == projectconfig.CanonicalPath
+// judgeDiscoveredOnDisk asks the working tree for the discovered policy. The canonical path is always the scan's to
+// judge, and the root project.json only when discovery selected it, which it does only for a committed one.
+func judgeDiscoveredOnDisk(dir, revision string, discovery projectconfig.Selection, ports scanPorts) (projectconfig.DiskSelection, error) {
+	if err := discovery.SubmoduleRefusal(); err != nil {
+		return projectconfig.DiskSelection{}, err
+	}
+	return judgeOnDisk(dir, diskQuestion{
+		matters: func(path string) bool { return path == projectconfig.CanonicalPath || path == discovery.Path },
+		refuse: func(refusal *projectconfig.DiskPolicyRefusal) error {
+			if refusal.Path == projectconfig.CanonicalPath {
+				return refusal.ScanError(false, projectconfig.UnmergedInIndex(dir, refusal.Path), discovery.Fatal)
+			}
+			return refusal.ScanError(false, projectconfig.UnmergedInIndex(dir, refusal.Path), nil)
+		},
+	}, ports)
 }
 
-// unreadablePolicyPath names the file a failed selection stopped at. SelectOnDisk reports the error and not the path,
-// and it stops at the first candidate that is a regular file it cannot read, so asking for the canonical file alone
-// tells whether that was the one.
-func unreadablePolicyPath(dir, namedPath string, ports scanPorts) string {
-	if namedPath != "" {
-		return namedPath
+// judgeNamedOnDisk asks the working tree for the policy the user named. A path that cannot name a policy is left to
+// the loader, whose message for it is unchanged.
+func judgeNamedOnDisk(dir, revision string, named policyref.Ref, ports scanPorts) (projectconfig.DiskSelection, error) {
+	if projectconfig.ValidatePath(named.Path) != nil {
+		return projectconfig.DiskSelection{}, nil
 	}
-	if _, err := ports.selectOnDisk(dir, projectconfig.CanonicalPath); err != nil {
-		return projectconfig.CanonicalPath
-	}
-	return projectconfig.DefaultPath
+	return judgeOnDisk(dir, diskQuestion{
+		namedPath: named.Path,
+		matters:   func(string) bool { return true },
+		refuse: func(refusal *projectconfig.DiskPolicyRefusal) error {
+			_, loadErr := ports.loadExplicit(dir, revision, refusal.Path)
+			var configErr *projectconfig.ConfigError
+			switch {
+			case loadErr != nil && !errors.As(loadErr, &configErr):
+				return loadErr
+			case loadErr != nil && refusal.Cause() != "" && refusal.CommittedEntryFits(loadErr):
+				// The loader judged the same entry on disk, with what the index and the revision add to it.
+				return refusal.CauseWorded(loadErr)
+			}
+			return refusal.ScanError(true, projectconfig.UnmergedInIndex(dir, refusal.Path), loadErr)
+		},
+	}, ports)
 }
 
-// committedEntryRefusal is the refusal for a committed discovered policy whose path holds, on disk, an entry that
-// cannot be a policy. Without it that path reads as missing, and the scan says a file is missing that is there.
-func committedEntryRefusal(dir string, source policyref.Ref) *projectconfig.DiskPolicyRefusal {
-	if source.Explicit || source.Path == "" {
-		return nil
+func judgeOnDisk(dir string, question diskQuestion, ports scanPorts) (projectconfig.DiskSelection, error) {
+	selection, err := ports.selectOnDisk(dir, question.namedPath)
+	if err == nil && selection.Path != "" {
+		_, err = projectconfig.UsableDiskPolicy(selection)
 	}
-	return projectconfig.UnusableEntryOnDisk(dir, source.Path)
+	if err == nil {
+		return selection, nil
+	}
+	refusal := projectconfig.ClassifyDiskPolicyError(selection.Path, err)
+	switch {
+	case refusal == nil:
+		return projectconfig.DiskSelection{}, err
+	case !question.matters(refusal.Path):
+		return projectconfig.DiskSelection{}, nil
+	}
+	return projectconfig.DiskSelection{}, question.refuse(refusal)
 }

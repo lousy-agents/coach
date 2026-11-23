@@ -137,25 +137,18 @@ var _ = Describe("coach project config migration", func() {
 
 	DescribeTable("offers no copy and leaves what the index holds as it is, whatever the answer, when the index holds the path", requireNoOfferWhereTheIndexHoldsThePath, indexHeldEntries())
 
-	When("an uncommitted .lousy-agents/coach.json already exists beside a valid committed project.json", func() {
-		It("does not prompt and does not change the existing file", func() {
+	When("an invalid uncommitted .lousy-agents/coach.json already exists beside a valid committed project.json (#168 A2b)", func() {
+		It("exits 2 as project_config_invalid without reading project.json, does not prompt and does not change the existing file", func() {
 			repo := commitDeprecatedProjectConfigRepo()
 			existing := []byte("{\"schema_version\":\"1\",\"roots\":[\".\"],\"note\":\"keep\"}\n")
 			writeWorktreeFile(repo, coachConfigPath, string(existing))
 
 			stdout, stderr, exitCode := runMigrationBaselineOnTerminal(repo, projectConfigMigrationEnv(), "y\n")
 
-			Expect(exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
+			expectDiskJudgedRefusal(stdout, stderr, exitCode, coachConfigPath)
 			Expect(string(stderr)).NotTo(ContainSubstring(projectConfigCopyPrompt))
 			Expect(readRepoFile(repo, coachConfigPath)).To(Equal(existing))
-
-			report := decodeCoachReport(stdout)
-			// The existing file is invalid (unknown field), so the scan falls back to the committed project.json, which is
-			// not "same as HEAD" because the policy on disk was selected and could not be used.
-			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(legacyConfigPath, singleRootPolicyJSON, diskCauseUnusableOnDisk))))
-			expectDiagnosticKind(report, "project_config_deprecated", legacyConfigPath)
-			expectNoDiagnosticKind(report, "project_config_uncommitted")
-			expectNoDiagnosticKind(report, "project_config_migration_skipped")
+			Expect(readRepoFile(repo, legacyConfigPath)).To(Equal([]byte(singleRootPolicyJSON)), "the committed project.json is neither read nor changed")
 		})
 	})
 
@@ -247,12 +240,8 @@ func requireNoOfferWhereThePathIsOccupied(s canonicalState) {
 
 	stdout, stderr, exitCode := runMigrationBaselineOnTerminal(repo, projectConfigMigrationEnv(), "y\n")
 
-	Expect(exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
+	expectDiskJudgedRefusal(stdout, stderr, exitCode, coachConfigPath, "cause="+s.wantCause)
 	Expect(string(stderr)).NotTo(ContainSubstring("Copy project.json"), "the path cannot be the policy, so there is nowhere to copy to")
-	report := decodeCoachReport(stdout)
-	expectDiagnosticKind(report, s.wantKind, coachConfigPath)
-	expectNoDiagnosticKind(report, "project_config_migration_failed")
-	expectNoDiagnosticKind(report, "project_config_migration_skipped")
 	Expect(treeOf(repo)).To(Equal(before), "answering yes changed the worktree")
 }
 

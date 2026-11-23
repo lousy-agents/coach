@@ -17,6 +17,9 @@ const (
 )
 
 func prepareScanProjectAnalysis(dir, revision string, f codesignalFlags, status *scanStatus, view *codesignalcli.WorktreeView, stdin, stderr *os.File, ports scanPorts) (*codesignalcli.ProjectAnalysis, []codesignal.Diagnostic, error) {
+	if err := refusedOnDiskBeforeMigration(dir, revision, f, ports); err != nil {
+		return nil, nil, err
+	}
 	migrationDiags := offerDeprecatedProjectConfigMigration(dir, revision, f, status, stdin, stderr, ports)
 	prepared, err := prepareProjectAnalysis(dir, revision, f.namedPolicy, f.projectLanguage, ports)
 	if err != nil {

@@ -2,9 +2,6 @@ package projectconfig
 
 import (
 	"errors"
-	"fmt"
-
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // canonicalOnDisk is what the working tree holds at the default policy's path, asked the way a policy named
@@ -35,25 +32,4 @@ func selectionOfTheProbe(err error) (Selection, error) {
 		return Selection{}, nil
 	}
 	return Selection{UnusableCanonical: refusal}, nil
-}
-
-// onDiskReasons say, for each cause the disk can give a path that cannot be the policy, what is wrong with it.
-var onDiskReasons = map[projectreadiness.PolicyCause]string{
-	projectreadiness.CauseNotARegularFile:    "it is not a regular file",
-	projectreadiness.CauseSymbolicLink:       "it is a symbolic link, or is reached through one",
-	projectreadiness.CauseUnreadableOnDisk:   "the process cannot check or read it",
-	projectreadiness.CauseParentNotDirectory: "a file stands where its directory should be",
-}
-
-// UnusableCanonicalMessage is the scan's diagnostic for a default policy path the working tree holds something
-// at that cannot be the policy. It names the cause --check-project reports for the same path, in the form the
-// text output of that command prints it, so that a reader or a program matching either finds the same word.
-func UnusableCanonicalMessage(refusal *ConfigError) string {
-	reason, known := onDiskReasons[refusal.PolicyCause]
-	if refusal.PolicyCause == projectreadiness.CauseInSubmodule {
-		reason = fmt.Sprintf("it lies inside the submodule %q, which this repository records as a single commit, so the file cannot be committed here", refusal.Blocker)
-	} else if !known {
-		reason = "the working tree cannot use it"
-	}
-	return fmt.Sprintf("%s is in the worktree but cannot be the policy (cause=%s): %s, so this scan did not read it.", CanonicalPath, refusal.PolicyCause, reason)
 }

@@ -13,7 +13,7 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 )
 
-var _ = Describe("coach codesignal discloses why the policy used is the one it is, in scope.policy.cause (#168 A2a)", func() {
+var _ = Describe("coach codesignal discloses why the policy used is the one it is, in scope.policy.cause (#168 A2a, A2b)", func() {
 	oversized := strings.Repeat(" ", int(projectconfig.MaxBytes)+1)
 
 	type causeScenario struct {
@@ -48,11 +48,21 @@ var _ = Describe("coach codesignal discloses why the policy used is the one it i
 			arrange:     func(repo string) { Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed()) },
 			wantCause:   "missing_on_disk",
 		},
+	}
+
+	refusedScenarios := []causeScenario{
 		{
-			description: "a committed policy replaced on disk by a file past the size budget (interim until A2b)",
+			description: "a committed policy replaced on disk by a file past the size budget",
 			policies:    []scopePolicyFile{{coachConfigPath, goLayerPolicyConfigJSON}},
 			arrange:     func(repo string) { overwriteOnDisk(repo, coachConfigPath, oversized) },
-			wantCause:   "unusable_on_disk",
+		},
+		{
+			description: "a committed policy replaced on disk by a directory",
+			policies:    []scopePolicyFile{{coachConfigPath, goLayerPolicyConfigJSON}},
+			arrange: func(repo string) {
+				Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
+				Expect(os.Mkdir(filepath.Join(repo, coachConfigPath), 0o755)).To(Succeed())
+			},
 		},
 	}
 
@@ -67,6 +77,34 @@ var _ = Describe("coach codesignal discloses why the policy used is the one it i
 				Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", HaveKeyWithValue("cause", scenario.wantCause)))
 			})
 		}
+
+		for _, scenario := range refusedScenarios {
+			It("#168 A2b: "+scenario.description+" exits 2 as project_config_invalid under "+mode.name+" and reports no cause", func() {
+				repo, base := diskPolicyRepo(scenario.policies...)
+				scenario.arrange(repo)
+
+				stdout, stderr, exitCode := mode.run(repo, base, "--format=json")
+
+				expectDiskJudgedRefusal(stdout, stderr, exitCode, coachConfigPath)
+			})
+		}
+
+		It("#168 A2b: no scan reports the cause unusable_on_disk under "+mode.name+": the causes observed across every scenario are exactly the four that remain", func() {
+			observed := map[string]struct{}{}
+			for _, scenario := range append(append([]causeScenario{}, scenarios...), refusedScenarios...) {
+				repo, base := diskPolicyRepo(scenario.policies...)
+				scenario.arrange(repo)
+
+				stdout, _, exitCode := mode.run(repo, base, "--format=json")
+
+				if cause, reported := reportedPolicyCause(stdout, exitCode); reported {
+					observed[cause] = struct{}{}
+				}
+			}
+
+			Expect(slices.Sorted(maps.Keys(observed))).To(Equal([]string{"differs_from_head", "missing_on_disk", "not_committed", "same_as_head"}))
+			Expect(observed).NotTo(HaveKey("unusable_on_disk"))
+		})
 
 		It("#168 A2a: a policy that is used carries exactly path, digest, matches_head and cause under "+mode.name, func() {
 			repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, diskPolicyWithoutForbiddenImports})
@@ -90,3 +128,17 @@ var _ = Describe("coach codesignal discloses why the policy used is the one it i
 		})
 	}
 })
+
+// reportedPolicyCause is the cause of a scan that completed and reports a policy; a refused scan prints no scope, so it
+// is not read.
+func reportedPolicyCause(scanStdout []byte, exitCode int) (string, bool) {
+	if exitCode != 0 {
+		return "", false
+	}
+	policy, isObject := scopePolicyScopeOf(scanStdout)["policy"].(map[string]any)
+	if !isObject {
+		return "", false
+	}
+	cause, _ := policy["cause"].(string)
+	return cause, true
+}

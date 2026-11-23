@@ -7,20 +7,23 @@ import (
 
 // A policy Coach would discover at .lousy-agents/coach.json cannot exist when .lousy-agents is a submodule: the
 // superproject records a submodule as one commit, so a file inside it can be neither committed nor added here.
-// The scan and --check-project say so for it, as they do for a policy named with --project-config, whether the
-// checkout is there or has been removed, and neither tells the user to write a policy that git would refuse to add.
-var _ = Describe("coach codesignal: a discovered policy under a submodule at .lousy-agents, in the scan and in --check-project", func() {
-	It("words a file in the checkout as the submodule's and not as one to commit, and --check-project names the same cause", func() {
+// A file in the checkout is an unusable canonical entry, so the scan refuses it as it does a policy named with
+// --project-config, and --check-project names the same cause. The halves diverge until #168 A2b-2 moves the check to disk.
+// Neither tells the user to write a policy that git would refuse to add.
+var _ = Describe("coach codesignal: a discovered policy under a submodule at .lousy-agents, in the scan and in --check-project (#168 A2b)", func() {
+	It("refuses the scan for a file in the checkout, naming the submodule as the cause, and --check-project names the same cause", func() {
 		repo := commitScannableGoRepo()
 		addSubmoduleAt(repo, ".lousy-agents")
 
-		diagnostics := scanDiagnosticsAtTheCanonicalPath(repo)
+		stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json")
 		doc := expectCheckProject(repo)
 
-		Expect(diagnostics).To(HaveLen(1), "diagnostics: %v", diagnostics)
-		Expect(diagnostics[0]).To(HavePrefix("project_config_unusable "), "the file cannot be committed here, so it is not 'not committed': %s", diagnostics[0])
-		Expect(causeInTheDiagnostic.FindStringSubmatch(diagnostics[0])).To(Equal([]string{"cause=in_submodule", "in_submodule"}), "the cause the check names: %s", diagnostics[0])
-		Expect(diagnostics[0]).To(ContainSubstring(`".lousy-agents"`), "the submodule is named: %s", diagnostics[0])
+		Expect(exitCode).To(Equal(2), "the canonical entry lies inside a submodule checkout, so the scan refuses; stdout=%s stderr=%s", stdout, stderr)
+		Expect(stdout).To(BeEmpty(), "no report on a refused policy")
+		Expect(string(stderr)).To(ContainSubstring("project_config_invalid"))
+		Expect(string(stderr)).To(ContainSubstring(coachConfigPath))
+		Expect(string(stderr)).To(ContainSubstring("in_submodule"), "the cause the check names")
+		Expect(string(stderr)).NotTo(ContainSubstring("project_config_unusable"), "no continuing without the policy")
 		Expect(causeOfGap(doc, "policy_missing")).To(Equal("in_submodule"), "the check's gaps: %+v", doc.Gaps)
 	})
 

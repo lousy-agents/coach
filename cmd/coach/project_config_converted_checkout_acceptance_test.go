@@ -70,12 +70,15 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid, in 
 		Expect(lastLine(stderr)).To(ContainSubstring("replace the policy with it, commit, and rerun"), "stderr:\n%s", stderr)
 	})
 
-	It("keeps the file when it holds a real edit as well as converted line endings", func() {
+	It("uses the file when it holds a valid real edit as well as converted line endings, and offers no replacement", func() {
 		checkOutWithConversion(validPolicyWithLayers)
+		onDisk, err := os.ReadFile(filepath.Join(repo, policy))
+		Expect(err).NotTo(HaveOccurred())
 
-		_, stderr := scanExpectingRefusal(repo, "--project-config", policy)
+		stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json", "--project-config", policy)
 
-		Expect(string(stderr)).To(ContainSubstring("differs from the committed"), "stderr:\n%s", stderr)
+		Expect(exitCode).To(Equal(0), "stdout: %s stderr: %s", stdout, stderr)
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policy, string(onDisk), diskCauseDiffersFromHead))))
 		Expect(string(stderr)).NotTo(ContainSubstring("replace the policy with it"), "stderr:\n%s", stderr)
 	})
 
@@ -89,7 +92,7 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid, in 
 		Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(policy), "the check read the file: %+v", doc.DirtyWorktree)
 	})
 
-	It("takes a file that a filter attribute selects a program for to have work in it, and never runs the program", func() {
+	It("refuses a file that a filter attribute selects a program for as the disk holds it, offers no replacement, and never runs the program", func() {
 		marks := GinkgoT().TempDir()
 		clean := writeProbe(marks, "filter", filepath.Join(marks, "clean.sh"), "#!/bin/sh\n")
 		gitIn(repo, "config", "filter.probe.clean", clean)
@@ -98,7 +101,8 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid, in 
 
 		_, stderr := scanExpectingRefusal(repo, "--project-config", policy)
 
-		Expect(string(stderr)).To(ContainSubstring("differs from the committed"), "stderr:\n%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("cannot be used on disk"), "the file is judged as the disk holds it:\n%s", stderr)
+		Expect(string(stderr)).NotTo(ContainSubstring("replace the policy with it"), "stderr:\n%s", stderr)
 		Expect(marksLeft(marks, "filter")).To(BeEmpty(), "the clean filter ran")
 	})
 

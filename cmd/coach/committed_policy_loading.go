@@ -1,34 +1,18 @@
 package main
 
 import (
-	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-const (
-	regularFileMode    = "100644"
-	executableFileMode = "100755"
-)
-
-// loadCommittedPolicy reads the policy the analyzed revision holds for source. A discovered source names a path
-// discovery found committed, and an empty one means nothing is. A named source is committed only if the revision holds
-// a blob at its path: a file that is on disk and not committed is the policy on disk alone. Every other named path goes
-// through the loader, so that a missing or unusable file, a path that cannot name a policy, and a file inside a
-// submodule checkout, which this repository can never commit, keep the refusal they always had.
-func loadCommittedPolicy(dir, revision string, source policyref.Ref, disk func() diskPolicy, ports scanPorts) (committedPolicy, error) {
+// loadCommittedPolicy reads the policy the analyzed revision holds for source, refusing one that is not usable. A
+// discovered source names a path discovery found committed, and an empty one means nothing is. It is the policy a scan
+// uses when the working tree selects none, so a missing or unusable file, a path that cannot name a policy, and a file
+// inside a submodule checkout keep the refusal they always had.
+func loadCommittedPolicy(dir, revision string, source policyref.Ref, ports scanPorts) (committedPolicy, error) {
 	if source.Path == "" {
 		return committedPolicy{}, nil
-	}
-	if source.Explicit && projectconfig.ValidatePath(source.Path) == nil {
-		held, err := committedAtPath(dir, revision, source.Path)
-		if err != nil {
-			return committedPolicy{}, err
-		}
-		if !held && disk().present() && !insideSubmodule(dir, revision, source.Path) {
-			return committedPolicy{}, explicitOnDiskRefusal(dir, revision, source.Path)
-		}
 	}
 	content, err := ports.loader(source.JudgedOnDisk())(dir, revision, source.Path)
 	if err != nil {
@@ -37,14 +21,20 @@ func loadCommittedPolicy(dir, revision string, source policyref.Ref, disk func()
 	return committedPolicy{path: source.Path, content: content}, nil
 }
 
-// committedAtPath reports whether the revision holds a regular file at repoPath. A symbolic link is a blob too, but a
-// policy cannot be one, so it leaves the path to the working tree exactly as a committed directory or submodule does.
-func committedAtPath(dir, revision, repoPath string) (bool, error) {
-	entry, found, err := gitrepo.BlobEntryAtRevision(projectconfig.NewGitRunner(), dir, revision, repoPath)
-	if err != nil || !found {
-		return false, err
+// readHeadCopy is what the revision holds at the path of a policy that is usable on disk. It is read for disclosure
+// only, so whatever it holds, a policy that is not a usable one included, refuses nothing. What still refuses is what the
+// working tree or the repository says about the named path itself: a spelling in another case, a path inside a
+// submodule checkout, which this repository can never commit.
+func readHeadCopy(dir, revision string, source policyref.Ref, path string, ports scanPorts) (projectconfig.CommittedCopy, error) {
+	head, err := ports.readCommitted(dir, revision, path)
+	if err != nil || !source.Explicit {
+		return head, err
 	}
-	return entry.Mode == regularFileMode || entry.Mode == executableFileMode, nil
+	if head.Kind == projectconfig.CopyAbsent && insideSubmodule(dir, revision, path) {
+		_, refusal := ports.loadExplicit(dir, revision, path)
+		return head, refusal
+	}
+	return head, explicitOnDiskRefusal(dir, revision, path)
 }
 
 // explicitOnDiskRefusal is the refusal a named policy has when the working tree cannot hold it, nil for a regular

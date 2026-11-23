@@ -1,7 +1,6 @@
 package projectconfig
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
@@ -53,26 +52,6 @@ func causeOf(refusal *ConfigError) projectreadiness.PolicyCause {
 		return ""
 	}
 	return refusal.PolicyCause
-}
-
-// The diagnostic names the cause the project check reports for the same path, in the form its text prints it,
-// and says the scan did not read the file.
-func TestTheUnusableCanonicalMessageNamesTheCauseAndSaysTheScanDidNotReadIt(t *testing.T) {
-	for _, cause := range []projectreadiness.PolicyCause{
-		projectreadiness.CauseNotARegularFile, projectreadiness.CauseSymbolicLink, projectreadiness.CauseUnreadableOnDisk,
-		projectreadiness.CauseParentNotDirectory,
-	} {
-		t.Run(string(cause), func(t *testing.T) { requireTheMessageNamesTheCause(t, cause) })
-	}
-}
-
-func requireTheMessageNamesTheCause(t *testing.T, cause projectreadiness.PolicyCause) {
-	t.Helper()
-	message := UnusableCanonicalMessage(&ConfigError{PolicyCause: cause})
-
-	if !strings.Contains(message, "(cause="+string(cause)+")") || !strings.Contains(message, "so this scan did not read it") || strings.Contains(message, "the working tree cannot use it") {
-		t.Errorf("message %q; want the cause %q, that the scan did not read the file, and a reason of its own", message, cause)
-	}
 }
 
 // A probe that fails without a verdict about the path is an error of the scan, not a path with nothing on it.

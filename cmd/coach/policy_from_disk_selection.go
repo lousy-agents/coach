@@ -15,63 +15,80 @@ type committedPolicy struct {
 
 func (c committedPolicy) present() bool { return c.path != "" }
 
-// diskPolicy is what the working tree selects. selection.Path is empty when nothing is selected, and refusal is set
-// when a file is there but cannot be used.
-type diskPolicy struct {
-	selection projectconfig.DiskSelection
-	refusal   *projectconfig.DiskPolicyRefusal
-}
-
-func (d diskPolicy) usable() bool { return d.refusal == nil && d.selection.Path != "" }
-
-func (d diskPolicy) present() bool { return d.refusal != nil || d.selection.Path != "" }
-
 // policyEvidence is everything the choice of policy depends on. The question about a path is a function so that the
 // choice stays free of git.
 type policyEvidence struct {
-	committed        committedPolicy
-	disk             diskPolicy
+	// committed is the policy the revision holds, read as a policy: it is set only where the scan can use it, which is
+	// where the working tree selects none or discovery prefers it.
+	committed committedPolicy
+	// head is what the revision holds at the path of the policy on disk, read for comparison only.
+	head             projectconfig.CommittedCopy
+	disk             projectconfig.DiskSelection
 	holdsConvertedAt func(path string) bool
 }
 
 // policyChoice is the policy a scan uses. An empty scope.Path means the scan uses none.
 type policyChoice struct {
-	content     json.RawMessage
-	scope       codesignal.PolicyScope
-	diagnostics []codesignal.Diagnostic
+	content json.RawMessage
+	scope   codesignal.PolicyScope
 }
 
-// choosePolicy applies ADR-009 (#714): the policy on disk is the one used. The committed bytes stand in for it where they
-// are the same file, so a clean or line-ending-converted checkout keeps the digest CI computes. A committed policy
-// stands in for a policy on disk that is missing or unusable until the scan refuses those states. Discovery keeps its
-// order: a committed canonical policy that is missing on disk is not replaced by the root project.json that is there.
+// committedCanonicalOutranks is discovery's order: a committed canonical policy that is missing on disk is not replaced
+// by the root project.json that is there.
+func committedCanonicalOutranks(committedPath, diskPath string) bool {
+	return diskPath == projectconfig.DefaultPath && committedPath == projectconfig.CanonicalPath
+}
+
+// choosePolicy applies ADR-009 (#714): the policy on disk is the one used, whatever the revision holds at its path. The
+// committed bytes stand in for it where they are the same file, so a clean or line-ending-converted checkout keeps the
+// digest CI computes. A committed policy that is missing on disk is used as committed until the scan refuses that state.
 func choosePolicy(e policyEvidence) policyChoice {
-	if !e.disk.usable() || e.disk.selection.Path == projectconfig.DefaultPath && e.committed.path == projectconfig.CanonicalPath {
-		return committedOrNone(e.committed, e.disk)
+	if e.disk.Path == "" || committedCanonicalOutranks(e.committed.path, e.disk.Path) {
+		return committedOrNone(e.committed)
 	}
-	chosen := e.disk.selection
-	if e.committed.path == chosen.Path {
-		if projectconfig.Digest(e.committed.content) == chosen.Digest || e.holdsConvertedAt(chosen.Path) {
-			return usedPolicy(e.committed.path, e.committed.content, codesignal.PolicyCauseSameAsHead, "")
-		}
-		return usedPolicy(chosen.Path, chosen.Content, codesignal.PolicyCauseDiffersFromHead, "")
+	cause := relationToHead(e)
+	if cause == codesignal.PolicyCauseSameAsHead {
+		return usedPolicy(e.disk.Path, e.head.Content, cause)
 	}
-	return usedPolicy(chosen.Path, chosen.Content, codesignal.PolicyCauseNotCommitted, "")
+	choice := usedPolicy(e.disk.Path, e.disk.Content, cause)
+	choice.scope.HeadBound = headBoundOf(e.head.Bound)
+	return choice
 }
 
-func committedOrNone(committed committedPolicy, disk diskPolicy) policyChoice {
-	switch {
-	case committed.present() && disk.refusal != nil:
-		return usedPolicy(committed.path, committed.content, codesignal.PolicyCauseUnusableOnDisk, disk.refusal.Reason)
-	case committed.present():
-		return usedPolicy(committed.path, committed.content, codesignal.PolicyCauseMissingOnDisk, "")
-	case disk.refusal != nil:
-		return policyChoice{diagnostics: []codesignal.Diagnostic{unusableOnDiskDiagnostic(disk.refusal)}}
+// headBoundOf is the bound of git the text report names where HEAD's copy could not be read.
+func headBoundOf(bound projectconfig.CopyBound) codesignal.HeadBound {
+	switch bound {
+	case projectconfig.CopyBoundTime:
+		return codesignal.HeadBoundTime
+	case projectconfig.CopyBoundStderr:
+		return codesignal.HeadBoundStderr
+	}
+	return codesignal.HeadBoundNone
+}
+
+// relationToHead is how the policy on disk stands to the copy the revision holds at its path.
+func relationToHead(e policyEvidence) codesignal.PolicyCause {
+	switch e.head.Kind {
+	case projectconfig.CopyAbsent:
+		return codesignal.PolicyCauseNotCommitted
+	case projectconfig.CopyUnreadable:
+		return codesignal.PolicyCauseHeadUnreadable
+	case projectconfig.CopyReadable:
+		if projectconfig.Digest(e.head.Content) == e.disk.Digest || e.holdsConvertedAt(e.disk.Path) {
+			return codesignal.PolicyCauseSameAsHead
+		}
+	}
+	return codesignal.PolicyCauseDiffersFromHead
+}
+
+func committedOrNone(committed committedPolicy) policyChoice {
+	if committed.present() {
+		return usedPolicy(committed.path, committed.content, codesignal.PolicyCauseMissingOnDisk)
 	}
 	return policyChoice{}
 }
 
-func usedPolicy(path string, content json.RawMessage, cause codesignal.PolicyCause, reason string) policyChoice {
+func usedPolicy(path string, content json.RawMessage, cause codesignal.PolicyCause) policyChoice {
 	return policyChoice{
 		content: content,
 		scope: codesignal.PolicyScope{
@@ -79,15 +96,6 @@ func usedPolicy(path string, content json.RawMessage, cause codesignal.PolicyCau
 			Digest:      projectconfig.Digest(content),
 			MatchesHead: cause == codesignal.PolicyCauseSameAsHead,
 			Cause:       cause,
-			Reason:      reason,
 		},
-	}
-}
-
-func unusableOnDiskDiagnostic(refusal *projectconfig.DiskPolicyRefusal) codesignal.Diagnostic {
-	return codesignal.Diagnostic{
-		Kind:    "project_policy_unusable_on_disk",
-		Path:    refusal.Path,
-		Message: "the project policy on disk cannot be used (" + refusal.Reason + "); this scan used no policy",
 	}
 }
