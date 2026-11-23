@@ -26,12 +26,13 @@ func run(goTestArgs []string, stdout, stderr io.Writer) int {
 	if git.warning != "" {
 		fmt.Fprintln(stdout, prefix+git.warning)
 	}
-	withJS := wantsTSProjectBackend(goTestArgs)
-	if withJS {
-		if err := checkJSOutputs(); err != nil {
-			fmt.Fprintln(stderr, prefix+err.Error())
-			return 2
-		}
+	withJS, jsNote, err := jsPlan(goTestArgs)
+	if err != nil {
+		fmt.Fprintln(stderr, prefix+err.Error())
+		return 2
+	}
+	if jsNote != "" {
+		fmt.Fprintln(stdout, prefix+jsNote)
 	}
 	space, err := prepareWorkspace(git.path, withJS)
 	if err != nil {

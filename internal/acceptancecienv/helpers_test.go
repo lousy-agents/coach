@@ -54,7 +54,6 @@ func runTask(pin string, extraEnv ...string) taskRun {
 	return runTaskWith(pin, []string{probePackage}, extraEnv...)
 }
 
-// runTaskWith is runTask with the go test arguments given.
 func runTaskWith(pin string, goTestArgs []string, extraEnv ...string) taskRun {
 	outDir, err := os.MkdirTemp("", "acceptance-ci-env-probe-*")
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())

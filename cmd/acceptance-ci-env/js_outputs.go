@@ -5,47 +5,70 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
-// jsBuiltOutputs are the js/semantics build outputs the ts-project-backend
-// specs need. CI's job builds them with `mise run js-install` before it runs
-// those specs, and git ignores them, so the repository copy lacks them.
-var jsBuiltOutputs = []string{"js/semantics/node_modules", "js/semantics/dist"}
+// jsInstalled is what the ts-project-backend specs need: CI's job installs it
+// with `mise run js-install` before it runs them, and git ignores it, so the
+// repository copy lacks it.
+const jsInstalled = "js/semantics/node_modules"
 
-func wantsTSProjectBackend(goTestArgs []string) bool {
-	for _, arg := range goTestArgs {
-		if strings.Contains(arg, "label-filter") && strings.Contains(arg, "ts-project-backend") {
+// positiveTSProjectBackend matches the label as a term a label filter selects,
+// not one it negates with `!`.
+var positiveTSProjectBackend = regexp.MustCompile(`(^|[^!\w-])ts-project-backend\b`)
+
+// labelFilters returns the values of every -ginkgo.label-filter flag, in
+// either the `=value` or the two-argument form.
+func labelFilters(args []string) []string {
+	var values []string
+	for i, arg := range args {
+		name, value, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+		if name != "ginkgo.label-filter" {
+			continue
+		}
+		if !hasValue && i+1 < len(args) {
+			value = args[i+1]
+		}
+		values = append(values, value)
+	}
+	return values
+}
+
+func wantsTSProjectBackend(args []string) bool {
+	for _, filter := range labelFilters(args) {
+		if positiveTSProjectBackend.MatchString(filter) {
 			return true
 		}
 	}
 	return false
 }
 
-// checkJSOutputs refuses a ts-project-backend run when the caller has not built
-// js/semantics, rather than letting every spec skip for want of a compiler.
-func checkJSOutputs() error {
-	if _, err := os.Stat(jsBuiltOutputs[0]); err != nil {
-		return fmt.Errorf("the ts-project-backend label needs %s, which CI's job builds before its tests; run `mise run js-install` first", jsBuiltOutputs[0])
+// jsPlan decides what a run does about the installed js/semantics: a run that
+// asks for the ts-project-backend label needs it, and is refused without it;
+// any other run uses it when it is there, and otherwise says that the specs
+// that need it will skip.
+func jsPlan(args []string) (useJS bool, note string, err error) {
+	_, statErr := os.Stat(jsInstalled)
+	switch {
+	case statErr == nil:
+		return true, "", nil
+	case wantsTSProjectBackend(args):
+		return false, "", fmt.Errorf("the ts-project-backend label needs %s, which CI's job installs before its tests; run `mise run js-install` first", jsInstalled)
+	default:
+		return false, fmt.Sprintf("%s is not installed, so the ts-project-backend specs will skip; run `mise run js-install` to include them", jsInstalled), nil
 	}
-	return nil
 }
 
-// copyJSOutputs copies the built outputs that exist into the repository copy.
-func copyJSOutputs(repoCopy string) ([]string, error) {
-	var copied []string
-	for _, output := range jsBuiltOutputs {
-		if _, err := os.Stat(output); err != nil {
-			continue
-		}
-		target := filepath.Join(repoCopy, output)
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return nil, err
-		}
-		if out, err := exec.Command("cp", "-a", output, target).CombinedOutput(); err != nil {
-			return nil, fmt.Errorf("copying %s: %v: %s", output, err, out)
-		}
-		copied = append(copied, output)
+// copyJSInstalled dereferences links, so a node_modules that points into a
+// directory the non-root user cannot read still arrives as readable files.
+func copyJSInstalled(repoCopy string) error {
+	target := filepath.Join(repoCopy, jsInstalled)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
 	}
-	return copied, nil
+	if out, err := exec.Command("cp", "-aL", jsInstalled, target).CombinedOutput(); err != nil {
+		return fmt.Errorf("copying %s: %v: %s", jsInstalled, err, out)
+	}
+	return nil
 }

@@ -48,7 +48,7 @@ func prepareWorkspace(gitPath string, withJS bool) (space workspace, err error) 
 			err = keepCallersGoCaches(overrides)
 		}
 		if withJS {
-			space.jsNote = "uses js/semantics' built outputs in place, as CI's job builds them before its tests"
+			space.jsNote = "uses the installed " + jsInstalled + " in place, as CI's job installs it before its tests"
 		}
 	}
 	if err != nil {
@@ -95,11 +95,10 @@ func (w *workspace) dropToNobody(base, runDir, gitPath string, overrides map[str
 		return err
 	}
 	if withJS {
-		copied, err := copyJSOutputs(w.repo)
-		if err != nil {
+		if err := copyJSInstalled(w.repo); err != nil {
 			return err
 		}
-		w.jsNote = fmt.Sprintf("copied js/semantics' built outputs %v from this tree, as CI's job builds them before its tests", copied)
+		w.jsNote = "copied the installed " + jsInstalled + " from this tree, as CI's job installs it before its tests"
 	}
 	path, err := reachablePath(base, os.Getenv("PATH"), filepath.Dir(gitPath), gid)
 	if err != nil {

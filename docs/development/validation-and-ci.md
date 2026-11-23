@@ -94,18 +94,20 @@ non-zero and names both versions, and runs no test.
 run in an agent sandbox, which cannot build CI's git, so a sandbox run uses
 `COACH_CI_GIT_ALLOW_MISMATCH=1`.
 
-The `ts-project-backend` specs need js/semantics' build outputs, which CI's job
-builds with `mise run js-install` before it runs them. Run that first, then
-pass the label:
+The `ts-project-backend` specs need `js/semantics/node_modules`, which CI's job
+installs with `mise run js-install` before it runs them. To run them as that
+job does, install first, then pass the job's own arguments (from the
+`ts-project-backend-acceptance` task in `mise.toml`):
 
 ```sh
 mise run js-install
-mise run acceptance-ci-env -- ./cmd/coach/... -run Acceptance -args -ginkgo.label-filter=ts-project-backend
+mise run acceptance-ci-env -- -race ./cmd/coach/... ./internal/codesignalcli -run Acceptance -args -ginkgo.label-filter=ts-project-backend -ginkgo.fail-on-empty
 ```
 
-The task copies `js/semantics/node_modules` and `js/semantics/dist` into its
-repository copy and says so. Without them, it refuses, naming `mise run
-js-install`.
+When `node_modules` is installed, the task copies it into its repository copy
+(following links) and says so. When it is missing, a run whose label filter
+selects `ts-project-backend` is refused, naming `mise run js-install`; any
+other run says that those specs will skip.
 
 A spec that cannot build its state as root, such as a mode 000 file, skips
 under root and says that `mise run acceptance-ci-env` runs it as non-root. A test
