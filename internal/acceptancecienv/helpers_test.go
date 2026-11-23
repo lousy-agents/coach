@@ -51,13 +51,18 @@ func hostGitVersion() string {
 // probe package, with the pin and any extra environment given, and returns what
 // the probe recorded, if it ran.
 func runTask(pin string, extraEnv ...string) taskRun {
+	return runTaskWith(pin, []string{probePackage}, extraEnv...)
+}
+
+// runTaskWith is runTask with the go test arguments given.
+func runTaskWith(pin string, goTestArgs []string, extraEnv ...string) taskRun {
 	outDir, err := os.MkdirTemp("", "acceptance-ci-env-probe-*")
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	DeferCleanup(os.RemoveAll, outDir)
 	ExpectWithOffset(1, os.Chmod(outDir, 0o777)).To(Succeed())
 	probeOut := filepath.Join(outDir, "probe.json")
 
-	command := exec.Command("go", "run", "./cmd/acceptance-ci-env", probePackage)
+	command := exec.Command("go", append([]string{"run", "./cmd/acceptance-ci-env"}, goTestArgs...)...)
 	command.Dir = repoRoot
 	command.Env = append(environWithout("COACH_CI_GIT", "COACH_CI_GIT_ALLOW_MISMATCH", "COACH_CI_GIT_VERSION"), "COACH_CI_GIT_VERSION="+pin, "COACH_CI_ENV_PROBE_OUT="+probeOut)
 	command.Env = append(command.Env, extraEnv...)
