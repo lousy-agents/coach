@@ -58,7 +58,7 @@ A spec can pass in an agent sandbox and fail in CI because the two differ (#733)
 | --- | --- | --- |
 | User | `runner`, not root | root |
 | HOME and user-level git config | a fresh HOME with no git identity | the user's global config, with an identity and commit signing |
-| git | floats with the runner image: 2.55.0, then 2.56.0, then 2.56.1 | 2.43.0 |
+| git | floats with the runner image: 2.55.0, then 2.56.0, then 2.56.1; the `distro-git` leg runs Ubuntu 24.04's own 2.43.0 | 2.43.0 |
 
 `mise run acceptance-ci-env` runs Go tests under CI's conditions. Pass packages
 after `--`; the default is `./...`:
@@ -89,15 +89,23 @@ It gives the tests:
   `GIT_AUTHOR_*`, `GIT_COMMITTER_*`), which CI does not set;
 - CI's PATH, the mise toolchain, with the checked git first.
 
-CI's git floats, and the task is pinned. `COACH_CI_GIT_VERSION` in the task's
-`env` in `mise.toml` is the one place the expected git version is stated; bump
-it when CI's git moves. The task prints the git it used. It takes that git from
+The runner image's git floats, and the task is pinned. `COACH_CI_GIT_VERSION` in
+the task's `env` in `mise.toml` is the one place that git's version is stated;
+bump it when the runner image's git moves. The `distro-git` leg states its own,
+2.43.0, in its job's `env` in `ci.yml`, because it runs Ubuntu 24.04's git, which
+does not move. The task prints the git it used. It takes that git from
 `COACH_CI_GIT`, or from PATH. When that git is not the pinned version, it exits
 non-zero and names both versions, and runs no test.
 `COACH_CI_GIT_ALLOW_MISMATCH=1` runs the user and HOME legs anyway, and prints
-`WARNING: the git-version leg was NOT covered`. The git-version leg has not been
-run in an agent sandbox, which cannot build CI's git, so a sandbox run uses
-`COACH_CI_GIT_ALLOW_MISMATCH=1`.
+`WARNING: the git-version leg was NOT covered`. An agent sandbox cannot build the
+runner image's git, so a sandbox run of the task uses
+`COACH_CI_GIT_ALLOW_MISMATCH=1`. A sandbox whose git is 2.43.0 can run the
+`distro-git` leg's conditions in full, with the program the task runs, because
+the task's own pin wins over the caller's:
+
+```sh
+COACH_CI_GIT_VERSION=2.43.0 mise exec -- go run ./cmd/acceptance-ci-env ./...
+```
 
 The `ts-project-backend` specs need `js/semantics/node_modules`, which CI's job
 installs with `mise run js-install` before it runs them. To run them as that
