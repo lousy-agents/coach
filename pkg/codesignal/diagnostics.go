@@ -19,6 +19,31 @@ type Diagnostic struct {
 	// Revision is Side's git revision (e.g. commit SHA), so the diagnostic's
 	// text-named side/revision has a machine-readable counterpart.
 	Revision string `json:"revision,omitempty"`
+
+	// Reason, Root, HidesInScope and RootsNotListed describe one worktree_scan_incomplete
+	// entry: why git hides part of the working tree, the directory it hides, whether
+	// in-scope source is among what it hides, and how many further roots the report
+	// does not list. Path stays empty on these entries, because a path counts as an
+	// unanalyzed file.
+	Reason         string `json:"reason,omitempty"`
+	Root           string `json:"root,omitempty"`
+	HidesInScope   string `json:"hides_in_scope,omitempty"`
+	RootsNotListed int    `json:"roots_not_listed,omitempty"`
+}
+
+// Diagnostic.HidesInScope values.
+const (
+	HidesInScopeYes     = "yes"
+	HidesInScopeNo      = "no"
+	HidesInScopeUnknown = "unknown"
+)
+
+// QualifiesVerdict reports whether a worktree_scan_incomplete diagnostic makes a
+// verdict incomplete. Only an explicit "no" does not: a missing value reads as
+// "unknown", so a report written before the field existed keeps qualifying. Other
+// kinds never carry HidesInScope and are decided by their own Kind.
+func (d Diagnostic) QualifiesVerdict() bool {
+	return d.HidesInScope != HidesInScopeNo
 }
 
 // Diagnostic.Kind values projectLifecycleState (project_lifecycle_state.go) emits when

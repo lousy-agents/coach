@@ -3,9 +3,7 @@
 package main
 
 import (
-	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -13,16 +11,6 @@ import (
 )
 
 var _ = Describe("coach codesignal --worktree under a git that cannot be told not to fetch", func() {
-	// gitBefore244 is a directory whose git reports 2.43.0 and ignores the instruction not to fetch, as a git before
-	// 2.44 does, and is otherwise the git on PATH.
-	gitBefore244 := func() string {
-		realGit, err := exec.LookPath("git")
-		Expect(err).NotTo(HaveOccurred())
-		directory := GinkgoT().TempDir()
-		script := fmt.Sprintf("#!/bin/sh\nfor last; do :; done\n[ \"$last\" = version ] && { echo 'git version 2.43.0'; exit 0; }\nunset GIT_NO_LAZY_FETCH\nexec %q \"$@\"\n", realGit)
-		Expect(os.WriteFile(filepath.Join(directory, "git"), []byte(script), 0o755)).To(Succeed())
-		return directory
-	}
 	// editedSubmodule commits a submodule and leaves an edit to a file in it.
 	editedSubmodule := func() string {
 		repo := newTempGitRepo()
@@ -40,29 +28,27 @@ var _ = Describe("coach codesignal --worktree under a git that cannot be told no
 		Expect(gitPorcelain(editedSubmodule())).To(ContainSubstring("third/lib"))
 	})
 
-	It("does not report a tree with an edit inside a submodule as clean, and names the submodule and the git", func() {
-		repo := editedSubmodule()
-		env := append(os.Environ(), "PATH="+gitBefore244()+string(os.PathListSeparator)+os.Getenv("PATH"))
+	It("discloses an edit inside a submodule as one git_version entry that hides no in-scope source, never also as submodule (#168 item 22)", func() {
+		run := runWorktreeScan(editedSubmodule(), envWithGitBefore244())
 
-		stdout, stderr, exitCode := runCoachBinary(commandPath, repo, env,
-			"codesignal", "--baseline", "--worktree", "--format=json", "--fail-on-incomplete-coverage")
-
-		Expect(exitCode).To(Equal(3), "stderr: %s", stderr)
-		diagnostics := diagnosticsOfKind(decodeCoachReport(stdout).Diagnostics, "worktree_scan_incomplete")
-		Expect(diagnostics).To(HaveLen(1))
-		Expect(diagnostics[0].Message).To(And(ContainSubstring("git 2.43.0"), ContainSubstring("third/lib")))
+		entry := run.only("git_version")
+		Expect(entry).To(HaveKeyWithValue("root", "third/lib"))
+		Expect(entry).To(HaveKeyWithValue("hides_in_scope", "no"))
+		Expect(entry["message"]).To(ContainSubstring("git 2.43.0"))
+		Expect(pathOf(entry)).To(BeEmpty())
+		Expect(run.ofReason("submodule")).To(BeEmpty())
+		Expect(run.exitCode).To(Equal(0))
 	})
 
-	It("names the edit inside the submodule by its own cause under a git that can be told not to fetch", func() {
-		repo := editedSubmodule()
+	It("discloses the edit inside the submodule by its own cause, hiding no in-scope source, under a git that can be told not to fetch (#168 item 22)", func() {
+		if !installedGitCanBeToldNotToFetch() {
+			Skip("a real submodule entry needs git 2.44 or later; the installed git is older, so the git_version specs cover its submodules")
+		}
 
-		stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil,
-			"codesignal", "--baseline", "--worktree", "--format=json", "--fail-on-incomplete-coverage")
+		run := runWorktreeScan(editedSubmodule(), nil)
 
-		Expect(exitCode).To(Equal(3), "stderr: %s", stderr)
-		diagnostics := diagnosticsOfKind(decodeCoachReport(stdout).Diagnostics, "worktree_scan_incomplete")
-		Expect(diagnostics).To(HaveLen(1))
-		Expect(diagnostics[0].Message).To(ContainSubstring("a submodule has working-tree changes"))
-		Expect(diagnostics[0].Message).NotTo(ContainSubstring("cannot be told not to fetch"))
+		Expect(run.only("submodule")).To(And(HaveKeyWithValue("root", "third/lib"), HaveKeyWithValue("hides_in_scope", "no")))
+		Expect(run.ofReason("git_version")).To(BeEmpty())
+		Expect(run.exitCode).To(Equal(0))
 	})
 })

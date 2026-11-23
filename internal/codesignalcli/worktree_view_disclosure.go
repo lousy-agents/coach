@@ -3,7 +3,6 @@ package codesignalcli
 import (
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -19,69 +18,32 @@ func (v *WorktreeView) ReadFromDisk(name string) bool {
 // Disclosure reports what a worktree scan owes after the project backend has
 // run: the run-level causes for Git state it cannot read, and a diagnostic for
 // each dirty path that nothing accounted for. A path is accounted for when the
-// overlay removed it or named it in its own diagnostic, file-local analysis
+// overlay removed it or named it in its own diagnostic (a nested repository or
+// submodule root has its own worktree_scan_incomplete entry), file-local analysis
 // read it, the scope filter excluded it, an unsupported_language diagnostic
 // names it, or the analysis read it as project configuration; new files are
 // analyzed, so they are not left in. An uncommitted edit to policyPath is
 // always disclosed, because the policy is read from the commit.
 func (v *WorktreeView) Disclosure(dir, revision, policyPath string) []codesignal.Diagnostic {
-	return append(v.sparseGuard(dir), v.unreadDisclosure(dir, revision, policyPath)...)
-}
-
-const (
-	sparseCheckoutCause  = "sparse checkout is enabled, so the worktree scan uses the committed version of the files outside the checkout, not their working-tree bytes (run `git sparse-checkout disable` to read them)"
-	skipWorktreeCause    = "skip-worktree entries are present, so the worktree scan uses the committed version of those files, not their working-tree bytes (run `git update-index --no-skip-worktree <path>` to read one)"
-	assumeUnchangedCause = "assume-unchanged entries are present, so the worktree scan uses the committed version of those files, not their working-tree bytes (run `git update-index --no-assume-unchanged <path>` to read one)"
-)
-
-// statusWarningCauses names what git warned about while reading the status. A
-// directory it could not open is omitted from the status without failing, so the
-// files under it were never candidates; a warning the scan does not recognize
-// could be about anything it did not read. Either way a clean verdict would
-// describe a tree the scan did not see.
-func statusWarningCauses(warnings gitrepo.StatusWarnings) []string {
-	var causes []string
-	if len(warnings.UnreadableDirectories) > 0 {
-		causes = append(causes, "git could not open "+strings.Join(warnings.UnreadableDirectories, ", ")+", so the worktree scan did not read what is under it (make it readable to include it)")
-	}
-	if warnings.Unrecognized {
-		causes = append(causes, "git printed a warning while reading the working tree that coach does not recognize, so part of the tree may not have been read")
-	}
-	return causes
+	return append(v.sparseGuard(dir, policyPath), v.unreadDisclosure(dir, revision, policyPath)...)
 }
 
 // sparseGuard makes the scan incomplete when git hides tracked paths from the
-// working-tree status the overlay is built from. Such a path is served from
-// its committed bytes, so a clean committed file would give a false all-clear
-// over a violating edit on disk.
-func (v *WorktreeView) sparseGuard(dir string) []codesignal.Diagnostic {
+// working-tree status the overlay is built from, or the status itself did not
+// reach part of the tree. Such a path is served from its committed bytes, so a
+// clean committed file would give a false all-clear over a violating edit on
+// disk. Each cause is reported per reason and root.
+func (v *WorktreeView) sparseGuard(dir, policyPath string) []codesignal.Diagnostic {
 	state, err := v.sparseState(dir)
 	if err != nil {
 		return []codesignal.Diagnostic{worktreeStatusFailureDiagnostic(err)}
 	}
-	var causes []string
-	if state.SparseCheckout {
-		causes = append(causes, sparseCheckoutCause)
-	}
-	if state.SkipWorktree {
-		causes = append(causes, skipWorktreeCause)
-	}
-	if state.AssumeUnchanged {
-		causes = append(causes, assumeUnchangedCause)
-	}
-	nested, err := v.nestedStateCauses(dir)
+	nested, err := v.nestedDiagnostics(dir)
 	if err != nil {
 		return []codesignal.Diagnostic{worktreeStatusFailureDiagnostic(err)}
 	}
-	causes = append(causes, nested...)
-	causes = append(causes, statusWarningCauses(v.status.Warnings)...)
-	if len(causes) == 0 {
-		return nil
-	}
-	return []codesignal.Diagnostic{{
-		Kind:    codesignal.DiagKindWorktreeScanIncomplete,
-		Message: strings.Join(causes, "; "),
-	}}
+	diagnostics := append(v.hiddenPathDiagnostics(state, policyPath), nested...)
+	return append(diagnostics, statusWarningDiagnostics(v.status.Warnings)...)
 }
 
 func (v *WorktreeView) unreadDisclosure(dir, revision, policyPath string) []codesignal.Diagnostic {
@@ -90,8 +52,11 @@ func (v *WorktreeView) unreadDisclosure(dir, revision, policyPath string) []code
 	}
 	entries := v.status.Entries
 	inputs := v.unreadInputs(entries, policyPath)
+	// sparseGuard reports a failed read, so here an unread nested state only
+	// leaves more paths named.
+	nested, _ := v.nestedRepositories(dir)
 	unread := slices.DeleteFunc(slices.Clone(entries), func(entry gitrepo.WorktreeEntry) bool {
-		return v.accountedFor(entry) || inputs.hasOwnDiagnostic(entry.Path)
+		return v.accountedFor(entry) || inputs.hasOwnDiagnostic(entry.Path) || nested.ownsEntry(entry)
 	})
 	return append(inputs.policyDiagnostics(revision), perPathDisclosure(collectWorktreePaths(unread), uniqueSorted(inputs.named))...)
 }

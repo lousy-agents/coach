@@ -18,7 +18,7 @@ Experimental AI coach for humans making software with agents. Analysis packages 
 
 The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) exposes one subcommand, `codesignal`, via the `pkg/semantics` → `pkg/codesignal` pipeline. Product direction lives in `docs/product/prd.md`; system design in `docs/architecture/system-overview.md`.
 
-**Living product evaluation**: `docs/product/evaluations/codesignal-pilot-readiness.html` is the current leave-pilot evidence, not a historical snapshot. Closing a #282 child or merging user-facing `coach codesignal` behavior means updating it: re-run the affected claim against HEAD, move closed gaps to the archive and keep them there, restamp date / HEAD / `#282 · N / 24`, and re-rank only after a run. GitHub `CLOSED` is not sufficient evidence.
+**Living product evaluation**: `docs/product/evaluations/codesignal-pilot-readiness.html` is the current leave-pilot evidence, not a historical snapshot. Closing a #282 child or merging user-facing `coach codesignal` behavior means updating it: re-run the affected claim against HEAD, move closed gaps to the archive and keep them there, restamp date / HEAD / `#282 · N / 25`, and re-rank only after a run. GitHub `CLOSED` is not sufficient evidence.
 
 ## Agent Skills (`.agents/skills/`)
 
