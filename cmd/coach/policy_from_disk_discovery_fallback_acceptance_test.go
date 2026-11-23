@@ -9,9 +9,10 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// discoveryFallbackCause is the scope.policy.cause for the root project.json chosen after the canonical policy is
-// deleted on disk: HEAD selects .lousy-agents/coach.json, the disk selects project.json.
-const discoveryFallbackCause = diskCauseNotCommitted
+// discoveryFallbackCause is the scope.policy.cause for a committed root project.json chosen after the canonical
+// policy is deleted on disk. HEAD selects .lousy-agents/coach.json and the disk selects project.json, a file HEAD also
+// commits, so the cause is differs_from_head: not_committed would tell the user to commit a file that is committed.
+const discoveryFallbackCause = diskCauseDiffersFromHead
 
 // warningLinesNaming returns the text's WARNING lines that name every given path.
 func warningLinesNaming(text []byte, paths ...string) []string {
@@ -95,6 +96,37 @@ var _ = Describe("coach codesignal reads a discovered policy from disk only: no 
 			_, jsonOut := diskPolicyJSONScan(mode, repo, base)
 
 			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(legacyConfigPath, singleRootPolicyJSON, discoveryFallbackCause))))
+		})
+
+		It("#168 item 2: under "+mode.name+", an untracked root project.json chosen beside a deleted canonical policy is not_committed, because HEAD commits no file at that path", func() {
+			repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, diskPolicyWithoutForbiddenImports})
+			Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
+			overwriteOnDisk(repo, legacyConfigPath, goLayerPolicyConfigJSON)
+			expectGitStatusContains(repo, "?? "+legacyConfigPath)
+
+			report, jsonOut := diskPolicyJSONScan(mode, repo, base)
+
+			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "only the untracked project.json forbids handlers -> db")
+			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(legacyConfigPath, goLayerPolicyConfigJSON, diskCauseNotCommitted))))
+		})
+
+		It("#168 item 8: under "+mode.name+", an invalid .lousy-agents/coach.json on disk beside a valid committed root project.json exits 2 with project_config_invalid naming the path, and project.json is not read", func() {
+			repo, base := diskPolicyRepo(
+				scopePolicyFile{coachConfigPath, diskPolicyWithoutForbiddenImports},
+				scopePolicyFile{legacyConfigPath, goLayerPolicyConfigJSON},
+			)
+			overwriteOnDisk(repo, coachConfigPath, `{"schema_version":"1","layers":"not a list"}`)
+			expectGitStatusContains(repo, " M "+coachConfigPath)
+
+			for _, format := range []string{"--format=json", "--format=text"} {
+				stdout, stderr, exitCode := mode.run(repo, base, format)
+
+				Expect(exitCode).To(Equal(2), "%s stdout=%s stderr=%s", format, stdout, stderr)
+				Expect(stdout).To(BeEmpty(), "%s: no report, so project.json's layer rule cannot have governed one", format)
+				Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), format)
+				Expect(string(stderr)).To(ContainSubstring(coachConfigPath), format)
+				Expect(string(stderr)).NotTo(ContainSubstring(diskPolicyLayerViolationRule), format)
+			}
 		})
 
 		It("#168 A3: no scan under "+mode.name+" reports scope.policy.cause missing_on_disk for a deleted canonical policy, with or without a root project.json", func() {
