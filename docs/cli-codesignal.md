@@ -501,7 +501,7 @@ foreign-repository TypeScript journey.
 
 ## Agent self-review hook (preview)
 
-The hook in the [README](../README.md#agent-self-review-preview) runs `coach codesignal --worktree` when a Claude Code session is about to stop. It blocks the stop with a message when the review did not run or was not clean. `--worktree` is labelled experimental. The PRD change that brings this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730).
+The hook in the [README](../README.md#agent-self-review-preview) runs `coach codesignal --worktree` when a Claude Code session is about to stop. It blocks the stop with a message when the review did not run or was not clean. `--worktree` is a documented flag, described in [Uncommitted work](#uncommitted-work---worktree). The PRD change that brought this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730).
 
 Each flag in the hook's command has a reason:
 

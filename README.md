@@ -45,7 +45,7 @@ If no rule matches, the report says `No active CodeSignal findings.` That means 
 coach codesignal --worktree --no-interactive --fail-on-incomplete-coverage --format json
 ```
 
-The hook needs a coach build that reports `scope.policy`. v0.12.0 does not, so there the hook blocks and says so. `--worktree` is labelled experimental. The PRD change that brings this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730). Coach ships the CLI behaviour. The hook below is an example to copy. Coach does not run a hosted hook service. The hook reports only whether the review ran and was clean. It does not pass findings to the agent.
+The hook needs a coach build that reports `scope.policy`. v0.12.0 does not, so there the hook blocks and says so. `--worktree` is a documented flag of the CLI contract. The PRD change that brought this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730). Coach ships the CLI behaviour. The hook below is an example to copy. Coach does not run a hosted hook service. The hook reports only whether the review ran and was clean. It does not pass findings to the agent.
 
 To run the review when Claude Code finishes a response, add this to `.claude/settings.json`:
 
