@@ -15,7 +15,6 @@ import (
 type canonicalState struct {
 	arrange   func(repo string)
 	wantCause string // "" when nothing is on disk
-	wantKind  string // the diagnostic the scan gave before it judged the disk, "" when it said nothing
 }
 
 var causeInTheDiagnostic = regexp.MustCompile(`cause=([a-z_]+)`)
@@ -101,23 +100,23 @@ func requireTheCheckToNameTheCause(s canonicalState) {
 
 var _ = Describe("coach codesignal: a discovered policy on disk that is not committed, in the scan and in --check-project (#168 A2b)", func() {
 	DescribeTable("the scan refuses an entry it cannot read, naming the cause the check names", requireTheScanToRefuseWithTheCause,
-		Entry("a directory", canonicalState{makeTheCanonicalDirectory, "not_a_regular_file", "project_config_unusable"}),
-		Entry("a symbolic link", canonicalState{linkTheCanonicalPath, "symbolic_link", "project_config_unusable"}),
-		Entry("a file where the directory should be", canonicalState{putAFileInPlaceOfTheDirectory, "parent_not_directory", "project_config_unusable"}),
-		Entry("a parent the process cannot search", canonicalState{makeTheParentUnsearchable, "unreadable_on_disk", "project_config_unusable"}),
+		Entry("a directory", canonicalState{makeTheCanonicalDirectory, "not_a_regular_file"}),
+		Entry("a symbolic link", canonicalState{linkTheCanonicalPath, "symbolic_link"}),
+		Entry("a file where the directory should be", canonicalState{putAFileInPlaceOfTheDirectory, "parent_not_directory"}),
+		Entry("a parent the process cannot search", canonicalState{makeTheParentUnsearchable, "unreadable_on_disk"}),
 	)
 
 	DescribeTable("the scan says nothing about a path it reads or that holds nothing", requireTheScanToSayNothingAboutThePath,
-		Entry("a regular file, not committed", canonicalState{writeTheCanonicalFile, "not_committed", ""}),
-		Entry("nothing at the path", canonicalState{func(repo string) {}, "", ""}),
+		Entry("a regular file, not committed", canonicalState{writeTheCanonicalFile, "not_committed"}),
+		Entry("nothing at the path", canonicalState{func(repo string) {}, ""}),
 	)
 
 	DescribeTable("--check-project names the cause for the path", requireTheCheckToNameTheCause,
-		Entry("a regular file, not committed", canonicalState{writeTheCanonicalFile, "not_committed", ""}),
-		Entry("a directory", canonicalState{makeTheCanonicalDirectory, "not_a_regular_file", "project_config_unusable"}),
-		Entry("a symbolic link", canonicalState{linkTheCanonicalPath, "symbolic_link", "project_config_unusable"}),
-		Entry("a file where the directory should be", canonicalState{putAFileInPlaceOfTheDirectory, "parent_not_directory", "project_config_unusable"}),
-		Entry("a parent the process cannot search", canonicalState{makeTheParentUnsearchable, "unreadable_on_disk", "project_config_unusable"}),
-		Entry("nothing at the path", canonicalState{func(repo string) {}, "", ""}),
+		Entry("a regular file, not committed", canonicalState{writeTheCanonicalFile, "not_committed"}),
+		Entry("a directory", canonicalState{makeTheCanonicalDirectory, "not_a_regular_file"}),
+		Entry("a symbolic link", canonicalState{linkTheCanonicalPath, "symbolic_link"}),
+		Entry("a file where the directory should be", canonicalState{putAFileInPlaceOfTheDirectory, "parent_not_directory"}),
+		Entry("a parent the process cannot search", canonicalState{makeTheParentUnsearchable, "unreadable_on_disk"}),
+		Entry("nothing at the path", canonicalState{func(repo string) {}, ""}),
 	)
 })

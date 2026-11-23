@@ -63,9 +63,23 @@ var _ = Describe("coach codesignal reads the project policy from disk: a discove
 				stdout, stderr, exitCode := mode.run(repo, base, "--format=json")
 
 				expectDiskJudgedRefusal(stdout, stderr, exitCode, coachConfigPath, scenario.words...)
+				Expect(string(stderr)).NotTo(ContainSubstring(" at revision "), "the bytes are the disk's, so the words are not the revision's")
+				Expect(string(stderr)).NotTo(ContainSubstring("merge conflict"), "nothing is unmerged, so no advice to resolve a conflict")
 				Expect(string(stderr)).NotTo(ContainSubstring("unusable_on_disk"))
 			})
 		}
+
+		It("#168 A2b: a committed canonical policy that is not valid, replaced on disk by a directory, is refused for what the disk holds and not for what is committed, under "+mode.name, func() {
+			repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, "{bad"})
+			Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
+			Expect(os.Mkdir(filepath.Join(repo, coachConfigPath), 0o755)).To(Succeed())
+
+			stdout, stderr, exitCode := mode.run(repo, base, "--format=json")
+
+			expectDiskJudgedRefusal(stdout, stderr, exitCode, coachConfigPath, "not_a_regular_file", "cannot be used on disk")
+			Expect(string(stderr)).NotTo(ContainSubstring(" at revision "), "the bytes are the disk's, so the words are not the revision's")
+			Expect(string(stderr)).NotTo(ContainSubstring("merge conflict"), "nothing is unmerged, so no advice to resolve a conflict")
+		})
 
 		It("#168 A2b: a canonical policy that is not committed and is too large on disk exits 2 naming it, beside a valid project.json that is not committed either, under "+mode.name, func() {
 			repo, base := diskPolicyRepo()
@@ -75,6 +89,8 @@ var _ = Describe("coach codesignal reads the project policy from disk: a discove
 			stdout, stderr, exitCode := mode.run(repo, base, "--format=json")
 
 			expectDiskJudgedRefusal(stdout, stderr, exitCode, coachConfigPath, "larger than the policy size limit")
+			Expect(string(stderr)).NotTo(ContainSubstring(" at revision "), "the bytes are the disk's, so the words are not the revision's")
+			Expect(string(stderr)).NotTo(ContainSubstring("merge conflict"), "nothing is unmerged, so no advice to resolve a conflict")
 		})
 
 		It("#168 A2b: a root project.json that is committed and is too large on disk exits 2 naming its own path, with no canonical policy, under "+mode.name, func() {
@@ -84,6 +100,8 @@ var _ = Describe("coach codesignal reads the project policy from disk: a discove
 			stdout, stderr, exitCode := mode.run(repo, base, "--format=json")
 
 			expectDiskJudgedRefusal(stdout, stderr, exitCode, legacyConfigPath, "larger than the policy size limit")
+			Expect(string(stderr)).NotTo(ContainSubstring(" at revision "), "the bytes are the disk's, so the words are not the revision's")
+			Expect(string(stderr)).NotTo(ContainSubstring("merge conflict"), "nothing is unmerged, so no advice to resolve a conflict")
 		})
 
 		It("#168 A2b: a root project.json that is not committed and is too large is ignored: the scan uses no policy and reports nothing about it, under "+mode.name, func() {
@@ -108,6 +126,8 @@ var _ = Describe("coach codesignal reads the project policy from disk: a discove
 			stdout, stderr, exitCode := mode.run(repo, base, "--format=json")
 
 			expectDiskJudgedRefusal(stdout, stderr, exitCode, coachConfigPath, "not_a_regular_file")
+			Expect(string(stderr)).NotTo(ContainSubstring(" at revision "), "the bytes are the disk's, so the words are not the revision's")
+			Expect(string(stderr)).NotTo(ContainSubstring("merge conflict"), "nothing is unmerged, so no advice to resolve a conflict")
 		})
 	}
 })

@@ -126,9 +126,6 @@ type PolicyScope struct {
 	// Cause says why the scan used this policy; its values are part of the JSON contract. A producer always
 	// sets it, and a report from an older version that lacks it decodes to PolicyCauseUnset.
 	Cause PolicyCause `json:"cause"`
-	// Reason says why the policy on disk could not be used; it accompanies PolicyCauseUnusableOnDisk and is
-	// text-only, not part of the JSON contract.
-	Reason string `json:"-"`
 }
 
 // PolicyCause says how the policy a scan used relates to the one committed at HEAD. It is a closed enum
@@ -146,8 +143,6 @@ const (
 	PolicyCauseNotCommitted PolicyCause = "not_committed"
 	// PolicyCauseMissingOnDisk means the policy is committed at HEAD and absent on disk, so the scan used the committed copy.
 	PolicyCauseMissingOnDisk PolicyCause = "missing_on_disk"
-	// PolicyCauseUnusableOnDisk means the policy on disk could not be used, so the scan used the committed copy.
-	PolicyCauseUnusableOnDisk PolicyCause = "unusable_on_disk"
 )
 
 // WorktreeScope says what a --worktree scan read from disk and what the working

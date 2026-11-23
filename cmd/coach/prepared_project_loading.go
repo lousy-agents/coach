@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"sync"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
@@ -11,23 +10,20 @@ import (
 )
 
 // loadPreparedProject prepares the analysis of the policy the scan uses. source is the policy the revision holds, or,
-// for a discovered policy that is not committed, an empty Ref: the working tree can still hold one.
-func loadPreparedProject(dir, revision string, source policyref.Ref, language string, diags []codesignal.Diagnostic, ports scanPorts) (preparedProject, error) {
-	disk := sync.OnceValue(func() diskPolicy { return readDiskPolicy(dir, source, ports) })
+// for a discovered policy that is not committed, an empty Ref: the working tree can still hold one. disk is what the
+// working tree selected for it, already judged usable.
+func loadPreparedProject(dir, revision string, source policyref.Ref, language string, diags []codesignal.Diagnostic, disk projectconfig.DiskSelection, ports scanPorts) (preparedProject, error) {
 	committed, err := loadCommittedPolicy(dir, revision, source, disk, ports)
 	if err != nil {
 		return preparedProject{}, withReadinessForLanguage(err, dir, revision, source, language)
 	}
-	if refusal := disk().refusal; refusal != nil && source.Explicit && !committed.present() {
-		return preparedProject{}, withReadinessForLanguage(refusal.ExplicitError(), dir, revision, source, language)
-	}
 	choice := choosePolicy(policyEvidence{
 		committed:        committed,
-		disk:             disk(),
+		disk:             disk,
 		holdsConvertedAt: func(path string) bool { return projectconfig.HoldsCommittedPolicyConverted(dir, revision, path) },
 	})
 	if choice.scope.Path == "" {
-		return preparedProject{diagnostics: append(diags, withoutPathsAlreadyUnusable(choice.diagnostics, diags)...)}, nil
+		return preparedProject{diagnostics: diags}, nil
 	}
 	return prepareAnalysis(choice, source, language, diags, ports)
 }
@@ -40,7 +36,7 @@ func prepareAnalysis(choice policyChoice, source policyref.Ref, language string,
 		return preparedProject{}, err
 	}
 	if backend == nil {
-		kept := append(withoutOutdatedDeprecation(diags, choice.scope.Path), choice.diagnostics...)
+		kept := withoutOutdatedDeprecation(diags, choice.scope.Path)
 		return preparedProject{diagnostics: appendDiagnostic(kept, backendUnavailableDiagnostic(choice.scope.Path, unavailable))}, nil
 	}
 	return analysisOf(choice, source, language, backend, diags), nil
@@ -56,6 +52,6 @@ func analysisOf(choice policyChoice, source policyref.Ref, language string, back
 			PolicyScope:  choice.scope,
 			Backend:      backend,
 		},
-		diagnostics: append(withoutOutdatedDeprecation(diags, choice.scope.Path), choice.diagnostics...),
+		diagnostics: withoutOutdatedDeprecation(diags, choice.scope.Path),
 	}
 }

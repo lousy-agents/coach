@@ -30,7 +30,7 @@ func effectivePolicyCause(policy *codesignal.PolicyScope) codesignal.PolicyCause
 		return codesignal.PolicyCauseSameAsHead
 	}
 	switch policy.Cause {
-	case codesignal.PolicyCauseNotCommitted, codesignal.PolicyCauseMissingOnDisk, codesignal.PolicyCauseUnusableOnDisk:
+	case codesignal.PolicyCauseNotCommitted, codesignal.PolicyCauseMissingOnDisk:
 		return policy.Cause
 	}
 	return codesignal.PolicyCauseDiffersFromHead
@@ -62,8 +62,6 @@ func policyWarning(policy *codesignal.PolicyScope, cause codesignal.PolicyCause)
 		return fmt.Sprintf("WARNING: the project policy %s is on disk and not committed at HEAD; this scan used it.", terminalText(policy.Path))
 	case codesignal.PolicyCauseMissingOnDisk:
 		return fmt.Sprintf("WARNING: %s is committed at HEAD and missing on disk; this scan used the committed copy.", terminalText(policy.Path))
-	case codesignal.PolicyCauseUnusableOnDisk:
-		return fmt.Sprintf("WARNING: the project policy on disk cannot be used (%s); this scan used the committed copy.", policy.Reason)
 	}
 	return ""
 }
@@ -80,8 +78,6 @@ func policyVerdictClause(report *codesignal.Report) string {
 		return "the project policy on disk is not committed at HEAD"
 	case codesignal.PolicyCauseMissingOnDisk:
 		return "the project policy is missing on disk and the committed copy was used"
-	case codesignal.PolicyCauseUnusableOnDisk:
-		return "the project policy on disk cannot be used and the committed copy was used"
 	}
 	return "the project policy on disk differs from HEAD"
 }

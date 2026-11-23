@@ -36,13 +36,13 @@ func linkTheDirectoryOfTheCanonicalPath(repo string) {
 // place for project.json to go.
 func occupiedCanonicalEntries() []TableEntry {
 	return []TableEntry{
-		Entry("a directory", canonicalState{makeTheCanonicalDirectory, "not_a_regular_file", "project_config_unusable"}),
-		Entry("a symbolic link to a directory", canonicalState{linkTheCanonicalPathToADirectory, "symbolic_link", "project_config_unusable"}),
-		Entry("a symbolic link to a file", canonicalState{linkTheCanonicalPathToAFile, "symbolic_link", "project_config_unusable"}),
-		Entry("a symbolic link to nothing", canonicalState{linkTheCanonicalPath, "symbolic_link", "project_config_unusable"}),
-		Entry("a file where .lousy-agents should be", canonicalState{putAFileInPlaceOfTheDirectory, "parent_not_directory", "project_config_unusable"}),
-		Entry(".lousy-agents as a symbolic link to a directory", canonicalState{linkTheDirectoryOfTheCanonicalPath, "symbolic_link", "project_config_unusable"}),
-		Entry("a parent the process cannot search", canonicalState{makeTheParentUnsearchable, "unreadable_on_disk", "project_config_unusable"}),
+		Entry("a directory", canonicalState{makeTheCanonicalDirectory, "not_a_regular_file"}),
+		Entry("a symbolic link to a directory", canonicalState{linkTheCanonicalPathToADirectory, "symbolic_link"}),
+		Entry("a symbolic link to a file", canonicalState{linkTheCanonicalPathToAFile, "symbolic_link"}),
+		Entry("a symbolic link to nothing", canonicalState{linkTheCanonicalPath, "symbolic_link"}),
+		Entry("a file where .lousy-agents should be", canonicalState{putAFileInPlaceOfTheDirectory, "parent_not_directory"}),
+		Entry(".lousy-agents as a symbolic link to a directory", canonicalState{linkTheDirectoryOfTheCanonicalPath, "symbolic_link"}),
+		Entry("a parent the process cannot search", canonicalState{makeTheParentUnsearchable, "unreadable_on_disk"}),
 	}
 }
 
@@ -71,5 +71,18 @@ var _ = Describe("coach project config migration: where the default policy's pat
 
 		Expect(exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
 		expectDiagnosticKind(decodeCoachReport(stdout), "project_config_migration_skipped", legacyConfigPath)
+	})
+
+	It("#168 A2b: asks nothing and copies nothing when the committed project.json is a directory on disk, and exits 2 naming it", func() {
+		repo := commitDeprecatedProjectConfigRepo()
+		Expect(os.Remove(filepath.Join(repo, legacyConfigPath))).To(Succeed())
+		Expect(os.Mkdir(filepath.Join(repo, legacyConfigPath), 0o755)).To(Succeed())
+		before := treeOf(repo)
+
+		stdout, stderr, exitCode := runMigrationBaselineOnTerminal(repo, projectConfigMigrationEnv(), "y\n")
+
+		expectDiskJudgedRefusal(stdout, stderr, exitCode, legacyConfigPath, "not_a_regular_file")
+		Expect(string(stderr)).NotTo(ContainSubstring(projectConfigCopyPrompt), "the refusal comes before the offer")
+		Expect(treeOf(repo)).To(Equal(before))
 	})
 })

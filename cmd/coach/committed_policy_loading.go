@@ -17,7 +17,7 @@ const (
 // a blob at its path: a file that is on disk and not committed is the policy on disk alone. Every other named path goes
 // through the loader, so that a missing or unusable file, a path that cannot name a policy, and a file inside a
 // submodule checkout, which this repository can never commit, keep the refusal they always had.
-func loadCommittedPolicy(dir, revision string, source policyref.Ref, disk func() diskPolicy, ports scanPorts) (committedPolicy, error) {
+func loadCommittedPolicy(dir, revision string, source policyref.Ref, disk projectconfig.DiskSelection, ports scanPorts) (committedPolicy, error) {
 	if source.Path == "" {
 		return committedPolicy{}, nil
 	}
@@ -26,7 +26,7 @@ func loadCommittedPolicy(dir, revision string, source policyref.Ref, disk func()
 		if err != nil {
 			return committedPolicy{}, err
 		}
-		if !held && disk().present() && !insideSubmodule(dir, revision, source.Path) {
+		if !held && disk.Path != "" && !insideSubmodule(dir, revision, source.Path) {
 			return committedPolicy{}, explicitOnDiskRefusal(dir, revision, source.Path)
 		}
 	}

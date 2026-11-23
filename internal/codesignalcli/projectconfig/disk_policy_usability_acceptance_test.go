@@ -2,11 +2,14 @@ package projectconfig
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -132,10 +135,30 @@ var _ = Describe("the policy on disk, read once and judged from the bytes read",
 			Expect(*refusal).To(Equal(DiskPolicyRefusal{Path: "../outside.json", Reason: "unreadable"}))
 		})
 
-		It("calls any other failure unreadable", func() {
-			refusal := ClassifyDiskPolicyError(DefaultPath, errors.New("input/output error"))
+		It("is no refusal for a bare permission error, which names no path and so stays an operational error", func() {
+			Expect(ClassifyDiskPolicyError("", &fs.PathError{Op: "open", Path: DefaultPath, Err: syscall.EACCES})).To(BeNil())
+		})
+
+		It("calls a refusal of a file that cannot be read unreadable, with the cause unreadable_on_disk", func() {
+			refusal := ClassifyDiskPolicyError("", &DiskPolicyRefusal{Path: DefaultPath, Reason: "unreadable"})
 
 			Expect(*refusal).To(Equal(DiskPolicyRefusal{Path: DefaultPath, Reason: "unreadable"}))
+			Expect(refusal.Cause()).To(Equal(projectreadiness.CauseUnreadableOnDisk))
+		})
+
+		It("is no refusal for a failure that is not about the file's own state, which stays an operational error", func() {
+			Expect(ClassifyDiskPolicyError(DefaultPath, errors.New("input/output error"))).To(BeNil())
+		})
+
+		It("leaves a git failure to find the repository root operational, and not an unusable policy", func() {
+			failure := errors.New("git: executable file not found")
+			run := func(dir string, args ...string) ([]byte, error) { return nil, failure }
+
+			selected, err := selectOnDiskThrough(run, repo, "")
+
+			Expect(err).To(HaveOccurred())
+			Expect(ClassifyDiskPolicyError(CanonicalPath, err)).To(BeNil())
+			Expect(selected).To(Equal(DiskSelection{}))
 		})
 
 		It("is nothing for no error", func() {

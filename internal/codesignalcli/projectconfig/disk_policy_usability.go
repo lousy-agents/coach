@@ -17,19 +17,34 @@ const (
 )
 
 // DiskPolicyRefusal is why the policy on disk cannot be used. Reason is one of a fixed set of phrases, so a caller can
-// print it as it stands.
-type DiskPolicyRefusal struct{ Path, Reason string }
+// print it as it stands. Directory is set where the entry that is not a regular file is a directory, which the Reason
+// does not say: a named pipe has the same one.
+type DiskPolicyRefusal struct {
+	Path, Reason string
+	Directory    bool
+}
 
 func (refusal *DiskPolicyRefusal) Error() string { return refusal.Path + ": " + refusal.Reason }
 
-// ExplicitError is the refusal of a policy the user named with --project-config: that path is the policy or the scan
-// stops, never a different policy or none.
-func (refusal *DiskPolicyRefusal) ExplicitError() error {
-	cause := projectreadiness.PolicyCause("")
-	if refusal.Reason == refusalUnreadable {
-		cause = projectreadiness.CauseUnreadableOnDisk
-	}
-	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: cause, Message: fmt.Sprintf("coach codesignal: --project-config %q cannot be used on disk (project_config_invalid): %s", refusal.Path, refusal.Reason)}
+// Cause is the stable word for the refusals that have one, which are the entries that cannot be a file. A policy that is
+// too large or not valid has none: its reason is the whole answer.
+func (refusal DiskPolicyRefusal) Cause() projectreadiness.PolicyCause {
+	return refusalCauses[refusal.Reason]
+}
+
+var refusalCauses = map[string]projectreadiness.PolicyCause{
+	refusalNotRegular: projectreadiness.CauseNotARegularFile,
+	refusalLink:       projectreadiness.CauseSymbolicLink,
+	refusalParent:     projectreadiness.CauseParentNotDirectory,
+	refusalUnreadable: projectreadiness.CauseUnreadableOnDisk,
+}
+
+// entryRefusalReasons name what is wrong with an entry, by the cause the disk check gave; a cause missing here is a
+// path the process could not check, which reads as unreadable.
+var entryRefusalReasons = map[projectreadiness.PolicyCause]string{
+	projectreadiness.CauseNotARegularFile:    refusalNotRegular,
+	projectreadiness.CauseSymbolicLink:       refusalLink,
+	projectreadiness.CauseParentNotDirectory: refusalParent,
 }
 
 // invalidDiskPolicyError marks a Parse failure, so ClassifyDiskPolicyError can tell a policy that was read but is
@@ -52,18 +67,23 @@ func UsableDiskPolicy(selection DiskSelection) (Config, error) {
 	return config, nil
 }
 
-// ClassifyDiskPolicyError is the refusal for an error from SelectOnDisk or UsableDiskPolicy, or nil for no error.
+// ClassifyDiskPolicyError is the refusal for an error from SelectOnDisk or UsableDiskPolicy, and nil for no error and
+// for an error that is not about the file's own state (git failing to find the repository, a timeout), which stays the
+// operational failure it is: reading it as an unusable policy would send a broken environment to the user as a defect
+// of their file.
 func ClassifyDiskPolicyError(path string, err error) *DiskPolicyRefusal {
-	if err == nil {
-		return nil
-	}
+	var typed *DiskPolicyRefusal
 	var oversize *oversizePolicyError
 	var invalid *invalidDiskPolicyError
 	switch {
+	case err == nil:
+		return nil
+	case errors.As(err, &typed):
+		return typed
 	case errors.As(err, &oversize):
 		return &DiskPolicyRefusal{Path: path, Reason: refusalOversize}
 	case errors.As(err, &invalid):
 		return &DiskPolicyRefusal{Path: path, Reason: refusalInvalid}
 	}
-	return &DiskPolicyRefusal{Path: path, Reason: refusalUnreadable}
+	return nil
 }

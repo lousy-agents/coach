@@ -17,21 +17,26 @@ type preparedProject struct {
 
 func prepareProjectAnalysis(dir, revision string, named policyref.Ref, language string, ports scanPorts) (preparedProject, error) {
 	if named.JudgedOnDisk() {
-		return loadPreparedProject(dir, revision, named, language, nil, ports)
+		disk, err := judgeNamedOnDisk(dir, revision, named, ports)
+		if err != nil {
+			return preparedProject{}, withReadinessForLanguage(err, dir, revision, named, language)
+		}
+		return loadPreparedProject(dir, revision, named, language, nil, disk, ports)
 	}
 	selection, err := ports.discover(dir, revision)
 	if err != nil {
 		return preparedProject{}, err
 	}
+	disk, err := judgeDiscoveredOnDisk(dir, revision, selection, ports)
+	if err != nil {
+		return preparedProject{}, withReadinessForLanguage(err, dir, revision, policyref.Ref{}, language)
+	}
 	if selection.Fatal != nil {
 		// Path stays empty: Load rejected the canonical file. The TypeScript
 		// wrap is what prints the gaps that rejection would otherwise hide.
-		if language == "typescript" {
-			return preparedProject{}, tssetup.WrapProjectConfigErrorWithReadiness(selection.Fatal, dir, revision, policyref.Ref{})
-		}
-		return preparedProject{}, selection.Fatal
+		return preparedProject{}, withReadinessForLanguage(selection.Fatal, dir, revision, policyref.Ref{}, language)
 	}
-	return loadPreparedProject(dir, revision, policyref.Discovered(selection.Path), language, projectSelectionDiagnostics(selection), ports)
+	return loadPreparedProject(dir, revision, policyref.Discovered(selection.Path), language, projectSelectionDiagnostics(selection), disk, ports)
 }
 
 func withReadinessForLanguage(err error, dir, revision string, policy policyref.Ref, language string) error {

@@ -240,12 +240,8 @@ func requireNoOfferWhereThePathIsOccupied(s canonicalState) {
 
 	stdout, stderr, exitCode := runMigrationBaselineOnTerminal(repo, projectConfigMigrationEnv(), "y\n")
 
-	Expect(exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
+	expectDiskJudgedRefusal(stdout, stderr, exitCode, coachConfigPath, "cause="+s.wantCause)
 	Expect(string(stderr)).NotTo(ContainSubstring("Copy project.json"), "the path cannot be the policy, so there is nowhere to copy to")
-	report := decodeCoachReport(stdout)
-	expectDiagnosticKind(report, s.wantKind, coachConfigPath)
-	expectNoDiagnosticKind(report, "project_config_migration_failed")
-	expectNoDiagnosticKind(report, "project_config_migration_skipped")
 	Expect(treeOf(repo)).To(Equal(before), "answering yes changed the worktree")
 }
 
