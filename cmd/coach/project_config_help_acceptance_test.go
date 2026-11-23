@@ -11,7 +11,7 @@ var _ = Describe("coach codesignal --help describing where --project-config is r
 
 		help := string(stdout) + string(stderr)
 		Expect(exitCode).To(Equal(0))
-		Expect(help).To(MatchRegexp(`(?s)-project-config string\n\s+[^\n]*read from disk[^\n]*HEAD`))
+		Expect(help).To(MatchRegexp(`(?s)-project-config string\n\s+[^\n]*from disk[^\n]*against HEAD`))
 		Expect(help).NotTo(ContainSubstring("read at the selected revision"))
 	})
 })
