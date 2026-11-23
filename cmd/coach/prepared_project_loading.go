@@ -20,7 +20,7 @@ func loadPreparedProject(dir, revision string, source policyref.Ref, language st
 	diags = withDiskSelectionDiagnostics(diags, source, disk)
 	choice := choosePolicy(evidence)
 	if choice.scope.Path == "" {
-		return preparedProject{diagnostics: diags}, nil
+		return preparedProject{diagnostics: withoutOutdatedDeprecation(diags, "")}, nil
 	}
 	return prepareAnalysis(choice, source, language, diags, ports)
 }

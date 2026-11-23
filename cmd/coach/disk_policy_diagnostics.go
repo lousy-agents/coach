@@ -12,7 +12,7 @@ import (
 // absent whenever the working tree selects the root project.json or none; the root project.json is absent only when
 // the working tree selects none.
 func withDiskSelectionDiagnostics(diags []codesignal.Diagnostic, source policyref.Ref, disk projectconfig.DiskSelection) []codesignal.Diagnostic {
-	if !source.Explicit && disk.Path == projectconfig.DefaultPath && !hasDiagnosticKind(diags, "project_config_deprecated") {
+	if _, deprecated := codesignal.DiagnosticOfKind(diags, "project_config_deprecated"); !source.Explicit && disk.Path == projectconfig.DefaultPath && !deprecated {
 		diags = appendDiagnostic(diags, codesignal.Diagnostic{
 			Kind:    "project_config_deprecated",
 			Path:    projectconfig.DefaultPath,
@@ -28,24 +28,4 @@ func withDiskSelectionDiagnostics(diags []codesignal.Diagnostic, source policyre
 		Path:    source.Path,
 		Message: "The project policy HEAD selects is not on disk, so this scan did not read it.",
 	})
-}
-
-// absentPolicyPath is the policy the revision selects that the working tree does not hold, empty where there is none.
-// A worktree scan counts git hiding that path as in-scope.
-func absentPolicyPath(diags []codesignal.Diagnostic) string {
-	for _, diag := range diags {
-		if diag.Kind == codesignal.DiagKindProjectPolicyAbsentOnDisk {
-			return diag.Path
-		}
-	}
-	return ""
-}
-
-func hasDiagnosticKind(diags []codesignal.Diagnostic, kind string) bool {
-	for _, diag := range diags {
-		if diag.Kind == kind {
-			return true
-		}
-	}
-	return false
 }

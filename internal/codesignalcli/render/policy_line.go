@@ -12,17 +12,17 @@ const policyDigestPrefixHexLength = 12
 // renderPolicyDisclosure says, directly under the scan's summary line, which project policy the scan used and,
 // when that policy is not the committed one at HEAD, warns that the result can differ from CI.
 func renderPolicyDisclosure(b *strings.Builder, report *codesignal.Report) {
-	absent := absentPolicyPath(report.Diagnostics)
+	absent, hasAbsent := codesignal.DiagnosticOfKind(report.Diagnostics, codesignal.DiagKindProjectPolicyAbsentOnDisk)
 	policy := report.Scope.Policy
 	if policy != nil {
 		cause := effectivePolicyCause(policy)
 		fmt.Fprintf(b, "policy: %s (%s), %s\n", terminalText(policy.Path), shortPolicyDigest(policy.Digest), policyHeadRelation(cause))
-		if warning := policyWarning(policy, cause); warning != "" && !(absent != "" && cause == codesignal.PolicyCauseDiffersFromHead) {
+		if warning := policyWarning(policy, cause); warning != "" && !(hasAbsent && cause == codesignal.PolicyCauseDiffersFromHead) {
 			b.WriteString(warning + "\n")
 		}
 	}
-	if absent != "" {
-		b.WriteString(absentPolicyWarning(absent, policy) + "\n")
+	if hasAbsent {
+		b.WriteString(absentPolicyWarning(absent.Path, policy) + "\n")
 	}
 }
 

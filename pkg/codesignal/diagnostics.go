@@ -84,6 +84,16 @@ const (
 // did not read it. Path is the policy HEAD selects; scope.policy names the policy the scan used instead, or is null.
 const DiagKindProjectPolicyAbsentOnDisk = "project_policy_absent_on_disk"
 
+// DiagnosticOfKind is the first diagnostic of kind, and whether there is one.
+func DiagnosticOfKind(diagnostics []Diagnostic, kind string) (Diagnostic, bool) {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Kind == kind {
+			return diagnostic, true
+		}
+	}
+	return Diagnostic{}, false
+}
+
 // SortDiagnostics orders diagnostics by path, kind, location, then message.
 // Callers that append diagnostics after Build must use this so report order
 // stays identical to Build's own sortDiagnostics pass.

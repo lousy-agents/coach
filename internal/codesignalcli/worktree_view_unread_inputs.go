@@ -15,11 +15,12 @@ import (
 // select. A dirty file of any kind is named whatever else the scan discloses.
 type unreadInputs struct {
 	policy string
+	absent []string
 	named  []string
 }
 
-func (v *WorktreeView) unreadInputs(entries []gitrepo.WorktreeEntry, policyPath string) unreadInputs {
-	inputs := unreadInputs{policy: policyPath}
+func (v *WorktreeView) unreadInputs(entries []gitrepo.WorktreeEntry, policyPath string, absentPolicyPaths ...string) unreadInputs {
+	inputs := unreadInputs{policy: policyPath, absent: absentPolicyPaths}
 	for _, entry := range entries {
 		if !isProjectPolicyFile(entry.Path) && v.unreadConfig(entry.Path) {
 			inputs.named = append(inputs.named, entry.Path)
@@ -40,10 +41,11 @@ func (v *WorktreeView) unreadConfig(name string) bool {
 }
 
 // hasOwnDiagnostic is true for the selected project policy: the scan reads it
-// from disk, so no disclosure lists it as unread. A policy-named file the
+// from disk, so no disclosure lists it as unread. The policy the revision selects
+// and the disk lacks has project_policy_absent_on_disk instead. A policy-named file the
 // selection did not pick is never opened and is disclosed like any other.
 func (u unreadInputs) hasOwnDiagnostic(name string) bool {
-	return gitrepo.SamePath(name, u.policy)
+	return gitrepo.SamePath(name, u.policy) || isAbsentPolicy(name, u.absent)
 }
 
 // policyDiagnostics is empty: an uncommitted project policy is read, not

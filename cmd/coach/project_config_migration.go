@@ -30,7 +30,8 @@ func prepareScanProjectAnalysis(dir, revision string, f codesignalFlags, status 
 		project = &codesignalcli.ProjectAnalysis{}
 	}
 	if project != nil {
-		project.AbsentPolicyPath = absentPolicyPath(prepared.diagnostics)
+		absent, _ := codesignal.DiagnosticOfKind(prepared.diagnostics, codesignal.DiagKindProjectPolicyAbsentOnDisk)
+		project.AbsentPolicyPath = absent.Path
 		project.Worktree = view
 		project.Status = status.get()
 	}
@@ -67,7 +68,11 @@ func deprecatedProjectConfigCanMigrate(dir, revision string, f codesignalFlags, 
 		return false
 	}
 	selection, err := ports.discover(dir, revision)
-	return err == nil && selection.Fatal == nil && selection.Deprecated && !selection.CanonicalPathTaken()
+	if err != nil || selection.Fatal != nil || !selection.Deprecated || selection.CanonicalPathTaken() {
+		return false
+	}
+	disk, err := ports.selectOnDisk(dir, "")
+	return err == nil && disk.Path == projectconfig.DefaultPath
 }
 
 func projectConfigMigrationSkipped() codesignal.Diagnostic {

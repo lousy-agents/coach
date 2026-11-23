@@ -172,7 +172,7 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 	}
 	roots := selectedRootsFromConfig(project.Config)
 	if project.Worktree == nil {
-		diagnostics = appendProjectWorktreeDiagnostic(diagnostics, project.Status, roots, project.Policy)
+		diagnostics = appendProjectWorktreeDiagnostic(diagnostics, project.Status, roots, project.Policy, project.absentPolicyPaths()...)
 	}
 
 	merged := codesignal.Input{

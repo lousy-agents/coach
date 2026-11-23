@@ -22,11 +22,12 @@ func (v *WorktreeView) ReadFromDisk(name string) bool {
 // submodule root has its own worktree_scan_incomplete entry), file-local analysis
 // read it, the scope filter excluded it, an unsupported_language diagnostic
 // names it, or the analysis read it as project configuration; new files are
-// analyzed, so they are not left in. An uncommitted edit to policyPath is
-// always disclosed, because the policy is read from the commit.
+// analyzed, so they are not left in. absentPolicyPaths are policies the revision
+// selects that the working tree lacks: they are in-scope when git hides them, and
+// a change to one is no unread change because project_policy_absent_on_disk names it.
 func (v *WorktreeView) Disclosure(dir, revision, policyPath string, absentPolicyPaths ...string) []codesignal.Diagnostic {
 	policyPaths := append([]string{policyPath}, absentPolicyPaths...)
-	return append(v.sparseGuard(dir, policyPaths), v.unreadDisclosure(dir, revision, policyPath)...)
+	return append(v.sparseGuard(dir, policyPaths), v.unreadDisclosure(dir, revision, policyPath, absentPolicyPaths...)...)
 }
 
 // sparseGuard makes the scan incomplete when git hides tracked paths from the
@@ -47,12 +48,12 @@ func (v *WorktreeView) sparseGuard(dir string, policyPaths []string) []codesigna
 	return append(diagnostics, statusWarningDiagnostics(v.status.Warnings)...)
 }
 
-func (v *WorktreeView) unreadDisclosure(dir, revision, policyPath string) []codesignal.Diagnostic {
+func (v *WorktreeView) unreadDisclosure(dir, revision, policyPath string, absentPolicyPaths ...string) []codesignal.Diagnostic {
 	if _, err := v.OpenHead(dir, revision); err != nil {
 		return []codesignal.Diagnostic{worktreeStatusFailureDiagnostic(err)}
 	}
 	entries := v.status.Entries
-	inputs := v.unreadInputs(entries, policyPath)
+	inputs := v.unreadInputs(entries, policyPath, absentPolicyPaths...)
 	// sparseGuard reports a failed read, so here an unread nested state only
 	// leaves more paths named.
 	nested, _ := v.nestedRepositories(dir)

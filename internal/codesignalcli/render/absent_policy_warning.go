@@ -6,16 +6,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-// absentPolicyPath is the policy HEAD selects that the working tree does not hold, empty when there is none.
-func absentPolicyPath(diagnostics []codesignal.Diagnostic) string {
-	for _, diagnostic := range diagnostics {
-		if diagnostic.Kind == codesignal.DiagKindProjectPolicyAbsentOnDisk {
-			return diagnostic.Path
-		}
-	}
-	return ""
-}
-
 // absentPolicyWarning replaces the generic differs-from-HEAD warning where the difference is that the policy HEAD
 // selects is gone from disk, and says that the scan fell back to another file or to none.
 func absentPolicyWarning(headPath string, used *codesignal.PolicyScope) string {

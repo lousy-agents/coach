@@ -7,19 +7,20 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-func appendProjectWorktreeDiagnostic(diagnostics []codesignal.Diagnostic, status WorktreeStatus, roots []string, policy policyref.Ref) []codesignal.Diagnostic {
+func appendProjectWorktreeDiagnostic(diagnostics []codesignal.Diagnostic, status WorktreeStatus, roots []string, policy policyref.Ref, absentPolicyPaths ...string) []codesignal.Diagnostic {
 	entries, err := status.Entries, status.Err
 	if err != nil {
-		if hasDiagnosticKind(diagnostics, codesignal.DiagKindWorktreeStatusCheckFailed) ||
-			hasDiagnosticKind(diagnostics, codesignal.DiagKindWorktreeNotClean) {
+		_, failureReported := codesignal.DiagnosticOfKind(diagnostics, codesignal.DiagKindWorktreeStatusCheckFailed)
+		_, notCleanReported := codesignal.DiagnosticOfKind(diagnostics, codesignal.DiagKindWorktreeNotClean)
+		if failureReported || notCleanReported {
 			return diagnostics
 		}
 		return appendDiagnosticCopy(diagnostics, worktreeStatusFailureDiagnostic(err))
 	}
-	if !hasRelevantDirtyWorktree(entries, roots, policy.Path) {
+	if !hasRelevantDirtyWorktree(entries, roots, policy.Path, absentPolicyPaths) {
 		return diagnostics
 	}
-	if hasDiagnosticKind(diagnostics, codesignal.DiagKindWorktreeReportReflectsCommittedHEAD) {
+	if _, reported := codesignal.DiagnosticOfKind(diagnostics, codesignal.DiagKindWorktreeReportReflectsCommittedHEAD); reported {
 		return diagnostics
 	}
 	return appendDiagnosticCopy(diagnostics, codesignal.Diagnostic{
@@ -28,21 +29,12 @@ func appendProjectWorktreeDiagnostic(diagnostics []codesignal.Diagnostic, status
 	})
 }
 
-func hasRelevantDirtyWorktree(entries []gitrepo.WorktreeEntry, roots []string, policyPath string) bool {
+func hasRelevantDirtyWorktree(entries []gitrepo.WorktreeEntry, roots []string, policyPath string, absentPolicyPaths []string) bool {
 	for _, entry := range entries {
-		if gitrepo.SamePath(entry.Path, policyPath) {
+		if gitrepo.SamePath(entry.Path, policyPath) || isAbsentPolicy(entry.Path, absentPolicyPaths) {
 			continue
 		}
 		if projectcheck.IsRelevantDirtyPath(entry.Path, roots, policyPath) {
-			return true
-		}
-	}
-	return false
-}
-
-func hasDiagnosticKind(diagnostics []codesignal.Diagnostic, kind string) bool {
-	for _, diagnostic := range diagnostics {
-		if diagnostic.Kind == kind {
 			return true
 		}
 	}
