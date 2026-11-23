@@ -50,6 +50,83 @@ measured ~239s, of which roughly 180s is deliberate blocking on
 paid twice across the project-backend and no-findings-verdict acceptance specs.
 Read `ci-fast` as "narrower than CI", not as "quick".
 
+## Running tests under CI's conditions
+
+A spec can pass in an agent sandbox and fail in CI because the two differ (#733):
+
+| Input | CI (`ubuntu-latest`) | Agent sandbox |
+| --- | --- | --- |
+| User | `runner`, not root | root |
+| HOME and user-level git config | a fresh HOME with no git identity | the user's global config, with an identity and commit signing |
+| git | floats with the runner image: 2.55.0, then 2.56.0, then 2.56.1; the `distro-git` leg runs Ubuntu 24.04's own 2.43.0 | 2.43.0 |
+
+`mise run acceptance-ci-env` runs Go tests under CI's conditions. Pass packages
+after `--`; the default is `./...`:
+
+```sh
+mise run acceptance-ci-env -- ./cmd/coach/...
+```
+
+It runs the tests as a non-root user. Run as root, it runs them as `nobody`, over
+copies of the repository (with `.git`) and of the mise toolchains on PATH,
+readable by `nobody`'s group only. It also gives `nobody` its own copy of the
+module cache, made once per `go.sum`. All of these are cached under
+`$COACH_CI_ENV_CACHE` (default `$TMPDIR/coach-ci-env-<uid>`); an existing cache
+root must be owned by the running user and writable by no one else.
+Run as root, it needs a normal clone. In a linked worktree `.git` is a file
+that points into the main repository's `.git`, which the copy does not include
+and `nobody` may not be able to read, and `go build` then fails with
+`error obtaining VCS status`.
+
+It gives the tests:
+
+- an empty HOME, `XDG_CONFIG_HOME` and `GIT_CONFIG_GLOBAL`, with the Go caches
+  named outside HOME, and a `TMPDIR` of their own, which `go test` writes its
+  build directory into before the tests start;
+- the system git config as it is;
+- no git configuration or identity carried in the environment
+  (`GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, `GIT_CONFIG_PARAMETERS`,
+  `GIT_AUTHOR_*`, `GIT_COMMITTER_*`), which CI does not set;
+- CI's PATH, the mise toolchain, with the checked git first.
+
+The runner image's git floats, and the task is pinned. `COACH_CI_GIT_VERSION` in
+the task's `env` in `mise.toml` is the one place that git's version is stated;
+bump it when the runner image's git moves. The `distro-git` leg states its own,
+2.43.0, in its job's `env` in `ci.yml`, because it runs Ubuntu 24.04's git, which
+does not move. The task prints the git it used. It takes that git from
+`COACH_CI_GIT`, or from PATH. When that git is not the pinned version, it exits
+non-zero and names both versions, and runs no test.
+`COACH_CI_GIT_ALLOW_MISMATCH=1` runs the user and HOME legs anyway, and prints
+`WARNING: the git-version leg was NOT covered`. An agent sandbox cannot build the
+runner image's git, so a sandbox run of the task uses
+`COACH_CI_GIT_ALLOW_MISMATCH=1`. A sandbox whose git is 2.43.0 can run the
+`distro-git` leg's conditions in full, with the program the task runs, because
+the task's own pin wins over the caller's:
+
+```sh
+COACH_CI_GIT_VERSION=2.43.0 mise exec -- go run ./cmd/acceptance-ci-env ./...
+```
+
+The `ts-project-backend` specs need `js/semantics/node_modules`, which CI's job
+installs with `mise run js-install` before it runs them. To run them as that
+job does, install first, then pass the job's own arguments (from the
+`ts-project-backend-acceptance` task in `mise.toml`):
+
+```sh
+mise run js-install
+mise run acceptance-ci-env -- -race ./cmd/coach/... ./internal/codesignalcli -run Acceptance -args -ginkgo.label-filter=ts-project-backend -ginkgo.fail-on-empty
+```
+
+When `node_modules` is installed, the task copies it into its repository copy
+(following links) and says so. When it is missing, a run whose label filter
+selects `ts-project-backend` is refused, naming `mise run js-install`; any
+other run says that those specs will skip.
+
+A spec that cannot build its state as root, such as a mode 000 file, skips
+under root and says that `mise run acceptance-ci-env` runs it as non-root. A test
+that needs a newer git than the one running skips, naming the version it
+needs.
+
 ## Cross-language acceptance gates
 
 A gate whose acceptance criteria assert on the rendered CLI report across both
@@ -70,7 +147,7 @@ GHA is a parallel scheduler of atomic `mise run <task>` steps. The local
 `ci` / `ci-fast` / `ci-all` composites are serial bundles of the same tasks; the
 workflow does not invoke those composites.
 
-Eight independent leaf jobs plus a `status` aggregator:
+Nine independent leaf jobs plus a `status` aggregator:
 
 - `verify` — `ci-go`: gofmt / go-vet / tidy-check / acceptance-style-check /
   source-layout-check / test / test-examples. `install_args` names Go, pnpm,
@@ -94,6 +171,16 @@ Eight independent leaf jobs plus a `status` aggregator:
   running, because a mise regression that declined the override would otherwise re-run the
   Node 24 leg and stay green, leaving the supported {24,26} set half-proven.
 - `wasm-build` — `mise run wasm-build`.
+- `distro-git` — the Go tests (`./...`) through `cmd/acceptance-ci-env`, in an
+  `ubuntu:24.04` container with that release's own git 2.43, the oldest git
+  `docs/cli-codesignal.md` names. The specs that need git 2.44 or later skip
+  there, and so do the `ts-project-backend` specs, because the job does not
+  install `js/semantics/node_modules`; `verify` and the `ts-project-backend`
+  and `ts-project-backend-node26` legs run them, under the runner image's git.
+  The job sets `COACH_CI_GIT_VERSION=2.43.0`, so the program refuses any other
+  git, and, run as root in the container, runs the tests as `nobody` with an
+  empty HOME. Every other leaf runs the runner
+  image's git, which floats. Allow 60 minutes.
 - `vulncheck` — `mise run vulncheck`. Symbol-level source scan, text output, so a reachable vulnerable symbol exits 3 and fails the job. `install_args` names Go and the pinned `govulncheck`; the Go module cache matches the other Go jobs. The vulnerability database is not cached. SARIF is not uploaded: that format exits 0 when findings exist, and an upload would need code-scanning write on a workflow whose grant is `contents: read`.
 - `platform-smoke` — `platform-up` / `platform-smoke` / `platform-down` as three
   steps, so teardown still runs on failure.

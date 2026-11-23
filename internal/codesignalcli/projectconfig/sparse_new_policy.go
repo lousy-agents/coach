@@ -30,6 +30,6 @@ func newPolicyMayNeedSparse(run gitrepo.Runner, dir, repoPath string) bool {
 	if err != nil || worktreeHolds(root, parent) {
 		return false
 	}
-	out, err := run(dir, "config", "--type=bool", "--get", "core.sparseCheckout")
+	out, err := run(dir, "config", "--bool", "--get", "core.sparseCheckout")
 	return err == nil && strings.TrimSpace(string(out)) == "true"
 }
