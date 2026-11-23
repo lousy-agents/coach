@@ -24,7 +24,6 @@ var _ = Describe("coach project config migration: the move the docs give is the 
 			Expect(text).To(ContainSubstring(printedMove), "%s must give the command the scan prints", doc)
 			Expect(text).NotTo(ContainSubstring("mkdir -p .lousy-agents && git mv"), "%s still gives the relative command", doc)
 		},
-		Entry("the README", "README.md"),
 		Entry("the config convention", "docs/conventions/lousy-agents-config.md"),
 		Entry("the CLI contract", "docs/cli-codesignal.md"),
 	)

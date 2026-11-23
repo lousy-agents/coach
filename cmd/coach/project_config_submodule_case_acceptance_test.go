@@ -44,9 +44,9 @@ var _ = Describe("coach codesignal: a policy named below a submodule in another 
 	)
 })
 
-var _ = Describe("the README: a submodule named in another case than the index records it", func() {
+var _ = Describe("the CLI contract: a submodule named in another case than the index records it", func() {
 	It("says the name is inside the submodule where git ignores case, and the message names the submodule as recorded", func() {
-		bullet := readmeBullet("A policy inside a submodule checkout")
+		bullet := cliContractBullet("A policy inside a submodule checkout")
 		text := strings.Join(strings.Fields(bullet), " ")
 
 		Expect(text).To(ContainSubstring("A name that spells the submodule's own path in another case than the index records it, where git ignores case (`core.ignorecase`), is inside it all the same, and the message names the submodule as the index records it."))

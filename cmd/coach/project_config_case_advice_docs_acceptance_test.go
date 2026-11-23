@@ -111,9 +111,9 @@ var _ = Describe("the CLI contract: the case rule it describes is the one the sc
 	})
 })
 
-var _ = Describe("the README, ADR-008 and the PRD: the case rule they describe is the one the CLI contract states", func() {
-	It("tells the README's reader the one message, in words, with the warning, for a staged rename as for any other", func() {
-		bullet := readmeBullet("A policy path that the analyzed revision does not commit as written")
+var _ = Describe("the CLI contract, ADR-008 and the PRD: the case rule they describe is the one the CLI contract states", func() {
+	It("tells the CLI contract's reader the one message, in words, with the warning, for a staged rename as for any other", func() {
+		bullet := cliContractBullet("A policy path that the analyzed revision does not commit as written")
 		text := strings.Join(strings.Fields(bullet), " ")
 
 		Expect(text).To(ContainSubstring("`project_config_invalid`, and `--check-project` names `name_case_differs` and offers no new policy"))
