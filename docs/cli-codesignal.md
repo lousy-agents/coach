@@ -522,7 +522,7 @@ The hook's exit-code handling:
 
 Clean does not mean no findings. The hook does not block on findings, which stay advisory.
 
-Claude Code sets `stop_hook_active` in the hook's input when a Stop hook has already blocked this stop. On that second attempt the hook prints the reason to stderr and exits `0`, so it cannot block forever.
+Claude Code sets `stop_hook_active` to `true` in the hook's input when a Stop hook has already continued the session. On that second attempt the hook exits `0`, so it cannot block the same stop forever. Claude Code does not pass stderr from a hook that exits `0` to the model, so the reason is not shown to Claude on that attempt; the first block carries it. Claude Code also caps consecutive stop-hook continuations, as described in the hooks reference.
 
 The hook needs `coach` on `PATH` (see [Install](#install)) and uses `CLAUDE_PROJECT_DIR` as the repository root. To test it by hand, pipe input to it, for example `echo '{}' | sh .claude/hooks/coach-self-review.sh`, because the hook reads its input from stdin.
 
