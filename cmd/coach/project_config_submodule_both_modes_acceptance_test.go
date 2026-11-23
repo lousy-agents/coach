@@ -9,7 +9,7 @@ import (
 // restored nor committed in this repository. The scan and --check-project name the same cause and the same
 // submodule for each state of the checkout. The code they print follows what is on disk, as it does for every
 // explicit policy: nothing there is missing, and something there that cannot be the policy is invalid, so the
-// pairing is the one the README states.
+// pairing is the one the CLI contract states.
 var _ = Describe("coach codesignal: a policy in or at a submodule, in the scan and in --check-project", func() {
 	type state struct {
 		submodule string
@@ -66,8 +66,8 @@ var _ = Describe("coach codesignal: a policy in or at a submodule, in the scan a
 		Entry("the directory and the file in another case", "vendor/sub/CFG/P.json"),
 	)
 
-	It("is stated in the README as the table has it: invalid while the checkout is there, missing once it is gone", func() {
-		bullet := readmeBullet("A policy inside a submodule checkout")
+	It("is stated in the CLI contract as the table has it: invalid while the checkout is there, missing once it is gone", func() {
+		bullet := cliContractBullet("A policy inside a submodule checkout")
 
 		Expect(bullet).To(ContainSubstring("`project_config_invalid`"), "the code the scan prints while the checkout is there")
 		Expect(bullet).To(ContainSubstring("`project_config_missing`"), "the code the scan prints once the checkout is gone")

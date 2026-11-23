@@ -7,6 +7,12 @@ This is **not** Feature Zero's offline thinproof suite (`deploy/compose/thinproo
 **End-user quickstart:** [`docs/pilot-local-quickstart.md`](../pilot-local-quickstart.md).
 This page is the operator env-var reference.
 
+## The lab in brief
+
+The CLI in the README is the default product. A Docker API + worker stack can add agent judgments on a baseline scan. That path uses Docker, may call a model, and may read GitHub. It is not the default install.
+
+Verified in CI: Path A (`mise run platform-up` and `platform-smoke`) with the stub model. Paths B (real local model) and C (live GitHub.com) are operator labs. Findings are tagged `source=deterministic` or `source=agent`. Agent output cannot suppress a deterministic finding.
+
 ## Profiles
 
 | Profile | Services | Model path | GitHub credentials |
