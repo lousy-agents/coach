@@ -6,7 +6,7 @@ Go / TypeScript / TSX source, and prints advisory structural signals.
 
 Coach stays on the 0.x line on purpose. It does not contact GitHub or call a
 model on this path. File-local analysis is Tree-sitter over committed Git
-objects. TypeScript `--project-config` additionally runs a host Node process
+objects (unless `--worktree` is passed). TypeScript `--project-config` additionally runs a host Node process
 and the TypeScript compiler; that is still local, not the platform preview.
 
 ## Quick start (TypeScript)
@@ -17,7 +17,7 @@ Scan committed `.ts` / `.tsx`. No API key, no model, no merge gate. To scan unco
 mise exec github:lousy-agents/coach -- coach codesignal --baseline
 ```
 
-File-local mode is Tree-sitter over committed Git objects. It reports structural signals (`structure.react_component_orchestration_density`, `coupling.deep_relative_import`, `security.toctou_check_then_act`). It does not know your layers.
+File-local mode is Tree-sitter over committed Git objects, unless `--worktree` is passed. It reports structural signals (`structure.react_component_orchestration_density`, `coupling.deep_relative_import`, `security.toctou_check_then_act`). It does not know your layers.
 
 Project scanning is a different contract from ESLint boundary plugins, dependency-cruiser, or repo-chat. Those lint the worktree, infer a module graph, or guess architecture from retrieved files. Coach does not guess. You declare `roots`, `layers`, and `forbidden_imports`. Coach evaluates those edges with a host-resolved TypeScript compiler against the **revision you named** and emits versioned `architecture.layer_violation` signals — JSON `schema_version: "2"` that an agent can parse.
 
@@ -75,6 +75,7 @@ coach codesignal --worktree --baseline       # every tracked and new Go/TS/TSX f
 
 - With `--worktree` alone, Coach compares the working tree with `HEAD`. `--base <ref>` or `--baseline` composes with it and selects the comparison.
 - Supported-language source and project configuration files are read from the working tree, new and untracked files included. A deleted file is absent. A symbolic link is not followed and is named.
+- The project policy (`.lousy-agents/coach.json`) is still read from the commit, not the working tree. An uncommitted edit to it, or an untracked policy file, is not applied: Coach names it in a `worktree_changes_not_analyzed` diagnostic and qualifies the verdict, which is computed under the committed policy. <!-- TODO(#168 A2b): rewrite when the policy-from-disk slice merges -->
 - Run it from the repository root. Elsewhere it exits `2` and prints the command to run.
 - `scope.worktree` reports the revision, the modified, added, deleted and untracked counts, and the configuration files read from disk.
 - When git hides or Coach cannot read part of the tree the scan would analyze (a sparse checkout, a skip-worktree or assume-unchanged entry, a directory git could not open, or a file Coach could not read), the verdict says so instead of reading as clean. With `--fail-on-incomplete-coverage` it exits `3`. Hidden paths that are all out of scope do not qualify the verdict; see [Unread parts of the working tree](./docs/cli-codesignal.md#unread-parts-of-the-working-tree).

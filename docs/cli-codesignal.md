@@ -232,9 +232,11 @@ What it reads:
 
 Text prints one line under the scope summary: `worktree: <counts> on revision <sha>`, then `, compared with merge-base <sha>` for a diff, then `; configuration read from disk: <files>`. When no counts are non-zero it says `no uncommitted changes`, or `git status reports no uncommitted changes` when a `worktree_scan_incomplete` entry is present, or `the uncommitted-change counts could not be read` when the counts are zero and a `worktree_status_check_failed` diagnostic is present.
 
-#### Policy disclosure (not yet implemented)
+The project policy is read from the commit under `--worktree`. An uncommitted change to the selected policy file, or an untracked policy file, is named by `worktree_changes_not_analyzed` and qualifies the verdict.
 
-<!-- TODO(#168 A2b/A3): the contract below is fixed by #714 and is not yet implemented. Remove this marker and the "not yet implemented" wording when the policy-from-disk slice (A2b) and its disclosure (A3) merge, and delete the "read from the commit today" paragraph below. The wording of the text policy line and of the WARNING is fixed by the A3 slice; do not quote it here. -->
+### Policy disclosure (not yet implemented)
+
+<!-- TODO(#168 A2b/A3): the contract below is fixed by #714 and is not yet implemented. Remove this marker and the "not yet implemented" wording when the policy-from-disk slice (A2b) and its disclosure (A3) merge, and rewrite the "read from the commit" paragraph above. The wording of the text policy line and of the WARNING is fixed by the A3 slice; do not quote it here. -->
 
 Once policy-from-disk lands, every scan reports which project policy it used, and not only under `--worktree`:
 
@@ -243,8 +245,6 @@ Once policy-from-disk lands, every scan reports which project policy it used, an
 - When only one of the disk and `HEAD` selects a policy, `matches_head` is `false` and the text prints a WARNING. A difference qualifies a clean result.
 - When the committed copy of the selected policy cannot be read at `HEAD` within git's time or stderr bound, Coach uses the policy on disk, `matches_head` is `false`, and the WARNING says the committed copy could not be read and names the bound that tripped, not that the content differs.
 - Text prints a policy line when a policy is selected or the two differ.
-
-The project policy is read from the commit under `--worktree`. An uncommitted change to the selected policy file, or an untracked policy file, is named by `worktree_changes_not_analyzed` and qualifies the verdict.
 
 ### Unread parts of the working tree
 
