@@ -92,14 +92,15 @@ func RefuseMissingObjects(run Runner, dir, base string) error {
 		return versionUnknownError(err)
 	}
 	if !supported {
-		return refuseWhenReadRevisionsLackObjects(run, dir, base, version)
+		if err := refuseWhenReadRevisionsLackObjects(run, dir, base, version); err != nil {
+			return err
+		}
+		_, err := askWhetherPartialClone(run, dir)
+		return err
 	}
-	partial, err := IsPartialClone(run, dir)
-	if errors.Is(err, exec.ErrNotFound) {
-		return gitNotFoundError()
-	}
+	partial, err := askWhetherPartialClone(run, dir)
 	if err != nil {
-		return &OperationalError{Message: fmt.Sprintf("could not tell whether this repository is a partial clone (%s), so it is not read: a partial clone's read could run its remote's transport and write objects", TerminalSafe(err.Error())), Cause: err}
+		return err
 	}
 	if !partial {
 		return nil
@@ -108,4 +109,18 @@ func RefuseMissingObjects(run Runner, dir, base string) error {
 		return err
 	}
 	return refuseWhenTheMergeBaseLacksObjects(run, dir, base)
+}
+
+// askWhetherPartialClone is IsPartialClone with its failure worded as the refusal it is. A git before 2.44 asks it
+// too, after its probe, so that a configuration git cannot read is named as the question it leaves unanswered
+// rather than as whichever later question happens to read the configuration first (#737).
+func askWhetherPartialClone(run Runner, dir string) (bool, error) {
+	partial, err := IsPartialClone(run, dir)
+	if errors.Is(err, exec.ErrNotFound) {
+		return false, gitNotFoundError()
+	}
+	if err != nil {
+		return false, &OperationalError{Message: fmt.Sprintf("could not tell whether this repository is a partial clone (%s), so it is not read: a partial clone's read could run its remote's transport and write objects", TerminalSafe(err.Error())), Cause: err}
+	}
+	return partial, nil
 }
