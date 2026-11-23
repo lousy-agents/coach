@@ -59,7 +59,7 @@ Those workarounds leak privacy, mix opinion with evidence, or miss structural de
 
 ## 4. Desired outcome
 
-Desired outcome: a pilot user who did not write Coach runs a second scan after the first report, without a request from the product owner.
+Desired outcome: a pilot user who did not write Coach runs a second scan after the first report, without a request from the product owner. Only a scan a person starts counts; a hook's scans do not.
 
 The outcome is not a count of rules. The outcome is not a hosted service. The outcome is not a merge gate.
 
@@ -406,6 +406,7 @@ Known remaining risks from the evaluation and the epic:
 - A committed scan's result depends on the project policy file on disk, as with ESLint and Biome configuration. The report says whether that file matches the one selected at `HEAD`. A local edit can change a local run's result. CI enforces the policy committed in the change under test. A change that edits the policy is reviewed like an ESLint configuration change.
 - A worktree scan is a local, pre-commit check. It is not a pull-request check.
 - Agent self-review before commit (section 5) is a bet. `--worktree` is experimental until [#720](https://github.com/lousy-agents/coach/issues/720) merges, and no example hook is documented yet.
+- An agent that edits the policy can hide its own violations, because the scan reads the policy on disk. The example hook shall treat `scope.policy.matches_head: false` as not reviewed-clean: it tells the agent and surfaces it to the user. The mechanics belong in the hook documentation.
 - `project_provenance.package_manager` is read from `HEAD`, even when a listed `package.json` is read from disk. Threading the overlay through the package-manager read is a follow-up ([#608](https://github.com/lousy-agents/coach/issues/608)).
 - Under `--worktree`, the in-process line diff can mark a different line as changed than git does on repetitive text, about 7% on a repetitive corpus. `changed` is a field on each signal, and the diff may mark a neighbouring signal `changed` when a function is inserted between two others. It over-marks only, and never under-marks, apart from line-ending-only changes ([#611](https://github.com/lousy-agents/coach/issues/611)).
 - `--worktree` must run from the repository root.
@@ -432,7 +433,7 @@ Do not treat this table as a substitute for customer evidence. Each row is a tes
 
 | Risk | Question | Cheapest test that kills the bet |
 | --- | --- | --- |
-| Value | Will a pilot user choose this report over hand review or a chat paste? | After one report, the user does not run a second scan and cannot name one action they took. |
+| Value | Will a pilot user choose this report over hand review or a chat paste? | After one report, the user does not run a second scan (a scan a person starts, as section 4 counts it) and cannot name one action they took. |
 | Usability | Can a first-time TypeScript user complete readiness and a first scan from the README? | The user hits a hidden step, a prompt with no terminal, or a false clean result. |
 | Feasibility | Can the shipped analyzer examine the change the user asked about? | A requested path is skipped and the text still reads as complete and clean. |
 | Business viability | Does this stay a private advisory tool? | A GitHub write, a person score, or a merge block lands on the default path. |
@@ -445,7 +446,7 @@ Leave pilot only when all of these statements are true:
 
 - A new evaluation restamp against current `HEAD` agrees that a named audience can be told an honest job. The jobs it judges are a private report over recent committed work, and agent self-review before commit (section 5). Until the evaluation carries a claim for agent self-review, that job is not judged.
 - A first-time user can follow the published README and obtain either a report or a clear next action. The user does not receive a false all-clear.
-- A user who did not write Coach runs a second scan without a prompt from the owner.
+- A user who did not write Coach runs a second scan without a prompt from the owner. A hook's scans do not count (section 4).
 - Security-category claims have a recorded precision review on a named corpus. The review includes true positives, false positives, and known misses.
 - The default command path still writes nothing to GitHub and still scores no person.
 
