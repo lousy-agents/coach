@@ -53,13 +53,36 @@ var _ = Describe("whether a git before 2.44 may compare staged deletions with st
 	})
 })
 
-var _ = Describe("a probe that did not answer in time, on a git before 2.44 (#737)", func() {
-	It("#737: is refused, naming why, even when git then says at once that the revision names nothing", func() {
-		repository := fakeRepository{version: oldGit, probes: map[string]probeAnswer{"HEAD": {err: &BoundError{Kind: BoundTimeout, message: "git execution timed out after 2m0s"}}}}
+// timedOutAt is a git question that ran out of time.
+var timedOutAt = &BoundError{Kind: BoundTimeout, message: "git execution timed out after 2m0s"}
 
-		err := RefuseMissingObjects(headResolvesThen(exitStatusOne, repository.run), "repo", "")
+// everyResolutionTimesOut is the fake's git, except that every rev-parse runs out of time.
+func everyResolutionTimesOut(fallback Runner) Runner {
+	return func(dir string, args ...string) ([]byte, error) {
+		if args[0] == "rev-parse" {
+			return nil, timedOutAt
+		}
+		return fallback(dir, args...)
+	}
+}
 
-		Expect(refusalText(err)).To(ContainSubstring("could not tell whether this repository has the objects Coach reads"))
-		Expect(refusalText(err)).To(ContainSubstring("timed out after 2m0s"))
-	})
+var _ = Describe("a guard question that did not answer in time (#737)", func() {
+	DescribeTable("#737: is refused, naming why, at every place the guard asks one",
+		func(base string, repository fakeRepository, wrap func(Runner) Runner) {
+			err := RefuseMissingObjects(wrap(repository.run), "repo", base)
+
+			Expect(refusalText(err)).To(ContainSubstring("could not tell whether"), "%v", err)
+			Expect(refusalText(err)).To(ContainSubstring("timed out after"), "%v", err)
+		},
+		Entry("a git before 2.44 resolving HEAD", "",
+			fakeRepository{version: oldGit}, everyResolutionTimesOut),
+		Entry("a git before 2.44 looking for the commit --base names", "main",
+			fakeRepository{version: oldGit, probes: map[string]probeAnswer{firstMissing: {err: timedOutAt}}}, func(run Runner) Runner { return run }),
+		Entry("a git before 2.44 probing HEAD, which git then says at once names nothing", "",
+			fakeRepository{version: oldGit, probes: map[string]probeAnswer{"HEAD": {err: timedOutAt}}}, func(run Runner) Runner { return headResolvesThen(exitStatusOne, run) }),
+		Entry("a git before 2.44 probing the merge base, which git then says at once names nothing", "main",
+			fakeRepository{version: oldGit, mergeBase: mergeBaseSHA, probes: map[string]probeAnswer{mergeBaseSHA: {err: timedOutAt}}}, func(run Runner) Runner { return headResolvesThen(exitStatusOne, run) }),
+		Entry("a current git probing a partial clone's merge base", "main",
+			fakeRepository{version: currentGit, promisors: promisorOrigin, mergeBase: mergeBaseSHA, probes: map[string]probeAnswer{mergeBaseSHA: {err: timedOutAt}}}, func(run Runner) Runner { return run }),
+	)
 })
