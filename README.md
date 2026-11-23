@@ -35,7 +35,7 @@ Full flags and schema: [CLI contract](./docs/cli-codesignal.md).
 ## Contract
 
 - **Languages:** Go, TypeScript, TSX. Other files get an `unsupported_language` diagnostic and are skipped.
-- **Input:** committed Git objects at the selected revision. Uncommitted edits are not read unless you pass [`--worktree`](#uncommitted-work---worktree).
+- **Input:** committed Git objects at the selected revision. Uncommitted edits are not read unless you pass [`--worktree`](#uncommitted-work---worktree). <!-- TODO(#168 A2b/A3): 'committed Git objects' is no longer true for the project policy, which a scan reads from disk (#721); restate when A2b-2 makes --check-project and --prepare-compiler read it from disk too -->
 - **Git:** `git` 2.42 or later must be on `PATH`: a scan needs 2.16 to start and `--baseline` needs 2.42 to read the files it analyzes; see [git version](./docs/cli-codesignal.md#git-version). No Docker, no API key, no network for the default CLI path. In a partial clone Coach never fetches a missing object; a git older than 2.44 cannot be told that, so with it a read is made only when every object of the revisions the scan reads is already here, whatever the repository's configuration says; see [what repository configuration can run](./docs/cli-codesignal.md#what-repository-configuration-can-run).
 - **Advisory:** a completed analysis exits `0` even when it found signals. Coach does not gate merges.
 - **Absence is not a clean bill of health.** An empty signal set means no matched rule for the inputs that were analyzed. The `forbidden_imports` check reaches only imports between code inside declared layers; with `--project-config`, the report says how many project files under the configured roots sit outside every declared layer. It leaves that count out when no layers are declared, when the inputs are incomplete (for example, a project model cut short by its input budget), when a configured root holds no analyzed file, or when a TypeScript root's analyzed-file count does not match its path list.
@@ -228,7 +228,7 @@ top="$(git rev-parse --show-toplevel)" && mkdir -p "$top"/.lousy-agents && git -
 
 An explicit `--project-config` still reads only that path. A schema-valid root `project.json` is still read with a deprecation diagnostic until the follow-up removal ([issue #511](https://github.com/lousy-agents/coach/issues/511)). The lookup is [`.lousy-agents` config](./docs/conventions/lousy-agents-config.md).
 
-`--project-config` content is read from the **analyzed revision**, not your
+`--project-config` content is read from the **analyzed revision**, not your <!-- TODO(#168 A2b/A3): this paragraph and the refusal list below say the policy is read from the analyzed revision and name the staged copy, merge conflict, index lock and committed-as-link causes; rewrite when A2b-1 (scan refusals) and A2b-2 (--check-project causes) merge -->
 dirty worktree. The path itself is checked on disk first, and what is there
 decides what Coach says. Every case below exits `2`, and stdout stays empty
 except for the policy-candidate document on the guided-authoring path.
