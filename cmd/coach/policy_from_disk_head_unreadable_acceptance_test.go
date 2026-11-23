@@ -81,12 +81,16 @@ var _ = Describe("coach codesignal reads the project policy from disk: a policy 
 			expectDiskJudgedRefusal(stdout, stderr, exitCode, coachConfigPath, "larger than the policy size limit")
 		})
 
-		It("#168 A2b: a policy whose committed object is missing, beside a valid policy on disk, is used under "+mode.name+" with the cause head_unreadable", func() {
+		It("#168 A2b: a committed policy object missing from the object store stops the scan under "+mode.name+": Coach does not fetch objects", func() {
 			repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, `{"schema_version":"1","roots":["."],"note":"the committed copy"}`})
 			removeCommittedObject(repo, coachConfigPath)
 			scopePolicyRewrite(repo, coachConfigPath, goLayerPolicyConfigJSON)
 
-			expectUsedWithUnreadableHead(mode, repo, base, coachConfigPath, goLayerPolicyConfigJSON)
+			stdout, stderr, exitCode := mode.run(repo, base, "--format=json")
+
+			Expect(exitCode).To(Equal(1), "stdout: %s\nstderr: %s", stdout, stderr)
+			Expect(string(stdout)).To(BeEmpty())
+			Expect(string(stderr)).To(ContainSubstring("object"), "stderr:\n%s", stderr)
 		})
 	}
 })
