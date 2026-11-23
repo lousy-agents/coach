@@ -47,14 +47,14 @@ var _ = Describe("coach codesignal (TypeScript, controlling terminal): compiler 
 			Expect(miseInvocationsIncludeInstall(miseDir)).To(BeTrue(), "the confirmed selection must have invoked `mise install`")
 		})
 
-		It("prints that the policy is not committed before the install prompt", func() {
+		It("prints that the policy is not committed before the choice prompt", func() {
 			writeWorktreeFile(repo, coachConfigPath, singleRootPolicyJSON)
 
 			session := startCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path),
 				"codesignal", "--baseline", "--project-language", "typescript", "--format=json")
-			session.waitForPrompt("Type 'install' to run this setup command now")
+			session.waitForPrompt("an unrecognized or blank answer cancels.")
 			disclosed := session.stderrBuf.String()
-			session.writeLine("decline")
+			session.writeLine("cancel")
 			session.wait()
 
 			Expect(disclosed).To(ContainSubstring("project_policy_not_committed"), "stderr before the prompt: %s", disclosed)

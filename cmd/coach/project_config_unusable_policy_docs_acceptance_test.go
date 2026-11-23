@@ -10,12 +10,12 @@ import (
 // the policy, in the sentence --prepare-compiler prints (unusablePolicyStep). The documents promised the session; these specs
 // hold them to the decision, and fail on the sentences that promised it.
 var _ = Describe("the documents: a TypeScript policy that exists and cannot be used gets no session and the words for getting past it", func() {
-	const stepInWords = "fix the policy, or move it aside and commit the move, then run guided policy authoring"
+	const stepInWords = "the policy on disk cannot be used: fix the file"
 
 	It("says so in the CLI contract's --project-config row, and keeps the offer for a layerless valid file", func() {
 		text := documentText("docs/cli-codesignal.md")
 
-		Expect(text).To(ContainSubstring("An invalid canonical file is an error and does not fall back. A TypeScript scan opens no guided authoring for it, with or without a terminal, because the only session it has ends by asking the user to save a candidate over the file; it exits `2` with no report and says in words to " + stepInWords))
+		Expect(text).To(ContainSubstring("An invalid canonical file is an error and does not fall back. A TypeScript scan opens no guided authoring for it, with or without a terminal, because the only session it has ends by asking the user to save a candidate over the file; it exits `2` with no report and says in words that " + stepInWords + "."))
 		Expect(text).To(ContainSubstring("On a terminal, a TypeScript scan offers guided policy authoring after the report when the file is valid but declares no layers and the scan exits `0`."))
 		Expect(text).NotTo(ContainSubstring("a TypeScript scan offers guided policy authoring for it instead of the scan"))
 	})
@@ -33,7 +33,7 @@ var _ = Describe("the documents: a TypeScript policy that exists and cannot be u
 		text := documentText("docs/conventions/lousy-agents-config.md")
 
 		Expect(text).To(ContainSubstring("A TypeScript scan that finds an invalid canonical document opens no guided policy authoring, with or without a terminal"))
-		Expect(text).To(ContainSubstring("and says in words to " + stepInWords + " to write a new one"))
+		Expect(text).To(ContainSubstring("and says in words that " + stepInWords + ". On an"))
 		Expect(text).NotTo(ContainSubstring("a TypeScript scan that finds an invalid canonical document offers guided policy authoring instead of only reporting the error"))
 	})
 
@@ -41,8 +41,8 @@ var _ = Describe("the documents: a TypeScript policy that exists and cannot be u
 		prd := documentText("docs/product/prd.md")
 
 		Expect(prd).To(ContainSubstring("WHEN a TypeScript scan omits `--project-config` and a `.lousy-agents/coach.json` on disk fails schema validation, with or without a controlling terminal, THE Coach CLI shall open no guided policy authoring"))
-		Expect(prd).To(ContainSubstring("print the one sentence `coach codesignal: the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one.`, which `--prepare-compiler` also prints for the same policy"))
-		Expect(prd).To(ContainSubstring("For a TypeScript scan it shall also say in words to " + stepInWords))
+		Expect(prd).To(ContainSubstring("print the one sentence `coach codesignal: the policy on disk cannot be used: fix the file.`, which `--prepare-compiler` also prints for the same policy"))
+		Expect(prd).To(ContainSubstring("For a TypeScript scan it shall also say in words that " + stepInWords + ", and shall print no command for the step."))
 		Expect(prd).NotTo(ContainSubstring("Except where section 8.5 offers guided policy authoring, THE Coach CLI shall exit with status `2`"))
 		Expect(prd).NotTo(ContainSubstring("THE Coach CLI shall offer guided policy authoring instead of the scan"))
 	})
@@ -50,7 +50,7 @@ var _ = Describe("the documents: a TypeScript policy that exists and cannot be u
 	It("describes the capability table row without the offer for an invalid file", func() {
 		prd := documentText("docs/product/prd.md")
 
-		Expect(prd).To(ContainSubstring("A discovered file that is schema-invalid gets no session, with or without a terminal: the scan says in words to fix it, or move it aside and commit the move, then run guided policy authoring."))
+		Expect(prd).To(ContainSubstring("A discovered file that is schema-invalid gets no session, with or without a terminal: the scan says in words that the policy on disk cannot be used: fix the file."))
 		Expect(prd).NotTo(ContainSubstring("An invalid file gets the offer instead of the scan"))
 	})
 })

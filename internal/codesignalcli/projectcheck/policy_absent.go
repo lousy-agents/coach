@@ -2,7 +2,6 @@ package projectcheck
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
@@ -30,9 +29,11 @@ func judgeAbsentPolicy(run gitrepo.Runner, dir, revision string, policy policyre
 
 // namedForWhatIsOnDisk is status with the cause the disk gives where the cause is one the check no longer names: an
 // entry on disk that cannot be the policy is a symbolic link, not a regular file, or under a file, whatever the index or
-// the revision hold for the path. A path with nothing on disk keeps status.
+// the revision hold for the path. Where the revision holds files under the path, the cause stays directory and the
+// words are the disk's, because the file the revision lacks is not what the policy is judged by. A path with nothing on
+// disk keeps status.
 func namedForWhatIsOnDisk(dir string, status *projectconfig.ConfigError, policyPath string) *projectconfig.ConfigError {
-	if causeTheCheckNames(status.PolicyCause) {
+	if causeTheCheckNames(status.PolicyCause) && status.PolicyCause != projectreadiness.CauseDirectory {
 		return status
 	}
 	refusal := projectconfig.UnusableEntryOnDisk(dir, policyPath)
@@ -40,12 +41,15 @@ func namedForWhatIsOnDisk(dir string, status *projectconfig.ConfigError, policyP
 		return status
 	}
 	cause, known := causeOfDiskRefusal[refusal.Reason]
-	if !known {
+	var explicit *projectconfig.ConfigError
+	if !known || !errors.As(refusal.ExplicitError(), &explicit) {
 		return status
 	}
 	named := *status
-	named.PolicyCause = cause
-	named.Message = fmt.Sprintf("coach codesignal: %q cannot be the policy on disk: %s", policyPath, refusal.Reason)
+	if status.PolicyCause != projectreadiness.CauseDirectory {
+		named.PolicyCause = cause
+	}
+	named.Message = explicit.Message
 	return &named
 }
 
@@ -66,7 +70,7 @@ func gapForWorkingTreeStatus(status *projectconfig.ConfigError, policyPath strin
 	}
 	check := projectreadiness.Check{State: projectreadiness.Fail, Code: code, Remedy: status.Remedy}
 	if !causeTheCheckNames(status.PolicyCause) {
-		return check.WithCause(heldAtThePathText(policyPath), projectreadiness.CauseUndetermined)
+		return check.WithCause(heldAtThePathText(policyPath, status.PolicyCause), projectreadiness.CauseUndetermined)
 	}
 	return check.WithCause(status.Message, causeOrUndetermined(status.PolicyCause))
 }
@@ -92,6 +96,16 @@ func causeTheCheckNames(cause projectreadiness.PolicyCause) bool {
 	return false
 }
 
-func heldAtThePathText(policyPath string) string {
+// heldAtThePathText says what holds the path while nothing is on disk. Where the index holds the user's own staged
+// version, the one restore it offers keeps that version, and none brings back the revision's copy over it.
+func heldAtThePathText(policyPath string, cause projectreadiness.PolicyCause) string {
+	switch cause {
+	case projectreadiness.CauseStagedEdit, projectreadiness.CauseStagedCopy:
+		held := "a staged edit to it"
+		if cause == projectreadiness.CauseStagedCopy {
+			held = "a staged copy of it"
+		}
+		return "coach codesignal: " + policyPath + " is not on disk, and the index holds " + held + " that a restore from the revision would discard; to keep the staged version, " + projectconfig.RestoreFromIndexAdvice(policyPath) + ", then check again"
+	}
 	return "coach codesignal: " + policyPath + " is not on disk, and the index or the analyzed revision holds an entry for it that a restore from the revision would discard or recreate as something a policy cannot be; resolve it with git, then check again"
 }

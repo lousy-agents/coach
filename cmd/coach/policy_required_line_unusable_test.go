@@ -12,7 +12,7 @@ import (
 func TestPolicyRequiredLineForAnInvalidCommittedPolicyGoneFromDiskNamesTheStepAndNoCommit(t *testing.T) {
 	line := policyRequiredLine("coach codesignal", projectreadiness.GapPolicyInvalid, projectreadiness.RemedyAuthor, "abc123", "pol.json")
 
-	if want := "a project policy that passes --check-project is required before compiler setup (policy_invalid); "; !strings.HasPrefix(line, want) {
+	if want := "coach codesignal: a project policy that passes --check-project is required before compiler setup (policy_invalid); "; !strings.HasPrefix(line, want) {
 		t.Errorf("line %q; want it to start with %q", line, want)
 	}
 	if !strings.Contains(line, unusablePolicyStep) || !strings.HasSuffix(line, "(author_policy).") {

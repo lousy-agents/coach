@@ -151,6 +151,7 @@ func runPrepareCompilerMiseSetupWith(locate tstoolchain.MiseLocator, ctx context
 		return PrepareCompilerMiseResult{NoChoicesOffered: true}
 	}
 
+	printPolicyDisclosure(out, readiness)
 	reader := bufio.NewReader(in)
 	choice, cancelled := promptForMiseSetupChoice(out, reader, choices)
 	if cancelled {

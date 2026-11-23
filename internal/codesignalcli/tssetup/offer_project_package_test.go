@@ -7,6 +7,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 )
 
 // TestProjectPackageWorkingDirectoryUsesDiscoveredRootsWhenConfigPathEmpty
@@ -35,41 +36,44 @@ func TestProjectPackageWorkingDirectoryUsesDiscoveredRootsWhenConfigPathEmpty(t 
 // An explicit policy that is committed and gone from disk is a policy gap, so
 // the roots the readiness check used are none. Reading the committed copy
 // instead would size the setup menu against a policy the scan refuses.
-func TestCheckedPolicyRootsDoNotComeFromTheCommittedCopyOfAnExplicitPolicyDeletedOnDisk(t *testing.T) {
+func TestPolicyRootsDoNotComeFromTheCommittedCopyOfAnExplicitPolicyDeletedOnDisk(t *testing.T) {
 	repo := gitfixture.Init(t)
 	revision := gitfixture.CommitFile(t, repo, "pol.json", `{"schema_version":"1","roots":["packages/a","packages/b"]}`+"\n")
 	if err := os.Remove(filepath.Join(repo, "pol.json")); err != nil {
 		t.Fatalf("remove pol.json: %v", err)
 	}
 
-	roots, err := checkedPolicyRoots(repo, revision, policyref.Named("pol.json"))
+	roots, err := projectcheck.PolicyRoots(repo, revision, policyref.Named("pol.json"))
 
 	if err != nil || len(roots) != 0 {
-		t.Fatalf("checkedPolicyRoots = %v, %v; want no roots and no error for a policy the check failed", roots, err)
+		t.Fatalf("PolicyRoots = %v, %v; want no roots and no error for a policy the check failed", roots, err)
 	}
 }
 
-func TestCheckedPolicyRootsStillComeFromTheCommittedCopyOfADiscoveredPolicy(t *testing.T) {
+func TestPolicyRootsOfADiscoveredPolicyComeFromTheFileOnDisk(t *testing.T) {
 	repo := gitfixture.Init(t)
 	revision := gitfixture.CommitFile(t, repo, ".lousy-agents/coach.json", `{"schema_version":"1","roots":["packages/a","packages/b"]}`+"\n")
+	if err := os.WriteFile(filepath.Join(repo, ".lousy-agents", "coach.json"), []byte(`{"schema_version":"1","roots":["packages/c"]}`+"\n"), 0o644); err != nil {
+		t.Fatalf("edit coach.json: %v", err)
+	}
 
-	roots, err := checkedPolicyRoots(repo, revision, policyref.Ref{})
+	roots, err := projectcheck.PolicyRoots(repo, revision, policyref.Ref{})
 
-	if err != nil || len(roots) != 2 {
-		t.Fatalf("checkedPolicyRoots = %v, %v; want the two committed roots", roots, err)
+	if err != nil || len(roots) != 1 || roots[0] != "packages/c" {
+		t.Fatalf("PolicyRoots = %v, %v; want the one root the edited file on disk names", roots, err)
 	}
 }
 
-func TestCheckedPolicyRootsStillComeFromTheCommittedCopyOfADiscoveredPolicyDeletedOnDisk(t *testing.T) {
+func TestPolicyRootsOfADiscoveredPolicyDeletedOnDiskAreNone(t *testing.T) {
 	repo := gitfixture.Init(t)
 	revision := gitfixture.CommitFile(t, repo, ".lousy-agents/coach.json", `{"schema_version":"1","roots":["packages/a","packages/b"]}`+"\n")
 	if err := os.Remove(filepath.Join(repo, ".lousy-agents", "coach.json")); err != nil {
 		t.Fatalf("remove coach.json: %v", err)
 	}
 
-	roots, err := checkedPolicyRoots(repo, revision, policyref.Ref{})
+	roots, err := projectcheck.PolicyRoots(repo, revision, policyref.Ref{})
 
-	if err != nil || len(roots) != 2 {
-		t.Fatalf("checkedPolicyRoots = %v, %v; want the two committed roots, as before the explicit check existed", roots, err)
+	if err != nil || len(roots) != 0 {
+		t.Fatalf("PolicyRoots = %v, %v; want no roots for a committed policy that is gone from disk", roots, err)
 	}
 }

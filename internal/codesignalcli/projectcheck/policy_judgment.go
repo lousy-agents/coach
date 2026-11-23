@@ -32,7 +32,7 @@ func judgePolicy(run gitrepo.Runner, dir, revision string, policy policyref.Ref)
 		if discovered && failedAt == projectconfig.DefaultPath {
 			return judgeAbsentPolicy(run, dir, revision, policy)
 		}
-		return judgmentOfRefusal(failedAt, err)
+		return judgmentOfRefusal(failedAt, err, policy)
 	}
 	if selection.Path == "" {
 		return judgeAbsentPolicy(run, dir, revision, policy)
@@ -42,7 +42,7 @@ func judgePolicy(run gitrepo.Runner, dir, revision string, policy policyref.Ref)
 		if discovered && selection.Path == projectconfig.DefaultPath {
 			return judgeAbsentPolicy(run, dir, revision, policy)
 		}
-		return judgmentOfRefusal(selection.Path, err)
+		return judgmentOfRefusal(selection.Path, err, policy)
 	}
 	return judgeSelectedPolicy(run, dir, revision, selection, config, policy)
 }
@@ -63,10 +63,10 @@ func selectionFailurePath(dir, namedPath string) string {
 // judgmentOfRefusal is the policy_invalid gap for a regular file that cannot be used. Authoring refuses a path that
 // exists, so the gap offers no way out: a file over the size limit or with content that is no policy carries the cause
 // undetermined, and one the process could not read carries unreadable_on_disk.
-func judgmentOfRefusal(path string, cause error) (policyJudgment, error) {
+func judgmentOfRefusal(path string, cause error, policy policyref.Ref) (policyJudgment, error) {
 	refusal := projectconfig.ClassifyDiskPolicyError(path, cause).ExplicitError()
 	check, _, err := policyGapFrom(refusal)
-	return policyJudgment{path: path, check: check}, err
+	return policyJudgment{path: path, check: wordedForThePolicy(check, policy, path)}, err
 }
 
 // judgeSelectedPolicy passes a usable policy on disk with the roots of the bytes read, and says how it relates to the

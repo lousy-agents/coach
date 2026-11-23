@@ -141,7 +141,7 @@ var _ = Describe("coach codesignal (TypeScript, no terminal): a committed policy
 			Expect(string(stderr)).NotTo(ContainSubstring("guided authoring"), "the session ends by saving over the file:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("on a terminal:"), "stderr:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("--suggest-project-config"), "the authoring command is refused where the file exists:\n%s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("coach codesignal: the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one."), "the scan says in words how to get past the policy:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("coach codesignal: the policy on disk cannot be used: fix the file."), "the scan says in words how to get past the policy:\n%s", stderr)
 			expectNoRunnableCommand(string(stderr))
 		},
 		Entry("found at the canonical path", ".lousy-agents/coach.json"),
