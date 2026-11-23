@@ -683,6 +683,8 @@ path: , kind: worktree_scan_incomplete, message: an untracked nested repository 
 
 ## Lifecycle and counters
 
+A finding's fingerprint is computed from its rule, path, subject, evidence, and occurrence ordinal. It is not computed from its line, its severity, or `rule_version`. So a line shift or a severity change keeps the fingerprint, while a change of file path or of evidence gives the finding a new one. The `id` also includes the start position, so a line shift changes the `id` but not the fingerprint.
+
 Every entry in `signals[]` is counted in exactly one of `introduced_signals`,
 `existing_signals`, `resolved_signals`, `baseline_signals`,
 `unknown_signals`. `summary.unknown_signals` counts `unknown` lifecycle

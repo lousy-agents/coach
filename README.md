@@ -5,7 +5,7 @@ Coach gives you, or your coding agent, a private and repeatable report on struct
 ## Why use it
 
 - **Local and private.** The default command calls no model, contacts no GitHub, writes nothing to your repository, and sends no telemetry. The same input gives the same report.
-- **Every finding can be acted on.** Each finding gives its rule, severity, file and line, the evidence, why it matters, and a suggested fix. A finding's fingerprint is built from its rule, path, subject, evidence, and occurrence, not from its line or severity, so it keeps its identity when its line moves or its severity changes. A change of file path gives it a new fingerprint.
+- **Every finding can be acted on.** Each finding gives its rule, severity, file and line, the evidence, why it matters, and a suggested fix. Findings keep their identity when lines move or severity changes, so you can tell what is new.
 - **It reports where code breaks the layers you define.** Commit a layer policy, and coach reports the file and line where a forbidden import breaks it.
 
 ## Who it's for
