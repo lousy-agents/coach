@@ -508,6 +508,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 		})
 
 		It("exits 1 and never emits a readiness document when the policy is gone from disk, rather than reporting the committed policy file as missing", func() {
+			skipUnlessGitCanRefuseLazyFetch()
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
 			writeInstalledTypescript(repo, "7.0.2")
@@ -520,7 +521,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "config/project.json", "--format", "json")
 			Expect(exitCode).To(Equal(1), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "an operational failure must never emit a readiness JSON document")
-			Expect(string(stderr)).NotTo(BeEmpty())
+			Expect(string(stderr)).To(ContainSubstring("config/project.json"), "stderr: %s", stderr)
 		})
 	})
 
