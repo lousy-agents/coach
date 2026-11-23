@@ -50,6 +50,56 @@ measured ~239s, of which roughly 180s is deliberate blocking on
 paid twice across the project-backend and no-findings-verdict acceptance specs.
 Read `ci-fast` as "narrower than CI", not as "quick".
 
+## Running tests under CI's conditions
+
+A spec can pass in an agent sandbox and fail in CI because the two differ (#733):
+
+| Input | CI (`ubuntu-latest`) | Agent sandbox |
+| --- | --- | --- |
+| User | `runner`, not root | root |
+| HOME and user-level git config | a fresh HOME with no git identity | the user's global config, with an identity and commit signing |
+| git | floats with the runner image: 2.55.0, then 2.56.0, then 2.56.1 | 2.43.0 |
+
+`mise run acceptance-ci-env` runs Go tests under CI's conditions. Pass packages
+after `--`; the default is `./...`:
+
+```sh
+mise run acceptance-ci-env -- ./cmd/coach/...
+```
+
+It runs the tests as a non-root user. Run as root, it runs them as `nobody`, over
+copies of the repository (with `.git`) and of the mise toolchains on PATH,
+readable by `nobody`'s group only. It also gives `nobody` its own copy of the
+module cache, made once per `go.sum`. All of these are cached under
+`$COACH_CI_ENV_CACHE` (default `$TMPDIR/coach-ci-env-<uid>`); an existing cache
+root must be owned by the running user and writable by no one else.
+
+It gives the tests:
+
+- an empty HOME, `XDG_CONFIG_HOME` and `GIT_CONFIG_GLOBAL`, with the Go caches
+  named outside HOME, and a `TMPDIR` of their own, which `go test` writes its
+  build directory into before the tests start;
+- the system git config as it is;
+- no git configuration or identity carried in the environment
+  (`GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, `GIT_CONFIG_PARAMETERS`,
+  `GIT_AUTHOR_*`, `GIT_COMMITTER_*`), which CI does not set;
+- CI's PATH, the mise toolchain, with the checked git first.
+
+CI's git floats, and the task is pinned. `COACH_CI_GIT_VERSION` in the task's
+`env` in `mise.toml` is the one place the expected git version is stated; bump
+it when CI's git moves. The task prints the git it used. It takes that git from
+`COACH_CI_GIT`, or from PATH. When that git is not the pinned version, it exits
+non-zero and names both versions, and runs no test.
+`COACH_CI_GIT_ALLOW_MISMATCH=1` runs the user and HOME legs anyway, and prints
+`WARNING: the git-version leg was NOT covered`. The git-version leg has not been
+run in an agent sandbox, which cannot build CI's git, so a sandbox run uses
+`COACH_CI_GIT_ALLOW_MISMATCH=1`.
+
+A spec that cannot build its state as root, such as a mode 000 file, skips
+under root and says that `mise run acceptance-ci-env` runs it as non-root. A test
+that needs a newer git than the one running skips, naming the version it
+needs.
+
 ## Cross-language acceptance gates
 
 A gate whose acceptance criteria assert on the rendered CLI report across both

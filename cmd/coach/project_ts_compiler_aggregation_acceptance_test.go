@@ -183,7 +183,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 		When("the process cannot open it and project mise supplies a supported compiler", func() {
 			It("passes from that origin rather than reporting a compiler gap", func() {
 				if os.Geteuid() == 0 {
-					Skip("running as root defeats a permission-denied manifest fixture")
+					Skip("running as root defeats a permission-denied manifest fixture; `mise run acceptance-ci-env` runs it as non-root")
 				}
 				commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 				commitFile(repo, "mise.toml", "[tools]\n\"npm:typescript\" = \"7.0.2\"\n")

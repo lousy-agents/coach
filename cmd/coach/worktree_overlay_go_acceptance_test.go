@@ -158,7 +158,7 @@ var _ = Describe("coach codesignal --worktree for Go project analysis", func() {
 
 		It("treats a changed path it cannot read as absent, never as its committed bytes", func() {
 			if os.Geteuid() == 0 {
-				Skip("file permissions do not stop root from reading")
+				Skip("file permissions do not stop root from reading; `mise run acceptance-ci-env` runs it as non-root")
 			}
 			repo := goOverlayRepo()
 			unreadable := filepath.Join(repo, "pkg/handlers/handlers.go")

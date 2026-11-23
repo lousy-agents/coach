@@ -137,7 +137,7 @@ var _ = Describe("the policy the working tree selects", func() {
 
 		It("refuses a canonical file the process cannot read as unreadable_on_disk and selects nothing", func() {
 			if os.Geteuid() == 0 {
-				Skip("root can read any file")
+				Skip("root can read any file; `mise run acceptance-ci-env` runs it as non-root")
 			}
 			put(CanonicalPath, canonicalBytes)
 			Expect(os.Chmod(filepath.Join(repo, CanonicalPath), 0o000)).To(Succeed())

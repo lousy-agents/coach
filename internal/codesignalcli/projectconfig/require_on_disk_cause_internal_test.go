@@ -37,7 +37,7 @@ func assertCauseText(t *testing.T, err error, want string) {
 
 func TestCheckRegularFileUnderRefusesAFileThatCannotBeRead(t *testing.T) {
 	if os.Geteuid() == 0 {
-		t.Skip("root can read a mode 000 file, so this state cannot be built")
+		t.Skip("root can read a mode 000 file, so this state cannot be built; `mise run acceptance-ci-env` runs it as non-root")
 	}
 	root := t.TempDir()
 	full := filepath.Join(root, "pol.json")

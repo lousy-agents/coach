@@ -69,7 +69,7 @@ var _ = Describe("coach codesignal --worktree cannot tell whether what git could
 
 	It("discloses a directory the process cannot open as unreadable_directory, unknown (#168 item 22)", func() {
 		if os.Geteuid() == 0 {
-			Skip("root opens a directory whatever its mode")
+			Skip("root opens a directory whatever its mode; `mise run acceptance-ci-env` runs it as non-root")
 		}
 		repo := scanRepoWith(nil)
 		overwriteOnDiskCreatingParents(repo, "pkg/y/y.go", handlersImportingDB)

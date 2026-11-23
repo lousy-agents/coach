@@ -73,6 +73,7 @@ func TestTheStatusOfAGitThatCannotBeToldNotToFetchSaysItSkippedTheSubmodules(t *
 }
 
 func TestTheStatusOfAGitThatCanBeToldNotToFetchSaysNothingWasSkipped(t *testing.T) {
+	skipUnlessTheRunningGitCanBeToldNotToFetch(t)
 	dir := gitfixture.Init(t)
 	gitfixture.CommitFile(t, dir, "a.go", "package a\n")
 

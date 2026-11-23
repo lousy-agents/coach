@@ -76,6 +76,16 @@ func newTempGitRepo() string {
 	output, err := initCmd.CombinedOutput()
 	Expect(err).NotTo(HaveOccurred(), "git init: %s", output)
 
+	// A newer git runs `git maintenance run --auto` detached after a commit, and that child can still be writing
+	// .git/objects when DeferCleanup removes the repository, which failed specs on main (#733).
+	for _, setting := range [][]string{{"maintenance.auto", "false"}, {"maintenance.autoDetach", "false"}, {"gc.auto", "0"}, {"gc.autoDetach", "false"}} {
+		configCmd := exec.Command("git", "config", setting[0], setting[1])
+		configCmd.Dir = directory
+		configCmd.Env = commitEnv
+		output, err := configCmd.CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), "git config %s: %s", setting[0], output)
+	}
+
 	return directory
 }
 
