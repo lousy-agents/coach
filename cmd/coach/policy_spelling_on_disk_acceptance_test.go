@@ -30,9 +30,10 @@ var spellingTargets = []spellingTarget{
 	{"another path named with --project-config", []string{"--project-config", "cfg/p.json"}, "cfg/p.json", "cfg/P.json", "CFG/p.json", "CFG/P.json"},
 }
 
-// caseVariantsOf is count names that differ from name only by case.
+// caseVariantsOf is count distinct names that differ from name only by case.
 func caseVariantsOf(name string, count int) []string {
 	variants := []string{}
+	seen := map[string]bool{name: true}
 	for mask := 1; len(variants) < count; mask++ {
 		runes := []rune(name)
 		for i := range runes {
@@ -40,8 +41,9 @@ func caseVariantsOf(name string, count int) []string {
 				runes[i] = unicode.ToUpper(runes[i])
 			}
 		}
-		if string(runes) != name {
-			variants = append(variants, string(runes))
+		if variant := string(runes); !seen[variant] {
+			seen[variant] = true
+			variants = append(variants, variant)
 		}
 	}
 	return variants
@@ -124,17 +126,20 @@ var _ = Describe("coach codesignal: the spelling of the policy path is the one t
 						expectTheDiskSpellingRefusal(stderr)
 						Expect(stderr).To(ContainSubstring("several spellings"), "stderr:\n%s", stderr)
 						Expect(stderr).To(ContainSubstring(`and Coach reads "`+target.policy+`"`), "stderr:\n%s", stderr)
-						listed := variants
+						named := 0
+						for _, variant := range variants {
+							if strings.Contains(stderr, `"`+directory+variant+`"`) {
+								named++
+							}
+						}
 						if !wantsAChoice {
 							Expect(stderr).To(ContainSubstring(", and more, and Coach reads"), "past 16 the message says there are more:\n%s", stderr)
 							Expect(stderr).NotTo(ContainSubstring("To keep"), "past 16 no spelling is chosen:\n%s", stderr)
-							listed = variants[:16]
+							Expect(named).To(Equal(16), "past 16 exactly 16 are named:\n%s", stderr)
 						} else {
 							Expect(stderr).NotTo(ContainSubstring("and more"), "stderr:\n%s", stderr)
 							Expect(stderr).To(ContainSubstring("To keep"), "up to 16 one is chosen to keep:\n%s", stderr)
-						}
-						for _, variant := range listed {
-							Expect(stderr).To(ContainSubstring(`"`+directory+variant+`"`), "stderr:\n%s", stderr)
+							Expect(named).To(Equal(len(variants)), "every variant is named:\n%s", stderr)
 						}
 					},
 					Entry("two variants", 2, true),
