@@ -11,6 +11,7 @@ import (
 
 var _ = Describe("coach codesignal --worktree invocation", func() {
 	const oneConstructor = "package model\n\ntype A struct{}\n\nfunc NewA() *A {\n\treturn &A{}\n}\n"
+	const worktreeAloneUsageLine = `(?m)^   or: coach codesignal --worktree [^\n]*\[--format text\|json\][^\n]*\[--scope production\|all\][^\n]*\[--fail-on-incomplete-coverage\]`
 
 	editedRepo := func() string {
 		repo := newTempGitRepo()
@@ -152,6 +153,7 @@ var _ = Describe("coach codesignal --worktree invocation", func() {
 			Expect(exitCode).To(Equal(2))
 			Expect(string(stderr)).To(ContainSubstring("missing required --base flag"))
 			Expect(string(stderr)).To(ContainSubstring("[--worktree]"))
+			Expect(string(stderr)).To(MatchRegexp(worktreeAloneUsageLine))
 		})
 	})
 
@@ -174,6 +176,7 @@ var _ = Describe("coach codesignal --worktree invocation", func() {
 			synopsis := strings.SplitN(string(stdout), "\n", 2)[0]
 			Expect(synopsis).To(HavePrefix("usage: coach codesignal (--base <ref> | --baseline)"))
 			Expect(synopsis).To(ContainSubstring("[--worktree]"))
+			Expect(string(stdout)).To(MatchRegexp(worktreeAloneUsageLine))
 		})
 	})
 })
