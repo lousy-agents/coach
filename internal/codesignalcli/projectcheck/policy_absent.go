@@ -74,38 +74,3 @@ func gapForWorkingTreeStatus(status *projectconfig.ConfigError, policyPath strin
 	}
 	return check.WithCause(status.Message, causeOrUndetermined(status.PolicyCause))
 }
-
-// causeTheCheckNames is whether the check names the cause a path that is not usable on disk is given. The causes that
-// say what the index or the revision holds for it are disclosed as warnings when a file is on disk, and are
-// undetermined when none is.
-func causeTheCheckNames(cause projectreadiness.PolicyCause) bool {
-	switch cause {
-	case "",
-		projectreadiness.CauseDirectory,
-		projectreadiness.CauseSymbolicLink,
-		projectreadiness.CauseNotARegularFile,
-		projectreadiness.CauseUnreadableOnDisk,
-		projectreadiness.CauseParentNotDirectory,
-		projectreadiness.CauseNameCaseDiffers,
-		projectreadiness.CauseInSubmodule,
-		projectreadiness.CauseUndetermined,
-		projectreadiness.CauseSparseCheckout,
-		projectreadiness.CauseSkipWorktree:
-		return true
-	}
-	return false
-}
-
-// heldAtThePathText says what holds the path while nothing is on disk. Where the index holds the user's own staged
-// version, the one restore it offers keeps that version, and none brings back the revision's copy over it.
-func heldAtThePathText(policyPath string, cause projectreadiness.PolicyCause) string {
-	switch cause {
-	case projectreadiness.CauseStagedEdit, projectreadiness.CauseStagedCopy:
-		held := "a staged edit to it"
-		if cause == projectreadiness.CauseStagedCopy {
-			held = "a staged copy of it"
-		}
-		return "coach codesignal: " + policyPath + " is not on disk, and the index holds " + held + " that a restore from the revision would discard; to keep the staged version, " + projectconfig.RestoreFromIndexAdvice(policyPath) + ", then check again"
-	}
-	return "coach codesignal: " + policyPath + " is not on disk, and the index or the analyzed revision holds an entry for it that a restore from the revision would discard or recreate as something a policy cannot be; resolve it with git, then check again"
-}
