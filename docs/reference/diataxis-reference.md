@@ -1,8 +1,20 @@
-# Diátaxis Reference (agent-oriented)
+---
+title: "Diátaxis Reference (agent-oriented)"
+compiled: 2026-11-23
+source_work: "Diátaxis"
+source_author: "Daniele Procida"
+source_url: "https://diataxis.fr/"
+source_license: "CC BY-SA 4.0"
+source_license_url: "https://creativecommons.org/licenses/by-sa/4.0/"
+license: "CC BY-SA 4.0"
+provenance: "AI-generated paraphrase and synthesis of diataxis.fr, read through a summarizing fetch rather than verbatim; not reviewed or endorsed by the author"
+secondary_sources:
+  - url: "https://pasqualepillitteri.it/en/news/5528/diataxis-framework-documentation-ai"
+    status: "provisional; body not reached"
+changes: "Restructured and condensed for coding-agent use; sections tagged [derived] are new synthesis, not from the source"
+---
 
-Compiled: 2026-11-23
-Primary source: https://diataxis.fr/ (14 pages read; see section 13)
-Secondary source (provisional): https://pasqualepillitteri.it/en/news/5528/diataxis-framework-documentation-ai (body not reached; see section 11)
+# Diátaxis Reference (agent-oriented)
 
 Provenance tags used throughout:
 - [site] stated on a diataxis.fr page, paraphrased
