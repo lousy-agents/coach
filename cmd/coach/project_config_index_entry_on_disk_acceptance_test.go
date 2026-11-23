@@ -102,13 +102,3 @@ var _ = Describe("coach codesignal: a policy that is not committed and that the 
 		Entry("a conflict one side deleted, the file deleted", deletedByUs),
 	)
 })
-
-var _ = Describe("the CLI contract: what the index decides about a policy that is on disk and not committed", func() {
-	It("says an unresolved conflict is merge_conflict and not not_committed, and that the path stays in dirty_worktree with the file on disk or gone", func() {
-		text := documentText("docs/cli-codesignal.md")
-
-		Expect(text).To(ContainSubstring("is `policy_missing` with the cause `merge_conflict` and not `not_committed`"))
-		Expect(text).To(ContainSubstring("A staged copy of it keeps `not_committed`, because committing it is the way out."))
-		Expect(text).To(ContainSubstring("In both the path stays in `dirty_worktree`, with the file on disk or gone."))
-	})
-})

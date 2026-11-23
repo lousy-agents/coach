@@ -129,10 +129,10 @@ func TestTheRevisionThatCannotBeVerifiedStopsTheDiscoveredPolicyCheck(t *testing
 func TestARepositoryRootThatCannotBeFoundStopsTheNamedPolicyCheck(t *testing.T) {
 	run := questionsWhereOnly(t, theRepositoryRootLookup)
 
-	check, _, err := checkExplicitPolicy(run, gitfixture.Init(t), "HEAD", "cfg/p.json")
+	judgment, err := judgePolicy(run, gitfixture.Init(t), "HEAD", policyref.Named("cfg/p.json"))
 
 	if !errors.Is(err, errNoAnswer) {
-		t.Errorf("check = %+v, error %v; want the failed root lookup returned as it is", check, err)
+		t.Errorf("check = %+v, error %v; want the failed root lookup returned as it is", judgment.check, err)
 	}
 }
 
@@ -150,11 +150,9 @@ func TestACommittedPolicyThatCannotBeLookedUpStopsTheRelevanceOfTheDirtyWorktree
 		"cat-file -e " + manifestBlob:                               {},
 		"ls-tree -z --full-tree HEAD -- :(top,literal)cfg/p.json":   {err: errNoAnswer},
 	})
-	refused := func(string, string, string) (projectreadiness.Check, []string, error) {
-		return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyInvalid}, nil, nil
-	}
+	refused := policyJudgment{path: "cfg/p.json", check: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyInvalid}}
 
-	result, err := evaluate(run, tstoolchain.LocateMiseTypescriptInstall, repo, "HEAD", policyref.Named("cfg/p.json"), refused)
+	result, err := evaluate(run, tstoolchain.LocateMiseTypescriptInstall, repo, "HEAD", refused)
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) {

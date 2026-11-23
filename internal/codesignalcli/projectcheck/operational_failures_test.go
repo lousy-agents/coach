@@ -11,14 +11,13 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
-// aMissingPolicy is the check of a policy that is not there: it fails, and finds no roots.
-func aMissingPolicy(string, string, string) (projectreadiness.Check, []string, error) {
-	return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing}, nil, nil
-}
+// aMissingPolicy is the judgment of a policy that is not there: it fails, and finds no roots.
+var aMissingPolicy = policyJudgment{path: projectconfig.CanonicalPath, check: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing}}
 
 // removeCommittedBlob deletes the loose object of a committed file, so that the revision still names it and git
 // cannot read it: a repository that is damaged, and not one that lacks the file.
@@ -40,7 +39,7 @@ func TestAFailedPolicyLeavesThePackageManagerNotChecked(t *testing.T) {
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "package-lock.json", `{"lockfileVersion":3,"packages":{}}`)
 
-	result, err := evaluate(readinessGit(), tstoolchain.LocateMiseTypescriptInstall, repo, "HEAD", policyref.Discovered(""), aMissingPolicy)
+	result, err := evaluate(readinessGit(), tstoolchain.LocateMiseTypescriptInstall, repo, "HEAD", aMissingPolicy)
 
 	if err != nil || result.Checks.PackageManager.State != projectreadiness.NotChecked {
 		t.Errorf("package_manager = %+v, %v; want not_checked: no policy root justifies the worktree-root fallback", result.Checks.PackageManager, err)
@@ -64,29 +63,52 @@ func TestRunFailsWhenGitCannotSayWhatIsDirty(t *testing.T) {
 	}
 }
 
-// A committed policy that is on disk but whose committed blob git cannot read is a failure of git, whichever way the
-// policy was found, and the check returns it as one and does not read it as a policy that is missing or fine.
-func TestAPolicyOnDiskWhoseCommittedBlobCannotBeReadIsAnOperationalFailure(t *testing.T) {
-	run := readinessGit()
-	checks := map[string]func(dir, revision, policyPath string) (projectreadiness.Check, []string, error){
-		"named with --project-config": policyCheckerBy(run, policyref.Named("cfg/p.json")),
-		"discovered":                  policyCheckerBy(run, policyref.Discovered("")),
+// A policy that is on disk is the policy whatever its committed blob is. When git cannot read that blob the two cannot be
+// compared, which the result says, and the policy still passes: it is not a failure of the run, and not a policy that is
+// missing.
+func TestAPolicyOnDiskWhoseCommittedBlobCannotBeReadPassesAndSaysItCouldNotBeCompared(t *testing.T) {
+	policies := map[string]policyref.Ref{
+		"named with --project-config": policyref.Named("cfg/p.json"),
+		"discovered":                  policyref.Discovered(""),
 	}
-	for how, check := range checks {
-		t.Run(how, func(t *testing.T) { requireAnOperationalFailure(t, check) })
+	for how, policy := range policies {
+		t.Run(how, func(t *testing.T) { requireThePolicyToPassUncompared(t, policy) })
 	}
 }
 
-func requireAnOperationalFailure(t *testing.T, check func(dir, revision, policyPath string) (projectreadiness.Check, []string, error)) {
+func requireThePolicyToPassUncompared(t *testing.T, policy policyref.Ref) {
 	t.Helper()
 	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
-	removeCommittedBlob(t, repo, "cfg/p.json")
+	path := "cfg/p.json"
+	if !policy.JudgedOnDisk() {
+		path = projectconfig.CanonicalPath
+	}
+	gitfixture.CommitFile(t, repo, path, validPolicy)
+	removeCommittedBlob(t, repo, path)
 
-	got, roots, err := check(repo, "HEAD", "cfg/p.json")
+	judgment, err := judgePolicy(readinessGit(), repo, "HEAD", policy)
+
+	if err != nil || judgment.check.State != projectreadiness.Pass {
+		t.Fatalf("judgePolicy = %+v, %v; want a pass", judgment.check, err)
+	}
+	if len(judgment.warnings) != 1 || judgment.warnings[0].Code != projectreadiness.WarnPolicyHeadUnreadable {
+		t.Errorf("warnings = %+v; want %q", judgment.warnings, projectreadiness.WarnPolicyHeadUnreadable)
+	}
+}
+
+// A policy gone from disk still asks git for the committed copy, so a blob git cannot read stops the check.
+func TestAPolicyGoneFromDiskWhoseCommittedBlobCannotBeReadIsAnOperationalFailure(t *testing.T) {
+	repo := gitfixture.Init(t)
+	gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
+	removeCommittedBlob(t, repo, "cfg/p.json")
+	if err := os.RemoveAll(filepath.Join(repo, "cfg")); err != nil {
+		t.Fatal(err)
+	}
+
+	judgment, err := judgePolicy(readinessGit(), repo, "HEAD", policyref.Named("cfg/p.json"))
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) {
-		t.Errorf("check = %+v, roots %v, error %v; want an *OperationalError", got, roots, err)
+		t.Errorf("judgePolicy = %+v, error %v; want an *OperationalError", judgment.check, err)
 	}
 }

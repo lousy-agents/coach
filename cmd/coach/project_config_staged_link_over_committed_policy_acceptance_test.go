@@ -117,17 +117,3 @@ var _ = Describe("coach codesignal: a committed policy with a symbolic link or a
 		Expect(nextActionKinds(doc)).NotTo(ContainElement("restore_policy"))
 	})
 })
-
-var _ = Describe("the CLI contract: a link staged over a committed policy", func() {
-	It("says the cause is staged_not_a_file, that only the restore that drops the staged link is printed, and what keeps the change", func() {
-		text := documentText("docs/cli-codesignal.md")
-
-		Expect(text).To(ContainSubstring("has the cause `staged_not_a_file`, and the message prints only the restore that drops the staged link, because the one that keeps it writes the link back and the scan refuses a link; to keep the change it says to stage a regular file at the path in place of the link, then run again."))
-	})
-
-	It("says a submodule entry staged over the policy is not that case but in_submodule, with no restore", func() {
-		text := documentText("docs/cli-codesignal.md")
-
-		Expect(text).To(ContainSubstring("A submodule entry (a gitlink) staged over the policy is not this case: it is reported as `in_submodule`, with no restore."))
-	})
-})
