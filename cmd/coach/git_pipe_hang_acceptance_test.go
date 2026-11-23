@@ -38,6 +38,10 @@ type pipeSite struct {
 	// structured diagnostic (project_config_suggestion_snapshot_unavailable) and exits 3, but only for a read
 	// of its own; the guard that runs before every mode fails it with the generic operational exit 1.
 	suggestExit int
+	// suggestExitBefore244, when set, is how --suggest-project-config ends on a git before 2.44 instead. Such a git
+	// is asked to resolve HEAD before the scan reads anything, and that read failing is the guard's, so it exits 1:
+	// the guard refuses rather than let a read through that such a git could answer with a fetch (#737).
+	suggestExitBefore244 int
 	// terminalFirst is set where --prepare-compiler cannot be reached: with no terminal it exits 2 before
 	// it asks git anything, so only a read that every mode makes first (the guard's) can be made to hang.
 	terminalFirst bool
@@ -58,8 +62,9 @@ var pipeSites = []pipeSite{
 		},
 		question: `git rev-parse: .*timed out after 30s`,
 
-		suggestExit:   3,
-		terminalFirst: true,
+		suggestExit:          3,
+		suggestExitBefore244: 1,
+		terminalFirst:        true,
 	},
 }
 
@@ -71,11 +76,15 @@ type pipeMode struct {
 }
 
 func (site pipeSite) modes() []pipeMode {
+	suggestExit := site.suggestExit
+	if can, _ := gitCanRefuseLazyFetch(); !can && site.suggestExitBefore244 != 0 {
+		suggestExit = site.suggestExitBefore244
+	}
 	modes := []pipeMode{
 		{site.name + ": --baseline", 1, []string{"codesignal", "--baseline"}},
 		{site.name + ": --base", 1, []string{"codesignal", "--base", "HEAD"}},
 		{site.name + ": --check-project", 1, []string{"codesignal", "--baseline", "--check-project", "--project-language", "typescript"}},
-		{site.name + ": --suggest-project-config", site.suggestExit, []string{"codesignal", "--baseline", "--suggest-project-config", "--output", "suggested.json"}},
+		{site.name + ": --suggest-project-config", suggestExit, []string{"codesignal", "--baseline", "--suggest-project-config", "--output", "suggested.json"}},
 	}
 	if site.terminalFirst {
 		return modes

@@ -33,6 +33,28 @@ func cloneLackingHeadObjects() (clone, branchRef string) {
 	return clone, filepath.Join(clone, ".git", filepath.FromSlash(branch))
 }
 
+// transportMarker makes the clone's remote transport a program that leaves a marker, for the spec's duration.
+func transportMarker() string {
+	scripts := GinkgoT().TempDir()
+	marker := filepath.Join(scripts, "ssh-ran")
+	program := filepath.Join(scripts, "fakessh")
+	Expect(os.WriteFile(program, []byte("#!/bin/sh\ntouch '"+marker+"'\nexit 1\n"), 0o755)).To(Succeed())
+	GinkgoT().Setenv("GIT_SSH_COMMAND", program)
+	return marker
+}
+
+// objectFilesIn counts the loose and packed object files of a repository.
+func objectFilesIn(repository string) int {
+	count := 0
+	_ = filepath.WalkDir(filepath.Join(repository, ".git", "objects"), func(_ string, entry os.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() {
+			count++
+		}
+		return nil
+	})
+	return count
+}
+
 // pipeInPlaceOf replaces the loose ref file with a named pipe, so a git that reads the ref blocks opening it.
 // It returns what the ref held.
 func pipeInPlaceOf(ref string) string {
@@ -108,13 +130,26 @@ var _ = Describe("on a git before 2.44, a branch ref that git has to wait for (#
 		Expect(refusalText(err)).To(ContainSubstring("HEAD has 1 object that is not in it"), "the probe must still run: %v", err)
 	})
 
-	It("#737: leaves a ref that never answers to the scan's own read, which ends the run, instead of waiting out the probe", func() {
+	It("#737: still probes a ref that answers after 5 s and well inside the 30 s a read of HEAD is given, and refuses the clone without running the transport or writing an object", func() {
+		clone, ref := cloneLackingHeadObjects()
+		marker := transportMarker()
+		before := objectFilesIn(clone)
+		answerSlowly(ref, pipeInPlaceOf(ref), 8*time.Second)
+
+		_, err := guardWithin(clone, 2*time.Minute)
+
+		Expect(refusalText(err)).To(ContainSubstring("HEAD has 1 object that is not in it"), "a ref that answers is probed, however slowly: %v", err)
+		Expect(marker).NotTo(BeAnExistingFile(), "the remote's transport ran")
+		Expect(objectFilesIn(clone)).To(Equal(before), "objects were written")
+	})
+
+	It("#737: refuses a ref that never answers, naming the question, once the 30 s a read of HEAD is given are up, instead of waiting out the probe", func() {
 		clone, ref := cloneLackingHeadObjects()
 		pipeInPlaceOf(ref)
 
-		elapsed, err := guardWithin(clone, 30*time.Second)
+		elapsed, err := guardWithin(clone, time.Minute)
 
-		Expect(err).NotTo(HaveOccurred())
-		Expect(elapsed).To(BeNumerically("<", 15*time.Second), "resolving HEAD is held to a few seconds, not the probe's two minutes")
+		Expect(refusalText(err)).To(MatchRegexp(`git rev-parse: .*timed out after 30s`), "%v", err)
+		Expect(elapsed).To(BeNumerically("<", 45*time.Second), "a read of HEAD is held to 30 s, not the probe's two minutes")
 	})
 })
