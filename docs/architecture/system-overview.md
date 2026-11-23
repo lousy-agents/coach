@@ -228,7 +228,7 @@ Results include analyzer/rule version, repository and commit identities, file ha
 
 #### CLI preview
 
-`coach codesignal` (`cmd/coach`, `internal/codesignalcli`) is a local-only, deterministic validation surface over the same `pkg/semantics` -> `pkg/codesignal` pipeline, run directly against a checked-out Git revision instead of through the worker/queue path above. It remains a local-only preview **alongside** groundwork (`coach-api`, worker, `TaskQueue`, GitHub App reads), not a stand-in that exists only until those land. It does not replace the CodeSignal Worker described elsewhere in this document, and it never contacts a queue or GitHub: it reads committed Git objects from the local checkout, analyzes each selected file, and prints (or emits as JSON) the resulting report.
+`coach codesignal` (`cmd/coach`, `internal/codesignalcli`) is a local-only, deterministic validation surface over the same `pkg/semantics` -> `pkg/codesignal` pipeline, run directly against a checked-out Git revision instead of through the worker/queue path above. It remains a local-only preview **alongside** groundwork (`coach-api`, worker, `TaskQueue`, GitHub App reads), not a stand-in that exists only until those land. It does not replace the CodeSignal Worker described elsewhere in this document, and it never contacts a queue or GitHub: it reads committed Git objects from the local checkout (unless `--worktree` is passed; with `--worktree`, supported-language source and project configuration files are read from the working tree on top of the analyzed revision, and a symbolic link is not followed), analyzes each selected file, and prints (or emits as JSON) the resulting report.
 
 ```mermaid
 flowchart LR
@@ -247,7 +247,7 @@ An explicit `--project-config` opts into one narrow exception to "no cross-file 
 
 The prepared analysis runtime records executable path, spawn arguments, exact version, kind, and origin. Spawn uses that executable path and those arguments. Kind is the selected runtime family; origin records how it was discovered.
 
-Fit checks may read the worktree to report gaps. Analysis reads only the selected committed snapshot for source, configuration, and package metadata. A dirty worktree may change what setup is offered; it shall not change what the report claims about the revision.
+Fit checks may read the worktree to report gaps. Analysis reads only the selected committed snapshot for source, configuration, and package metadata, unless `--worktree` is passed; with `--worktree`, supported-language source and project configuration files are read from the working tree on top of the analyzed revision, and a symbolic link is not followed. A dirty worktree may change what setup is offered; it shall not change what the report claims about the revision.
 
 Read-only mise probes run with a working directory that is not the analyzed repository and with an environment limited to PATH, HOME, and mise data/config directories, so repository exec templates never run during readiness or analysis.
 
