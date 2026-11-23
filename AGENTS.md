@@ -42,6 +42,8 @@ Most are sourced from `lousy-agents/skills` and pinned by `skills-lock.json`: ch
 - `cut-release` — propose the next 0.x version, draft customer release notes, hand off an annotated tag to the GoReleaser `release` job, and replace its commit changelog with the confirmed notes.
 - `optimize-prompt-loop` — turn a fuzzy or overly broad request into a concise, reusable task prompt tuned to the current model and harness.
 - `instruction-style` — author or revise durable instruction prose so priority, rationale, and scope survive.
+- `technical-writing` — layered technical-writing standard: Diátaxis structure, Google developer style sentences, STE instruction rules, Global English syntax. Pinned from `cursor/plugins` by `skills-lock.json`.
+- `unslop` — cut AI tells from any writing. Pinned from `cursor/plugins` by `skills-lock.json`.
 
 ## Custom subagents
 
