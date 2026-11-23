@@ -12,15 +12,37 @@ const policyDigestPrefixHexLength = 12
 // renderPolicyDisclosure says, directly under the scan's summary line, which project policy the scan used and,
 // when that policy is not the committed one at HEAD, warns that the result can differ from CI.
 func renderPolicyDisclosure(b *strings.Builder, report *codesignal.Report) {
+	absent := absentPolicyPath(report.Diagnostics)
 	policy := report.Scope.Policy
-	if policy == nil {
-		return
+	if policy != nil {
+		cause := effectivePolicyCause(policy)
+		fmt.Fprintf(b, "policy: %s (%s), %s\n", terminalText(policy.Path), shortPolicyDigest(policy.Digest), policyHeadRelation(cause))
+		if warning := policyWarning(policy, cause); warning != "" && !(absent != "" && cause == codesignal.PolicyCauseDiffersFromHead) {
+			b.WriteString(warning + "\n")
+		}
 	}
-	cause := effectivePolicyCause(policy)
-	fmt.Fprintf(b, "policy: %s (%s), %s\n", terminalText(policy.Path), shortPolicyDigest(policy.Digest), policyHeadRelation(cause))
-	if warning := policyWarning(policy, cause); warning != "" {
-		b.WriteString(warning + "\n")
+	if absent != "" {
+		b.WriteString(absentPolicyWarning(absent, policy) + "\n")
 	}
+}
+
+// absentPolicyPath is the policy HEAD selects that the working tree does not hold, empty when there is none.
+func absentPolicyPath(diagnostics []codesignal.Diagnostic) string {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Kind == codesignal.DiagKindProjectPolicyAbsentOnDisk {
+			return diagnostic.Path
+		}
+	}
+	return ""
+}
+
+// absentPolicyWarning replaces the generic differs-from-HEAD warning where the difference is that the policy HEAD
+// selects is gone from disk, and says that the scan fell back to another file or to none.
+func absentPolicyWarning(headPath string, used *codesignal.PolicyScope) string {
+	if used == nil {
+		return fmt.Sprintf("WARNING: %s is committed at HEAD and absent on disk; this scan used no project policy, so its result can differ from CI, which reads the committed policy.", terminalText(headPath))
+	}
+	return fmt.Sprintf("WARNING: %s is committed at HEAD and absent on disk; this scan used %s instead, so its result can differ from CI, which reads the committed policy.", terminalText(headPath), terminalText(used.Path))
 }
 
 // effectivePolicyCause lets MatchesHead decide the cases it can: a report decoded from JSON carries the zero
@@ -30,7 +52,7 @@ func effectivePolicyCause(policy *codesignal.PolicyScope) codesignal.PolicyCause
 		return codesignal.PolicyCauseSameAsHead
 	}
 	switch policy.Cause {
-	case codesignal.PolicyCauseNotCommitted, codesignal.PolicyCauseMissingOnDisk, codesignal.PolicyCauseHeadUnreadable:
+	case codesignal.PolicyCauseNotCommitted, codesignal.PolicyCauseHeadUnreadable:
 		return policy.Cause
 	}
 	return codesignal.PolicyCauseDiffersFromHead
@@ -64,8 +86,6 @@ func policyWarning(policy *codesignal.PolicyScope, cause codesignal.PolicyCause)
 		return fmt.Sprintf("WARNING: the project policy %s is on disk and not committed at HEAD; this scan used it.", terminalText(policy.Path))
 	case codesignal.PolicyCauseHeadUnreadable:
 		return fmt.Sprintf("WARNING: HEAD's copy of the project policy %s could not be read%s; this scan used the policy on disk, so its result can differ from CI, which reads the committed policy.", terminalText(policy.Path), headBoundClause(policy.HeadBound))
-	case codesignal.PolicyCauseMissingOnDisk:
-		return fmt.Sprintf("WARNING: %s is committed at HEAD and missing on disk; this scan used the committed copy.", terminalText(policy.Path))
 	}
 	return ""
 }

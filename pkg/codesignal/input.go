@@ -148,14 +148,14 @@ type PolicyCause string
 const (
 	// PolicyCauseUnset is the zero value of a report decoded without a cause: the text reads MatchesHead alone.
 	PolicyCauseUnset PolicyCause = ""
-	// PolicyCauseSameAsHead means the policy on disk is the committed one.
+	// PolicyCauseSameAsHead means the policy on disk is the policy HEAD selects: the same path with the same digest, or the
+	// blob HEAD commits once git's checkout conversion is applied.
 	PolicyCauseSameAsHead PolicyCause = "same_as_head"
-	// PolicyCauseDiffersFromHead means the scan used a policy on disk that differs from the committed one.
+	// PolicyCauseDiffersFromHead means the scan used a policy on disk that HEAD commits but does not select: the same path
+	// with other content, or another committed path such as the root project.json beside a deleted canonical policy.
 	PolicyCauseDiffersFromHead PolicyCause = "differs_from_head"
 	// PolicyCauseNotCommitted means the scan used a policy on disk with no committed copy at HEAD.
 	PolicyCauseNotCommitted PolicyCause = "not_committed"
-	// PolicyCauseMissingOnDisk means the policy is committed at HEAD and absent on disk, so the scan used the committed copy.
-	PolicyCauseMissingOnDisk PolicyCause = "missing_on_disk"
 	// PolicyCauseHeadUnreadable means the scan used a usable policy on disk and HEAD's copy at its path could not be read to compare.
 	PolicyCauseHeadUnreadable PolicyCause = "head_unreadable"
 )

@@ -83,7 +83,7 @@ var _ = Describe("coach codesignal discloses why the policy used is the one it i
 			})
 		}
 
-		It("#168 A2b: no scan reports the cause unusable_on_disk under "+mode.name+": the causes observed across every scenario are exactly the four that remain", func() {
+		It("#168 A2b: no scan reports the cause unusable_on_disk under "+mode.name+": the causes observed across every scenario are exactly the three that remain", func() {
 			observed := map[string]struct{}{}
 			for _, scenario := range append(append([]causeScenario{}, scenarios...), refusedScenarios...) {
 				repo, base := diskPolicyRepo(scenario.policies...)
@@ -96,7 +96,7 @@ var _ = Describe("coach codesignal discloses why the policy used is the one it i
 				}
 			}
 
-			Expect(slices.Sorted(maps.Keys(observed))).To(Equal([]string{"differs_from_head", "missing_on_disk", "not_committed", "same_as_head"}))
+			Expect(slices.Sorted(maps.Keys(observed))).To(Equal([]string{"differs_from_head", "not_committed", "same_as_head"}))
 			Expect(observed).NotTo(HaveKey("unusable_on_disk"))
 		})
 

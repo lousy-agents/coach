@@ -80,6 +80,10 @@ const (
 	DiagKindWorktreeScanIncomplete              = "worktree_scan_incomplete"
 )
 
+// DiagKindProjectPolicyAbsentOnDisk names the policy HEAD selects when the working tree holds no file there, so the scan
+// did not read it. Path is the policy HEAD selects; scope.policy names the policy the scan used instead, or is null.
+const DiagKindProjectPolicyAbsentOnDisk = "project_policy_absent_on_disk"
+
 // SortDiagnostics orders diagnostics by path, kind, location, then message.
 // Callers that append diagnostics after Build must use this so report order
 // stays identical to Build's own sortDiagnostics pass.

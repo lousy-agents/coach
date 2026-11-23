@@ -35,7 +35,7 @@ func expectRelationToHead(t *testing.T, head projectconfig.CommittedCopy, conver
 	content := []byte(`{"a":1}`)
 	disk := projectconfig.DiskSelection{Path: projectconfig.CanonicalPath, Digest: projectconfig.Digest(content), Content: content}
 
-	scope := choosePolicy(policyEvidence{disk: disk, head: head, holdsConvertedAt: func(string) bool { return converted }}).scope
+	scope := choosePolicy(policyEvidence{headPath: disk.Path, disk: disk, head: head, holdsConvertedAt: func(string) bool { return converted }}).scope
 
 	wantDigest := disk.Digest
 	if want == codesignal.PolicyCauseSameAsHead {
@@ -46,57 +46,35 @@ func expectRelationToHead(t *testing.T, head projectconfig.CommittedCopy, conver
 	}
 }
 
-func TestChoosePolicyUsesTheCommittedPolicyWhereTheDiskHasNoneOrDiscoveryPrefersIt(t *testing.T) {
-	committed := committedPolicy{path: projectconfig.CanonicalPath, content: []byte(`{"c":1}`)}
-	legacyOnDisk := projectconfig.DiskSelection{Path: projectconfig.DefaultPath, Digest: "pcfg_x", Content: []byte(`{"d":1}`)}
+func TestChoosePolicyUsesNoPolicyWhereTheDiskHasNone(t *testing.T) {
+	choice := choosePolicy(policyEvidence{headPath: projectconfig.CanonicalPath})
 
-	for name, disk := range map[string]projectconfig.DiskSelection{"no policy on disk": {}, "only the root project.json on disk": legacyOnDisk} {
-		t.Run(name, func(t *testing.T) { expectCommittedAsMissing(t, committed, disk) })
-	}
-
-	t.Run("a committed root project.json does not outrank the canonical file on disk", func(t *testing.T) {
-		canonicalOnDisk := projectconfig.DiskSelection{Path: projectconfig.CanonicalPath, Digest: "pcfg_x", Content: []byte(`{"d":1}`)}
-
-		choice := choosePolicy(policyEvidence{committed: committedPolicy{path: projectconfig.DefaultPath}, disk: canonicalOnDisk, head: projectconfig.CommittedCopy{Kind: projectconfig.CopyAbsent}})
-
-		if choice.scope.Path != projectconfig.CanonicalPath || choice.scope.Cause != codesignal.PolicyCauseNotCommitted {
-			t.Fatalf("scope = %+v", choice.scope)
-		}
-	})
-}
-
-func expectCommittedAsMissing(t *testing.T, committed committedPolicy, disk projectconfig.DiskSelection) {
-	t.Helper()
-	choice := choosePolicy(policyEvidence{committed: committed, disk: disk})
-	if choice.scope.Path != committed.path || choice.scope.Cause != codesignal.PolicyCauseMissingOnDisk {
-		t.Fatalf("scope = %+v, want the committed policy as missing on disk", choice.scope)
+	if choice.scope.Path != "" || len(choice.content) != 0 {
+		t.Fatalf("choice = %+v, want no policy: no committed copy stands in for a policy missing on disk", choice)
 	}
 }
 
-func TestChoosePolicyPrefersTheCommittedCanonicalOnlyOverTheRootProjectJSONOnDisk(t *testing.T) {
-	absent := projectconfig.CommittedCopy{Kind: projectconfig.CopyAbsent}
+func TestChoosePolicyRelatesTheRootProjectJSONOnDiskToTheCanonicalPolicyHeadSelects(t *testing.T) {
+	content := []byte(`{"a":1}`)
+	disk := projectconfig.DiskSelection{Path: projectconfig.DefaultPath, Digest: projectconfig.Digest(content), Content: content}
 	tests := []struct {
-		name          string
-		committedPath string
-		diskPath      string
+		name string
+		head projectconfig.CommittedCopy
+		want codesignal.PolicyCause
 	}{
-		{"the committed policy is the canonical one and so is the one on disk", projectconfig.CanonicalPath, projectconfig.CanonicalPath},
-		{"the committed policy is the root project.json and so is the one on disk", projectconfig.DefaultPath, projectconfig.DefaultPath},
+		{"a root project.json HEAD commits with the same bytes is not the policy HEAD selects", projectconfig.CommittedCopy{Kind: projectconfig.CopyReadable, Content: content}, codesignal.PolicyCauseDiffersFromHead},
+		{"a root project.json HEAD commits with other bytes", projectconfig.CommittedCopy{Kind: projectconfig.CopyReadable, Content: []byte(`{"a":2}`)}, codesignal.PolicyCauseDiffersFromHead},
+		{"a root project.json HEAD does not commit", projectconfig.CommittedCopy{Kind: projectconfig.CopyAbsent}, codesignal.PolicyCauseNotCommitted},
+		{"a root project.json HEAD holds as a blob that cannot be read", projectconfig.CommittedCopy{Kind: projectconfig.CopyUnreadable}, codesignal.PolicyCauseHeadUnreadable},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) { expectDiskOverCommitted(t, tt.committedPath, tt.diskPath, absent) })
-	}
-}
+		t.Run(tt.name, func(t *testing.T) {
+			evidence := policyEvidence{headPath: projectconfig.CanonicalPath, disk: disk, head: tt.head, holdsConvertedAt: func(string) bool { return true }}
 
-func expectDiskOverCommitted(t *testing.T, committedPath, diskPath string, head projectconfig.CommittedCopy) {
-	t.Helper()
-	content := []byte(`{"d":1}`)
-	disk := projectconfig.DiskSelection{Path: diskPath, Digest: projectconfig.Digest(content), Content: content}
-
-	choice := choosePolicy(policyEvidence{committed: committedPolicy{path: committedPath, content: []byte(`{"c":1}`)}, disk: disk, head: head})
-
-	if choice.scope.Cause != codesignal.PolicyCauseNotCommitted || choice.scope.Digest != disk.Digest {
-		t.Fatalf("scope = %+v, want the policy on disk", choice.scope)
+			if cause := choosePolicy(evidence).scope.Cause; cause != tt.want {
+				t.Fatalf("cause = %q, want %q", cause, tt.want)
+			}
+		})
 	}
 }
 
