@@ -1,6 +1,7 @@
 package gitrepo
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 )
@@ -48,24 +49,37 @@ func TestRefuseForeignGitDirectoryLetsThroughWhatGitLinks(t *testing.T) {
 	}
 }
 
-// With GIT_WORK_TREE set the guard asks git nothing, so a layout it would refuse is let through unasked.
-func TestRefuseForeignGitDirectoryLetsThroughAWorkTreeTheCallerNames(t *testing.T) {
+// GIT_WORK_TREE excuses nothing: with it naming the scanned directory, a main git directory named .git that does
+// not hold that directory is refused, and a git directory under another name is let through as it is without it.
+func TestRefuseForeignGitDirectoryJudgesTheLayoutWhenTheCallerNamesAWorkTree(t *testing.T) {
 	root := t.TempDir()
 	scan, gitDir := filepath.Join(root, "scan"), filepath.Join(root, "other", ".git")
-	makeDirectories(t, scan, gitDir)
-	foreign := answers{
-		insideQuestion:  {output: "true\n"},
-		layoutQuestion:  {output: gitDir + "\n" + gitDir + "\n"},
-		worktreeSetting: {err: exitStatusOne},
-	}
-	t.Setenv("GIT_WORK_TREE", "")
-	if err := RefuseForeignGitDirectory(foreign.run, scan); err == nil {
-		t.Fatal("RefuseForeignGitDirectory = nil; the fixture must be refused without GIT_WORK_TREE")
-	}
-
+	separateGitDir := filepath.Join(root, "other", "store.git")
+	makeDirectories(t, scan, gitDir, separateGitDir)
 	t.Setenv("GIT_WORK_TREE", scan)
 
-	assertLetThrough(t, foreign, scan)
+	t.Run("a main git directory named .git outside the work tree is refused", func(t *testing.T) {
+		foreign := answers{
+			insideQuestion:  {output: "true\n"},
+			layoutQuestion:  {output: gitDir + "\n" + gitDir + "\n"},
+			worktreeSetting: {err: exitStatusOne},
+		}
+
+		err := RefuseForeignGitDirectory(foreign.run, scan)
+
+		var refusal *ForeignGitDirectoryError
+		if !errors.As(err, &refusal) {
+			t.Errorf("RefuseForeignGitDirectory = %v; want a ForeignGitDirectoryError", err)
+		}
+	})
+	t.Run("a main git directory not named .git is let through", func(t *testing.T) {
+		separate := answers{
+			insideQuestion: {output: "true\n"},
+			layoutQuestion: {output: separateGitDir + "\n" + separateGitDir + "\n"},
+		}
+
+		assertLetThrough(t, separate, scan)
+	})
 }
 
 func assertLetThrough(t *testing.T, git answers, scan string) {

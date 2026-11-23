@@ -9,5 +9,5 @@ type ForeignGitDirectoryError struct {
 }
 
 func (e *ForeignGitDirectoryError) Error() string {
-	return fmt.Sprintf("the repository git reports (%s) is not the one that holds this working tree", TerminalSafe(e.GitDir))
+	return fmt.Sprintf("the repository git reports (%s) is not the one that holds this working tree; if it is, rename a separate git directory that is named .git, or record the work tree with git config core.worktree <path>", TerminalSafe(e.GitDir))
 }
