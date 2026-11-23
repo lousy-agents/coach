@@ -91,16 +91,21 @@ func RefuseMissingObjects(run Runner, dir, base string) error {
 	if err != nil {
 		return versionUnknownError(err)
 	}
+	partial, partialErr := IsPartialClone(run, dir)
 	if !supported {
+		if partialErr != nil && BoundFailure(partialErr) != nil {
+			return partialCloneUnanswered(partialErr)
+		}
 		if err := refuseWhenReadRevisionsLackObjects(run, dir, base, version); err != nil {
 			return err
 		}
-		_, err := askWhetherPartialClone(run, dir)
-		return err
+		if partialErr != nil {
+			return partialCloneUnanswered(partialErr)
+		}
+		return nil
 	}
-	partial, err := askWhetherPartialClone(run, dir)
-	if err != nil {
-		return err
+	if partialErr != nil {
+		return partialCloneUnanswered(partialErr)
 	}
 	if !partial {
 		return nil
@@ -111,16 +116,14 @@ func RefuseMissingObjects(run Runner, dir, base string) error {
 	return refuseWhenTheMergeBaseLacksObjects(run, dir, base)
 }
 
-// askWhetherPartialClone is IsPartialClone with its failure worded as the refusal it is. A git before 2.44 asks it
-// too, after its probe, so that a configuration git cannot read is named as the question it leaves unanswered
-// rather than as whichever later question happens to read the configuration first (#737).
-func askWhetherPartialClone(run Runner, dir string) (bool, error) {
-	partial, err := IsPartialClone(run, dir)
+// partialCloneUnanswered words a failure to tell whether the repository is a partial clone as the refusal it is. A
+// git before 2.44 asks the question first too, as every git does: one that did not answer in time ends the guard
+// there, naming it, rather than waiting again on the probes behind it. Any other failure is returned only after the
+// probe, because on such a git a missing object is refused whatever the configuration says; it is then named as the
+// question left unanswered, rather than as whichever later question happens to read the configuration (#737).
+func partialCloneUnanswered(err error) error {
 	if errors.Is(err, exec.ErrNotFound) {
-		return false, gitNotFoundError()
+		return gitNotFoundError()
 	}
-	if err != nil {
-		return false, &OperationalError{Message: fmt.Sprintf("could not tell whether this repository is a partial clone (%s), so it is not read: a partial clone's read could run its remote's transport and write objects", TerminalSafe(err.Error())), Cause: err}
-	}
-	return partial, nil
+	return &OperationalError{Message: fmt.Sprintf("could not tell whether this repository is a partial clone (%s), so it is not read: a partial clone's read could run its remote's transport and write objects", TerminalSafe(err.Error())), Cause: err}
 }

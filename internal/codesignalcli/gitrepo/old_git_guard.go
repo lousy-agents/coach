@@ -30,9 +30,10 @@ func refuseWhenReadRevisionsLackObjects(run Runner, dir, base, version string) e
 // unansweredProbe is a refusal only for a revision that exists. One that does not resolve (a HEAD with no commit
 // behind it, a directory that is no repository) is a read the scan never makes: it ends on the revision and says
 // why in its own words, as it does on a git that can be told not to fetch, and a message about the version of git
-// would send the reader to upgrade it for a failure an upgrade does not touch.
+// would send the reader to upgrade it for a failure an upgrade does not touch. A probe that did not answer in time
+// is refused without asking git again, because the same read would wait out the same limit (#737).
 func unansweredProbe(run Runner, dir, version string, revision readRevision, cause error) error {
-	if gitSaysItNamesNothing(run, dir, revision.name) {
+	if BoundFailure(cause) == nil && gitSaysItNamesNothing(run, dir, revision.name) {
 		return nil
 	}
 	return cannotTellWhatIsMissing(version, cause)
