@@ -25,5 +25,7 @@ var _ = Describe("a temporary repository the suite builds (#733 AC5)", func() {
 
 		Expect(gitConfigIn(repo, "maintenance.auto")).To(Equal("false"), "a detached `git maintenance run --auto` after a commit can still be writing .git/objects when DeferCleanup removes the repository")
 		Expect(gitConfigIn(repo, "gc.auto")).To(Equal("0"))
+		Expect(gitConfigIn(repo, "maintenance.autoDetach")).To(Equal("false"))
+		Expect(gitConfigIn(repo, "gc.autoDetach")).To(Equal("false"))
 	})
 })
