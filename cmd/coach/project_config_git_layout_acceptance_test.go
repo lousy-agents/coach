@@ -24,7 +24,7 @@ func layoutOf(dir string, extra []string) gitLayout {
 }
 
 func codesignalJSONIn(dir string, extra []string, args ...string) (stdout, stderr []byte, exitCode int) {
-	return runCoachBinary(commandPath, dir, append(os.Environ(), extra...), append([]string{"codesignal", "--format=json"}, args...)...)
+	return runCoachBinary(commandPath, dir, environmentNamingNoRepository(extra...), append([]string{"codesignal", "--format=json"}, args...)...)
 }
 
 var _ = Describe("coach codesignal: a scan reads a policy from a git layout git itself links to its working tree (#168 A2a)", func() {

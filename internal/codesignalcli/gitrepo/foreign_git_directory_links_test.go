@@ -7,6 +7,7 @@ import (
 
 // What is left to git or to the scan's own reads passes without a further question.
 func TestRefuseForeignGitDirectoryLetsThroughWhatGitLinks(t *testing.T) {
+	t.Setenv("GIT_WORK_TREE", "")
 	root := t.TempDir()
 	scan, gitDir := filepath.Join(root, "scan"), filepath.Join(root, "other", ".git")
 	separateGitDir := filepath.Join(root, "other", "store.git")
@@ -18,7 +19,7 @@ func TestRefuseForeignGitDirectoryLetsThroughWhatGitLinks(t *testing.T) {
 			insideQuestion: {output: "false\n"},
 		},
 		"git says the directory is not a repository": {
-			insideQuestion: {err: exitStatus128},
+			insideQuestion: {err: gitWaitError(exitStatus128, []byte("fatal: not a git repository (or any of the parent directories): .git\n"))},
 		},
 		"the git directory is a linked worktree's": {
 			insideQuestion: {output: "true\n"},

@@ -10,14 +10,17 @@ import (
 type gitDirectoryLayout struct{ gitDir, commonDir string }
 
 // directoryIsInsideWorkTree is false for a directory git does not call a work tree, including one it says is not a
-// repository at all; only a bound the run hit is an error.
+// repository at all; every other failure, a bound the run hit or a git that could not answer, is an error.
 func directoryIsInsideWorkTree(run Runner, dir string) (bool, error) {
 	inside, err := run(dir, "rev-parse", "--is-inside-work-tree")
 	if bound := BoundFailure(err); bound != nil {
 		return false, bound
 	}
-	if err != nil {
+	if gitSaysNotARepository(err) {
 		return false, nil
+	}
+	if err != nil {
+		return false, foreignGitDirectoryUnanswered(err)
 	}
 	return strings.TrimSpace(string(inside)) == "true", nil
 }

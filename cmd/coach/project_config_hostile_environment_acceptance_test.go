@@ -100,7 +100,7 @@ var _ = Describe("coach codesignal: a hostile git configuration or environment e
 
 	It("fails closed, with no report, when GIT_WORK_TREE and GIT_INDEX_FILE point elsewhere, or GIT_DIR is a bare repository seen from a worktree subdirectory", func() {
 		repo := commitExplicitPolicyRepo()
-		stdout, stderr, exitCode := runCoachBinary(commandPath, repo, append(os.Environ(), "GIT_WORK_TREE="+GinkgoT().TempDir(), "GIT_INDEX_FILE=/nonexistent/index"), "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
+		stdout, stderr, exitCode := runCoachBinary(commandPath, repo, environmentNamingNoRepository("GIT_WORK_TREE="+GinkgoT().TempDir(), "GIT_INDEX_FILE=/nonexistent/index"), "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
 		Expect(exitCode).To(Equal(1), "an operational failure, not a crash and not a report: stderr: %s", stderr)
 		Expect(string(stderr)).To(ContainSubstring("is not inside a Git worktree"))
 		Expect(stdout).To(BeEmpty())
@@ -109,7 +109,7 @@ var _ = Describe("coach codesignal: a hostile git configuration or environment e
 		Expect(exec.Command("git", "clone", "-q", "--bare", repo, bare).Run()).To(Succeed())
 		DeferCleanup(func() { _ = os.RemoveAll(bare) })
 		subdirectory := filepath.Join(repo, "policies")
-		stdout, stderr, exitCode = runCoachBinary(commandPath, subdirectory, append(os.Environ(), "GIT_DIR="+bare), "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
+		stdout, stderr, exitCode = runCoachBinary(commandPath, subdirectory, environmentNamingNoRepository("GIT_DIR="+bare), "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
 		Expect(exitCode).To(Equal(1), "an operational failure, not a crash and not a report: stderr: %s", stderr)
 		Expect(string(stderr)).To(ContainSubstring("is not inside a Git worktree"))
 		Expect(stdout).To(BeEmpty())
@@ -119,14 +119,14 @@ var _ = Describe("coach codesignal: a hostile git configuration or environment e
 		repo := commitExplicitPolicyRepo()
 		other := commitScannableGoRepo()
 
-		stdout, stderr, viaEnv := runCoachBinary(commandPath, repo, append(os.Environ(), "GIT_DIR="+filepath.Join(other, ".git")), "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
+		stdout, stderr, viaEnv := runCoachBinary(commandPath, repo, environmentNamingNoRepository("GIT_DIR="+filepath.Join(other, ".git")), "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
 		Expect(viaEnv).To(Equal(2), "a scan read a policy from the working tree of one repository and the history of another: stderr: %s", stderr)
 		Expect(string(stderr)).To(ContainSubstring("is not the one that holds this working tree"))
 		Expect(stdout).To(BeEmpty())
 
 		Expect(os.RemoveAll(filepath.Join(repo, ".git"))).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(repo, ".git"), []byte("gitdir: "+filepath.Join(other, ".git")+"\n"), 0o644)).To(Succeed())
-		stdout, stderr, viaFile := runCoachBinary(commandPath, repo, nil, "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
+		stdout, stderr, viaFile := runCoachBinary(commandPath, repo, environmentNamingNoRepository(), "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
 		Expect(viaFile).To(Equal(2), "stderr: %s", stderr)
 		Expect(string(stderr)).To(ContainSubstring("is not the one that holds this working tree"))
 		Expect(stdout).To(BeEmpty())

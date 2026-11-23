@@ -3,12 +3,26 @@ package gitrepo
 import (
 	"errors"
 	"os/exec"
+	"strings"
 )
 
 // gitExitFailure is a git that ran to the end and exited with a failure, with what it said on stderr. It reads
 // as the same text it always did, and it is deliberately not an *exec.ExitError to errors.As: a silent exit 1 is
 // how git config and cat-file -e say "no", and an exit 1 that printed a message is an error, not that answer.
-type gitExitFailure struct{ message string }
+type gitExitFailure struct {
+	message  string
+	exitCode int
+	stderr   string
+}
+
+func newGitExitFailure(message string, waitErr error, stderr string) *gitExitFailure {
+	failure := &gitExitFailure{message: message, exitCode: -1, stderr: stderr}
+	var exit *exec.ExitError
+	if errors.As(waitErr, &exit) {
+		failure.exitCode = exit.ExitCode()
+	}
+	return failure
+}
 
 func (f *gitExitFailure) Error() string { return f.message }
 
@@ -18,4 +32,11 @@ func gitRanAndFailed(err error) bool {
 	var exit *exec.ExitError
 	var failure *gitExitFailure
 	return errors.As(err, &exit) || errors.As(err, &failure)
+}
+
+// gitSaysNotARepository is whether err is git's exit 128 with its "not a git repository" message, which is how
+// it says that a directory is in no repository. Every other failure leaves the question unanswered.
+func gitSaysNotARepository(err error) bool {
+	var failure *gitExitFailure
+	return errors.As(err, &failure) && failure.exitCode == 128 && strings.Contains(failure.stderr, "fatal: not a git repository")
 }
