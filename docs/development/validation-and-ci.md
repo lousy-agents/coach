@@ -76,8 +76,9 @@ root must be owned by the running user and writable by no one else.
 
 It gives the tests:
 
-- an empty HOME, `XDG_CONFIG_HOME`, `TMPDIR` and `GIT_CONFIG_GLOBAL`, with the
-  Go caches named outside HOME;
+- an empty HOME, `XDG_CONFIG_HOME` and `GIT_CONFIG_GLOBAL`, with the Go caches
+  named outside HOME, and a `TMPDIR` of their own, which `go test` writes its
+  build directory into before the tests start;
 - the system git config as it is;
 - no git configuration or identity carried in the environment
   (`GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, `GIT_CONFIG_PARAMETERS`,
