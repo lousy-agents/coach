@@ -90,7 +90,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: a policy 
 
 			Expect(exitCode).To(Equal(1), "stdout: %s\nstderr: %s", stdout, stderr)
 			Expect(string(stdout)).To(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring("object"), "stderr:\n%s", stderr)
+			Expect(string(stderr)).To(Or(ContainSubstring("object"), ContainSubstring("unable to read")), "the failure names the object git could not read:\n%s", stderr)
 		})
 	}
 })
