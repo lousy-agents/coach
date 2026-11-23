@@ -171,9 +171,9 @@ func pipeProblems(scans []pipeScan, results []pipeScanResult, ceiling time.Durat
 // runCoachWithin runs coach in repo and gives up on it after limit. An exit code of -1 means it was still
 // running then; the stderr and the wall time are returned either way.
 //
-// coach runs in a process group of its own, and the whole group is killed when it ends or is given up on: a git
-// child blocked on the pipe outlives a coach killed at the limit, and would otherwise keep running, and holding
-// the repository open, long after the spec (#737).
+// coach runs in a process group of its own, and the whole group is killed when coach is given up on: a git child
+// blocked on the pipe outlives a coach killed at the limit, and would otherwise keep running, and holding the
+// repository open, long after the spec (#737).
 func runCoachWithin(repo string, env []string, limit time.Duration, args ...string) (stderr []byte, exitCode int, elapsed time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
@@ -187,9 +187,6 @@ func runCoachWithin(repo string, env []string, limit time.Duration, args ...stri
 	begin := time.Now()
 	err := command.Run()
 	elapsed = time.Since(begin)
-	if command.Process != nil {
-		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
-	}
 	var exitErr *exec.ExitError
 	if err != nil && ctx.Err() == nil && errors.As(err, &exitErr) {
 		return errBuf.Bytes(), exitErr.ExitCode(), elapsed

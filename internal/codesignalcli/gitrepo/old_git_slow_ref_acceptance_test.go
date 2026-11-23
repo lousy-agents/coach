@@ -71,7 +71,7 @@ func answerSlowly(pipe, content string, delay time.Duration) {
 }
 
 // guardWithin runs the old-git branch of the guard, and fails the spec if it has not returned by limit.
-func guardWithin(clone string, limit time.Duration) (error, time.Duration) {
+func guardWithin(clone string, limit time.Duration) (time.Duration, error) {
 	type outcome struct {
 		err     error
 		elapsed time.Duration
@@ -84,10 +84,10 @@ func guardWithin(clone string, limit time.Duration) (error, time.Duration) {
 	}()
 	select {
 	case result := <-ended:
-		return result.err, result.elapsed
+		return result.elapsed, result.err
 	case <-time.After(limit):
 		Fail("the guard had not returned after " + limit.String())
-		return nil, limit
+		return limit, nil
 	}
 }
 
@@ -103,7 +103,7 @@ var _ = Describe("on a git before 2.44, a branch ref that git has to wait for (#
 		clone, ref := cloneLackingHeadObjects()
 		answerSlowly(ref, pipeInPlaceOf(ref), 2*time.Second)
 
-		err, _ := guardWithin(clone, time.Minute)
+		_, err := guardWithin(clone, time.Minute)
 
 		Expect(refusalText(err)).To(ContainSubstring("HEAD has 1 object that is not in it"), "the probe must still run: %v", err)
 	})
@@ -112,7 +112,7 @@ var _ = Describe("on a git before 2.44, a branch ref that git has to wait for (#
 		clone, ref := cloneLackingHeadObjects()
 		pipeInPlaceOf(ref)
 
-		err, elapsed := guardWithin(clone, 30*time.Second)
+		elapsed, err := guardWithin(clone, 30*time.Second)
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(elapsed).To(BeNumerically("<", 15*time.Second), "resolving HEAD is held to a few seconds, not the probe's two minutes")
