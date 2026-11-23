@@ -11,6 +11,7 @@ import (
 
 var _ = Describe("coach codesignal --worktree invocation", func() {
 	const oneConstructor = "package model\n\ntype A struct{}\n\nfunc NewA() *A {\n\treturn &A{}\n}\n"
+	const missingModeMessage = `coach: [^\n]*--base[^\n]*--baseline[^\n]*--worktree[^\n]*`
 	const worktreeAloneUsageLine = `(?m)^   or: coach codesignal --worktree [^\n]*\[--format text\|json\][^\n]*\[--scope production\|all\][^\n]*\[--fail-on-incomplete-coverage\]`
 
 	editedRepo := func() string {
@@ -39,11 +40,18 @@ var _ = Describe("coach codesignal --worktree invocation", func() {
 				"the edit exists only in the working tree, so a signal at that path proves the comparison read it")
 		})
 
-		It("still requires a mode when --worktree is absent (control)", func() {
+		It("does not print the missing-mode message (#168 worktree graduation control)", func() {
+			_, stderr, _ := runCoachBinary(commandPath, editedRepo(), nil, "codesignal", "--worktree", "--format=json")
+
+			Expect(string(stderr)).NotTo(MatchRegexp(missingModeMessage))
+			Expect(string(stderr)).NotTo(ContainSubstring("missing required"))
+		})
+
+		It("still requires a mode when --worktree is absent, and the message names all three modes (#168 worktree graduation)", func() {
 			_, stderr, exitCode := runCoachBinary(commandPath, editedRepo(), nil, "codesignal", "--format=json")
 
 			Expect(exitCode).To(Equal(2))
-			Expect(string(stderr)).To(ContainSubstring("missing required --base flag"))
+			Expect(string(stderr)).To(MatchRegexp(missingModeMessage))
 		})
 	})
 
@@ -151,7 +159,7 @@ var _ = Describe("coach codesignal --worktree invocation", func() {
 			_, stderr, exitCode := runCoachBinary(commandPath, editedRepo(), nil, "codesignal", "--format=json")
 
 			Expect(exitCode).To(Equal(2))
-			Expect(string(stderr)).To(ContainSubstring("missing required --base flag"))
+			Expect(string(stderr)).To(MatchRegexp(missingModeMessage))
 			Expect(string(stderr)).To(ContainSubstring("[--worktree]"))
 			Expect(string(stderr)).To(MatchRegexp(worktreeAloneUsageLine))
 		})
