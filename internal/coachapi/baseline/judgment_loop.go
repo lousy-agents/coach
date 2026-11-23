@@ -33,6 +33,7 @@ func newJudgmentLoop(cfg ScanConfig, hiddenCount int) (*agentloop.Loop, error) {
 			MaxToolCalls: judgmentMaxTools,
 			MaxWallTime:  judgmentWall,
 		},
+		Clock: cfg.JudgmentClock,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("coachapi: constructing judgment agent loop: %w", err)
