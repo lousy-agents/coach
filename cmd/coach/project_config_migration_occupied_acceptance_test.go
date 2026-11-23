@@ -9,10 +9,10 @@ import (
 )
 
 // project.json is moved or copied to .lousy-agents/coach.json only where that path is free. When the working tree
-// holds something at the path, or on the way to it, that cannot be the policy, the scan says so in
-// project_config_unusable, and it neither prints the move, which would put project.json inside what stands there,
-// nor offers the copy. A report that says a path cannot be the policy and, in the same breath, to move the policy
-// there contradicts itself.
+// holds something at the path, or on the way to it, that cannot be the policy, the scan refuses with
+// project_config_invalid and neither prints the move, which would put project.json inside what stands there,
+// nor offers the copy. A refusal that says a path cannot be the policy and, in the same breath, to move the policy
+// there contradicts itself. The offer's own specs keep the earlier expectations until #168 A2b-2.
 const elsewhereDirectory = "elsewhere"
 
 func linkTheCanonicalPathToADirectory(repo string) {
@@ -52,18 +52,17 @@ func requireNoMoveWhereThePathIsOccupied(s canonicalState) {
 
 	stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json")
 
-	Expect(exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
-	report := decodeCoachReport(stdout)
-	unusable, found := diagnosticFor(report, s.wantKind, coachConfigPath)
-	Expect(found).To(BeTrue(), "the path cannot be the policy and the scan says so; diagnostics: %+v", report.Diagnostics)
-	Expect(unusable.Message).To(ContainSubstring("cause="+s.wantCause), "the cause the check names")
-	expectDiagnosticKind(report, "project_config_deprecated", legacyConfigPath)
-	expectNoDiagnosticKind(report, "project_config_migration_skipped")
-	Expect(string(stdout)+string(stderr)).NotTo(ContainSubstring("mv -- project.json"), "no move of project.json into what stands there")
+	Expect(exitCode).To(Equal(2), "the path cannot be the policy and project.json does not stand in for it; stderr: %s\nstdout: %s", stderr, stdout)
+	Expect(stdout).To(BeEmpty(), "no report, so no migration diagnostic")
+	Expect(string(stderr)).To(ContainSubstring("project_config_invalid"))
+	Expect(string(stderr)).To(ContainSubstring(coachConfigPath))
+	Expect(string(stderr)).To(ContainSubstring(s.wantCause), "the cause the check names")
+	Expect(string(stderr)).NotTo(ContainSubstring("mv -- project.json"), "no move of project.json into what stands there")
+	Expect(string(stderr)).NotTo(ContainSubstring("Copy project.json"), "no copy offered")
 }
 
 var _ = Describe("coach project config migration: where the default policy's path is occupied", func() {
-	DescribeTable("prints no move of project.json when the path holds", requireNoMoveWhereThePathIsOccupied, occupiedCanonicalEntries())
+	DescribeTable("refuses and prints no move of project.json when the path holds (#168 A2b)", requireNoMoveWhereThePathIsOccupied, occupiedCanonicalEntries())
 
 	It("still prints the move where nothing is at the path", func() {
 		repo := commitDeprecatedProjectConfigRepo()

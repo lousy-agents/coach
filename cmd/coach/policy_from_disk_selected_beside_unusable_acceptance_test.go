@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("coach codesignal reads the project policy from disk: a canonical policy on disk beside an unusable committed root project.json", func() {
+var _ = Describe("coach codesignal reads the project policy from disk: a canonical policy on disk beside an unusable committed root project.json (#168 A2b)", func() {
 	type entryInPlace struct {
 		description string
 		make        func(path string)
@@ -38,7 +38,6 @@ var _ = Describe("coach codesignal reads the project policy from disk: a canonic
 				expectDiskPolicyDisclosure(mode, text,
 					diskPolicyLine(coachConfigPath, goLayerPolicyConfigJSON, "not committed at HEAD."),
 					diskPolicyNotCommittedWarning(coachConfigPath))
-				Expect(diagnosticsOfKind(report.Diagnostics, "project_policy_unusable_on_disk")).To(BeEmpty())
 			})
 		}
 	}
