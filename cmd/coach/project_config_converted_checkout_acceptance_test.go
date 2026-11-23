@@ -47,14 +47,14 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid, in 
 		Expect(lastLine(stderr)).To(ContainSubstring("replace the policy with it, commit, and rerun"), "stderr:\n%s", stderr)
 	})
 
-	It("names no cause and still offers a new policy in --check-project", func() {
+	It("is policy_invalid with the cause undetermined and offers no new policy in --check-project, because the file on disk is what is judged", func() {
 		checkOutWithConversion(invalidPolicy)
 		Expect(gitIn(repo, "status", "--porcelain")).To(BeEmpty())
 
 		doc := expectCheckProject(repo, "--project-config", policy)
 
-		Expect(causeOfGap(doc, "policy_invalid")).NotTo(Equal("changed_on_disk"), "gaps: %+v", doc.Gaps)
-		Expect(nextActionKinds(doc)).To(ContainElement("author_policy"))
+		Expect(causeOfGap(doc, "policy_invalid")).To(Equal("undetermined"), "gaps: %+v", doc.Gaps)
+		Expect(nextActionKinds(doc)).NotTo(ContainElement("author_policy"))
 	})
 
 	// An eol attribute converts the checkout as the setting does, and no filter and no edit is involved.
@@ -82,15 +82,14 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid, in 
 		Expect(string(stderr)).NotTo(ContainSubstring("replace the policy with it"), "stderr:\n%s", stderr)
 	})
 
-	// A policy the check calls changed on disk is one git status lists, so the report that names the cause also lists
-	// the file among the changes it did not read.
-	It("lists a policy it calls changed on disk among the changes of the working tree in --check-project", func() {
+	It("passes a policy fix with converted line endings and leaves it out of the changes of the working tree in --check-project", func() {
 		checkOutWithConversion(validPolicyWithLayers)
 
 		doc := expectCheckProject(repo, "--project-config", policy)
 
-		Expect(causeOfGap(doc, "policy_invalid")).To(Equal("changed_on_disk"), "gaps: %+v", doc.Gaps)
-		Expect(doc.DirtyWorktree.Paths).To(ContainElement(policy), "the cause names a file the report does not list as changed: %+v", doc.DirtyWorktree)
+		Expect(doc.Checks.Policy.State).To(Equal("pass"), "gaps: %+v", doc.Gaps)
+		Expect(policyDisclosureCodes(doc)).To(ConsistOf(differsWarning))
+		Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(policy), "the check read the file: %+v", doc.DirtyWorktree)
 	})
 
 	It("refuses a file that a filter attribute selects a program for as the disk holds it, offers no replacement, and never runs the program", func() {

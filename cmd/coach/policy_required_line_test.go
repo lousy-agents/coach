@@ -26,13 +26,13 @@ func TestPolicyRequiredLineNamesOnlyTheRemedyReadinessNamed(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			assertLineMentions(t, policyRequiredLine("coach codesignal", "policy_missing", c.remedy, "abc123", c.path), c.want, c.notWant)
+			assertLineMentions(t, policyRequiredLine("coach codesignal", "policy_missing", c.remedy, "", "abc123", c.path), c.want, c.notWant)
 		})
 	}
 }
 
 func TestPolicyRequiredLineEndsWithTheRestoreCommandSoItPastesAsWritten(t *testing.T) {
-	line := policyRequiredLine("coach codesignal", "policy_missing", projectreadiness.RemedyRestore, "abc123", "pol.json")
+	line := policyRequiredLine("coach codesignal", "policy_missing", projectreadiness.RemedyRestore, "", "abc123", "pol.json")
 
 	if want := "-- ':(top,literal)pol.json'"; !strings.HasSuffix(line, want) {
 		t.Errorf("line %q does not end with the command %q: text after it joins the pathspec when the line is copied", line, want)
@@ -40,7 +40,7 @@ func TestPolicyRequiredLineEndsWithTheRestoreCommandSoItPastesAsWritten(t *testi
 }
 
 func TestPolicyRequiredLineSaysWhyAnUnprintableNameHasNoCommandAsTheScanErrorDoes(t *testing.T) {
-	line := policyRequiredLine("coach codesignal", "policy_missing", projectreadiness.RemedyRestore, "abc123", "bad\x1bname.json")
+	line := policyRequiredLine("coach codesignal", "policy_missing", projectreadiness.RemedyRestore, "", "abc123", "bad\x1bname.json")
 
 	if want := "the name has a character that is not printed here"; !strings.Contains(line, want) {
 		t.Errorf("line %q does not say why no command is shown (%q)", line, want)
@@ -84,7 +84,7 @@ func TestPolicyRequiredLinesLeadWithTheCauseOnlyWhenNoRemedyFixesThePolicy(t *te
 
 func assertRequiredLinesLead(t *testing.T, remedy projectreadiness.PolicyRemedy, cause string, wantLines int, wantFirst string) {
 	t.Helper()
-	lines := policyRequiredLines("coach codesignal", "policy_missing", remedy, cause, "abc123", "pol.json")
+	lines := policyRequiredLines("coach codesignal", "policy_missing", remedy, "", cause, "abc123", "pol.json")
 
 	if len(lines) != wantLines {
 		t.Fatalf("lines = %q, want %d", lines, wantLines)
@@ -92,7 +92,7 @@ func assertRequiredLinesLead(t *testing.T, remedy projectreadiness.PolicyRemedy,
 	if wantFirst != "" && lines[0] != wantFirst {
 		t.Errorf("first line = %q, want the cause %q", lines[0], wantFirst)
 	}
-	if !strings.Contains(lines[len(lines)-1], "a reviewed, committed policy is required before compiler setup") {
+	if !strings.Contains(lines[len(lines)-1], "a project policy that passes --check-project is required before compiler setup") {
 		t.Errorf("last line = %q, want the refusal", lines[len(lines)-1])
 	}
 }

@@ -12,10 +12,9 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
-// Run evaluates the project at revision. A policy the user named is checked on
-// disk at its path; a discovered one is selected again by Discover and checked
-// at the analyzed revision, so a caller holding a discovered policy may pass it
-// as it is.
+// Run evaluates the project at revision. The policy is judged from the working
+// tree: the file the user named, or the one discovery finds there. A caller
+// holding a discovered policy may pass it as it is.
 func Run(dir, revision string, policy policyref.Ref) (*projectreadiness.Result, error) {
 	result, err := RunWithLocator(tstoolchain.LocateMiseTypescriptInstall, dir, revision, policy)
 	if err != nil {
@@ -31,22 +30,18 @@ func RunWithLocator(locate tstoolchain.MiseLocator, dir, revision string, policy
 	return runBy(readinessGit(), locate, dir, revision, policy)
 }
 
-// runBy is RunWithLocator with the git that answers the questions about the committed policy given by the caller.
+// runBy is RunWithLocator with the git that answers the questions about the policy given by the caller.
 func runBy(run gitrepo.Runner, locate tstoolchain.MiseLocator, dir, revision string, policy policyref.Ref) (projectreadiness.Result, error) {
-	return evaluate(run, locate, dir, revision, policy, policyCheckerBy(run, policy))
+	judgment, err := judgePolicy(run, dir, revision, policy)
+	if err != nil {
+		return projectreadiness.Result{}, err
+	}
+	return evaluate(run, locate, dir, revision, judgment)
 }
 
-// evaluate is Run with the policy check chosen by the caller.
-func evaluate(run gitrepo.Runner, locate tstoolchain.MiseLocator, dir, revision string, policy policyref.Ref, check func(dir, revision, policyPath string) (projectreadiness.Check, []string, error)) (projectreadiness.Result, error) {
-	policyPath, extraWarnings, err := resolveCheckPolicy(dir, revision, policy)
-	if err != nil {
-		return projectreadiness.Result{}, err
-	}
-
-	policyCheck, roots, err := check(dir, revision, policyPath)
-	if err != nil {
-		return projectreadiness.Result{}, err
-	}
+// evaluate is Run for a policy already judged.
+func evaluate(run gitrepo.Runner, locate tstoolchain.MiseLocator, dir, revision string, judgment policyJudgment) (projectreadiness.Result, error) {
+	policyPath, policyCheck, roots := judgment.path, judgment.check, judgment.roots
 	projectShape, err := checkProjectShape(run, dir, revision, roots, policyCheck.State == projectreadiness.Pass)
 	if err != nil {
 		return projectreadiness.Result{}, err
@@ -65,22 +60,18 @@ func evaluate(run gitrepo.Runner, locate tstoolchain.MiseLocator, dir, revision 
 		PackageManager: packageManager,
 	}
 
-	readFromDisk := ""
-	if policyCheck.DecidedOnDisk {
-		readFromDisk = policyPath
-	}
-	dirtyRoots, err := dirtyRelevanceRoots(run, dir, revision, policy, policyPath, policyCheck, roots)
+	dirtyRoots, err := dirtyRelevanceRoots(run, dir, revision, judgment)
 	if err != nil {
 		return projectreadiness.Result{}, err
 	}
-	dirty, err := detectRelevantDirtyWorktree(dir, dirtyRoots, policyPath, readFromDisk)
+	dirty, err := detectRelevantDirtyWorktree(dir, dirtyRoots, policyPath)
 	if err != nil {
 		return projectreadiness.Result{}, err
 	}
 
 	miseChoices := tstoolchain.EvaluateMiseSetupChoices(dir, roots)
 	status, gaps, nextActions, warnings := aggregateReadiness(checks, dirty.RelevantChanges, miseChoices)
-	warnings = append(warnings, extraWarnings...)
+	warnings = append(warnings, judgment.warnings...)
 
 	return projectreadiness.Result{
 		SchemaVersion: projectreadiness.SchemaVersion,

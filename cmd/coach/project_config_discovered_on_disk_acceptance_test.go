@@ -11,7 +11,7 @@ import (
 
 // A policy Coach would discover that is on disk is judged by the scan and by the project check with the same question
 // about the path, so they name the same cause. The scan refuses a path it cannot read with exit 2 and the cause on
-// standard error; the check reports the same cause as a gap. The halves diverge until #168 A2b-2 moves the check to disk.
+// standard error; the check reports the same cause as a gap.
 type canonicalState struct {
 	arrange   func(repo string)
 	wantCause string // "" when nothing is on disk
@@ -112,7 +112,7 @@ var _ = Describe("coach codesignal: a discovered policy on disk that is not comm
 	)
 
 	DescribeTable("--check-project names the cause for the path", requireTheCheckToNameTheCause,
-		Entry("a regular file, not committed", canonicalState{writeTheCanonicalFile, "not_committed"}),
+		Entry("a regular file, not committed: the check passes and has no policy gap", canonicalState{writeTheCanonicalFile, "no policy gap"}),
 		Entry("a directory", canonicalState{makeTheCanonicalDirectory, "not_a_regular_file"}),
 		Entry("a symbolic link", canonicalState{linkTheCanonicalPath, "symbolic_link"}),
 		Entry("a file where the directory should be", canonicalState{putAFileInPlaceOfTheDirectory, "parent_not_directory"}),

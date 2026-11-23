@@ -137,7 +137,7 @@ var _ = Describe("coach codesignal: advice for a conflicted policy does not dele
 		stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, pathWithoutNode(), "--baseline", "--check-project", "--project-language", "typescript", "--project-config", conflictedPolicy)
 
 		Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-		Expect(string(stdout)).To(ContainSubstring("policy_missing cause=merge_conflict"))
+		Expect(string(stdout)).To(ContainSubstring("policy_missing cause=parent_not_directory"))
 		expectNoRunnableCommand(string(stdout))
 	})
 })

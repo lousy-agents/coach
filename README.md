@@ -28,7 +28,7 @@ coach codesignal --baseline --suggest-project-config --project-language typescri
 coach codesignal --baseline --project-config .lousy-agents/coach.json --project-language typescript --format json
 ```
 
-`--check-project` is readiness, not a scan (exit `0` even with gaps). The TypeScript form of `--suggest-project-config` is an interactive TTY and writes nothing until you confirm; the Go form writes the candidate without prompting. Project mode needs that committed policy plus a supported compiler and Node 24 or 26. An empty `signals` array is not compliance.
+`--check-project` is readiness, not a scan (exit `0` even with gaps). The TypeScript form of `--suggest-project-config` is an interactive TTY and writes nothing until you confirm; the Go form writes the candidate without prompting. Project mode needs a project policy that passes `--check-project` plus a supported compiler and Node 24 or 26. An empty `signals` array is not compliance.
 
 Full flags and schema: [CLI contract](./docs/cli-codesignal.md).
 
@@ -330,7 +330,16 @@ coach codesignal --baseline --suggest-project-config --project-language typescri
 
 Run `--check-project` first. It is read-only: it reports compiler, Node, and
 policy fit and exits `0` so you inspect the result instead of treating process
-status as a gate. It is not a scan. A **scan** that cannot resolve a supported
+status as a gate. It is not a scan. It reads the project policy from the working
+tree: a usable regular file at the policy's path is the policy, whatever the index and
+the analyzed revision hold there, and its roots come from that file. How the file
+differs from the analyzed revision is a warning, never a gap, and it does not change
+`status`: `project_policy_not_committed`, `project_policy_differs_from_head` or
+`project_policy_head_unreadable`, in the JSON `warnings` and the text `Warnings:`
+section. A file whose content is not a usable policy is `policy_invalid` with no new
+policy to author: fix the file. Where nothing is on disk and the index holds work for
+the path, the cause is `undetermined` and no restore from the revision is offered over
+that work. A **scan** that cannot resolve a supported
 compiler or host Node exits `2` with empty stdout except the policy-candidate
 document on the guided-authoring path, and one or more stderr lines. On a
 controlling terminal, a TypeScript scan whose `--project-config` names a
@@ -350,12 +359,14 @@ also refuses, naming the gap without opening a menu, when the readiness gap is
 a runtime boundary (missing or unsupported host Node): Coach has no setup
 command for a Node version problem, and the flag shares that gate with the
 scan's own compiler-setup offer so the two paths cannot disagree on it. The
+flag judges the policy the same way as `--check-project`, refuses while it has a gap,
+and prints the policy warnings before its prompt, as the scan's offer does. The
 flag remains **mise-only**, so it is narrower than the scan's offer in what it
 can install; Coach never names it as remediation for a gap only the project
 package manager could resolve.
 
 A **scan** (`--baseline`/`--base` with `--project-config`, `--project-language
-typescript`, a committed policy, and an unresolved compiler) offers a superset
+typescript`, a policy that passes `--check-project`, and an unresolved compiler) offers a superset
 of that setup interactively when it runs on a controlling terminal: it names
 the failing check and what happens after a successful install, then shows a
 menu of up to four choices —

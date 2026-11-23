@@ -97,11 +97,8 @@ var _ = Describe("coach codesignal discloses why the policy used is the one it i
 
 				stdout, _, exitCode := mode.run(repo, base, "--format=json")
 
-				if exitCode != 0 {
-					continue
-				}
-				if policy, isObject := scopePolicyScopeOf(stdout)["policy"].(map[string]any); isObject {
-					observed[policy["cause"].(string)] = struct{}{}
+				if cause, reported := reportedPolicyCause(stdout, exitCode); reported {
+					observed[cause] = struct{}{}
 				}
 			}
 
@@ -131,3 +128,17 @@ var _ = Describe("coach codesignal discloses why the policy used is the one it i
 		})
 	}
 })
+
+// reportedPolicyCause is the cause of a scan that completed and reports a policy; a refused scan prints no scope, so it
+// is not read.
+func reportedPolicyCause(scanStdout []byte, exitCode int) (string, bool) {
+	if exitCode != 0 {
+		return "", false
+	}
+	policy, isObject := scopePolicyScopeOf(scanStdout)["policy"].(map[string]any)
+	if !isObject {
+		return "", false
+	}
+	cause, _ := policy["cause"].(string)
+	return cause, true
+}

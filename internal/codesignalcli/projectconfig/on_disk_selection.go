@@ -31,6 +31,13 @@ func SelectOnDisk(dir, namedPath string) (DiskSelection, error) {
 }
 
 func selectOnDiskThrough(run gitrepo.Runner, dir, namedPath string) (DiskSelection, error) {
+	return selectCandidates(run, dir, namedPath, refusalOfEntry)
+}
+
+// entryRefusal decides what a path the disk check stopped at means for the selection: nil selects nothing and moves on.
+type entryRefusal func(root *os.Root, repoPath string, err error) error
+
+func selectCandidates(run gitrepo.Runner, dir, namedPath string, refuse entryRefusal) (DiskSelection, error) {
 	rootDir, err := gitrepo.RepositoryRootWith(run, dir)
 	if err != nil {
 		return DiskSelection{}, err
@@ -41,7 +48,7 @@ func selectOnDiskThrough(run gitrepo.Runner, dir, namedPath string) (DiskSelecti
 	}
 	defer func() { _ = root.Close() }()
 	for _, candidate := range onDiskCandidates(namedPath) {
-		selection, found, err := selectRegularFile(root, candidate)
+		selection, found, err := selectRegularFile(root, candidate, refuse)
 		if err != nil || found {
 			return selection, err
 		}
@@ -56,9 +63,9 @@ func onDiskCandidates(namedPath string) []string {
 	return []string{CanonicalPath, DefaultPath}
 }
 
-func selectRegularFile(root *os.Root, repoPath string) (DiskSelection, bool, error) {
+func selectRegularFile(root *os.Root, repoPath string, refuse entryRefusal) (DiskSelection, bool, error) {
 	if err := checkRegularFileThrough(osDiskRoot{root}, repoPath); err != nil {
-		return DiskSelection{}, false, refusalOfEntry(root, repoPath, err)
+		return DiskSelection{}, false, refuse(root, repoPath, err)
 	}
 	content, err := readBounded(root, repoPath)
 	if err != nil {

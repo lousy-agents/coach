@@ -4,29 +4,9 @@ import (
 	"errors"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
-	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
-
-// PolicyChecker is the check Run applies to a policy: one the user named is
-// checked on disk, a discovered one at the analyzed revision. Anything that
-// reuses the roots Run checked must select the same way.
-func PolicyChecker(policy policyref.Ref) func(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
-	return policyCheckerBy(readinessGit(), policy)
-}
-
-// policyCheckerBy is PolicyChecker with the git that answers given by the caller.
-func policyCheckerBy(run gitrepo.Runner, policy policyref.Ref) func(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
-	if policy.JudgedOnDisk() {
-		return func(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
-			return checkExplicitPolicy(run, dir, revision, policyPath)
-		}
-	}
-	return func(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
-		return checkDiscoveredPolicy(run, dir, revision, policyPath)
-	}
-}
 
 // checkPolicy judges the policy at the analyzed revision. An entry that is not a blob is no policy and
 // no gap to author over, so it is named for what it is before the path is called missing; a blob

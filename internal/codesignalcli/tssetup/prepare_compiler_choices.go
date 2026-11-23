@@ -58,18 +58,9 @@ func filterMiseChoiceKinds(choices []string) []string {
 // miseSetupChoicesForReadiness reuses the policy path and roots
 // projectcheck.Run just checked. A discovered policy is the one Discover selects.
 func miseSetupChoicesForReadiness(dir, revision string, policy policyref.Ref) []projectreadiness.MiseChoice {
-	roots, err := checkedPolicyRoots(dir, revision, policy)
+	roots, err := projectcheck.PolicyRoots(dir, revision, policy)
 	if err != nil {
 		return nil
 	}
 	return tstoolchain.EvaluateMiseSetupChoices(dir, roots)
-}
-
-func checkedPolicyRoots(dir, revision string, policy policyref.Ref) ([]string, error) {
-	policyPath, err := projectcheck.ResolvePolicyPath(dir, revision, policy)
-	if err != nil {
-		return nil, err
-	}
-	_, roots, err := projectcheck.PolicyChecker(policy)(dir, revision, policyPath)
-	return roots, err
 }

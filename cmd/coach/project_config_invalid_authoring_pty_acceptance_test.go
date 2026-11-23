@@ -30,7 +30,7 @@ var _ = Describe("coach codesignal (TypeScript, controlling terminal): a committ
 			Expect(string(stdout)).To(BeEmpty(), "no candidate is printed to save over the file; stdout: %s", stdout)
 			Expect(string(stderr)).NotTo(ContainSubstring("replacing the current file"), "stderr: %s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("guided authoring"), "stderr: %s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("coach codesignal: the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one."), "the scan says in words how to get past the policy; stderr: %s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("coach codesignal: the policy on disk cannot be used: fix the file."), "the scan says in words how to get past the policy; stderr: %s", stderr)
 			expectNoRunnableCommand(string(stderr))
 			content, err := os.ReadFile(filepath.Join(repo, policyPath))
 			Expect(err).NotTo(HaveOccurred())
