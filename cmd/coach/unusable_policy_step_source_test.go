@@ -34,6 +34,29 @@ func TestNoProductionSentenceSaysAPolicyMustBeCommittedToBeUsed(t *testing.T) {
 	}
 }
 
+func TestTheUnusablePolicyStepIsDefinedInOneProductionFile(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var defining []string
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		source, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(source), "the policy on disk cannot be used: fix the file") {
+			defining = append(defining, file)
+		}
+	}
+	if len(defining) != 1 {
+		t.Errorf("the unusable-policy sentence is in %v; want exactly one production file", defining)
+	}
+}
+
 func TestTheScanAndThePrepareCompilerRefusalSayTheSameSentence(t *testing.T) {
 	invalid := configError(projectconfig.KindInvalid, projectreadiness.RemedyAuthor)
 
