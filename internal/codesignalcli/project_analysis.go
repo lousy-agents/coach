@@ -24,13 +24,15 @@ import (
 type ProjectAnalysis struct {
 	// Policy is the policy the analysis used, however it was selected, and whether
 	// the user named it with --project-config, which is what decides how later
-	// checks judge it: a named policy must be on disk, a discovered one is read
-	// from the analyzed revision as before.
+	// checks judge it: a named policy must be on disk.
 	Policy       policyref.Ref
 	Language     string
 	Config       json.RawMessage
 	ConfigDigest string
-	Backend      ProjectBackend
+	// PolicyScope is what the report discloses about the policy used: where it came
+	// from and whether it is the one committed at HEAD.
+	PolicyScope codesignal.PolicyScope
+	Backend     ProjectBackend
 	// Worktree, when set, lays the working tree over the head revision
 	// (--worktree).
 	Worktree *WorktreeView

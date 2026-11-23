@@ -13,6 +13,7 @@ func renderReportSummary(b *strings.Builder, report *codesignal.Report) {
 		return
 	}
 	renderDiffSummary(b, report)
+	renderPolicyDisclosure(b, report)
 	renderWorktreeLine(b, report)
 }
 
@@ -52,6 +53,7 @@ func renderBaselineSummary(b *strings.Builder, report *codesignal.Report) {
 
 	fmt.Fprintf(b, "%s: %d, analyzed: %d, unsupported: %d, excluded: %d, unanalyzable: %d, active signals: %d, diagnostics: %d\n",
 		discoveredLabel(report), tracked, analyzed, unsupported, excluded, unanalyzable, report.Summary.ActiveSignals, len(report.Diagnostics))
+	renderPolicyDisclosure(b, report)
 }
 
 // discoveredLabel names what the discovered count covers. A --worktree scan

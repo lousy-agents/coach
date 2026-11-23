@@ -45,7 +45,7 @@ var frozenReportJSONFieldNames = map[string]struct{}{
 	"roots": {}, "matched_layers": {}, "unmatched_layers": {},
 	"root": {}, "candidate_files": {}, "analyzed_files": {},
 
-	"policy": {}, "matches_head": {},
+	"policy": {}, "matches_head": {}, "cause": {},
 	"hides_in_scope": {}, "roots_not_listed": {},
 }
 

@@ -71,7 +71,7 @@ var _ = Describe("coach codesignal: an explicit --project-config that does not e
 	})
 
 	When("no --project-config is passed and a committed discovered policy is deleted on disk", func() {
-		It("is not subject to the explicit-path rule: the scan succeeds on the committed copy and says the report reflects committed HEAD", func() {
+		It("is not subject to the explicit-path rule: the scan succeeds on the committed copy and discloses it as missing on disk", func() {
 			repo := commitScannableGoRepo()
 			commitFile(repo, coachConfigPath, singleRootPolicyJSON)
 			Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
@@ -80,11 +80,16 @@ var _ = Describe("coach codesignal: an explicit --project-config that does not e
 
 			Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("project_config_missing"))
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, singleRootPolicyJSON, diskCauseMissingOnDisk))))
 			var kinds []string
 			for _, diagnostic := range decodeCoachReport(stdout).Diagnostics {
 				kinds = append(kinds, diagnostic.Kind)
 			}
-			Expect(kinds).To(ConsistOf("worktree_not_clean", "worktree_report_reflects_committed_head"), "the deleted policy is disclosed as a dirty tree, and nothing else changed")
+			Expect(kinds).To(ConsistOf("worktree_not_clean"), "a deleted policy is disclosed by the missing-on-disk warning, so worktree_report_reflects_committed_head no longer applies")
+
+			text, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=text")
+			Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", text, stderr)
+			expectDiskPolicyDisclosure(scopePolicyModes[0], text, diskPolicyLine(coachConfigPath, singleRootPolicyJSON, "differs from HEAD."), diskPolicyMissingOnDiskWarning(coachConfigPath))
 		})
 	})
 
@@ -152,14 +157,23 @@ var _ = Describe("coach codesignal: an explicit --project-config that does not e
 			Expect(string(stderr)).To(ContainSubstring("the path is repository-relative"))
 		})
 
-		It("explains a file that exists uncommitted at the repository root as uncommitted, not as not found", func() {
+		It("reads a file that exists uncommitted at the repository root as the policy, not as not found", func() {
 			writeWorktreeFile(repo, "unc.json", singleRootPolicyJSON)
 
 			stdout, stderr, exitCode := runCoachBinary(commandPath, subdir, nil, "codesignal", "--baseline", "--project-config", "unc.json", "--format=json")
 
+			Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope("unc.json", singleRootPolicyJSON, diskCauseNotCommitted))))
+			Expect(string(stderr)).NotTo(ContainSubstring("project_config_missing"))
+		})
+
+		It("reports a path that exists neither in the worktree nor at HEAD as missing and does not call it uncommitted", func() {
+			stdout, stderr, exitCode := runCoachBinary(commandPath, subdir, nil, "codesignal", "--baseline", "--project-config", "unc.json", "--format=json")
+
 			Expect(exitCode).To(Equal(2), "stdout=%s stderr=%s", stdout, stderr)
 			Expect(stdout).To(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring("exists in the worktree but is not committed"))
+			Expect(string(stderr)).To(ContainSubstring("project_config_missing"))
+			Expect(string(stderr)).NotTo(ContainSubstring("exists in the worktree but is not committed"))
 		})
 	})
 })

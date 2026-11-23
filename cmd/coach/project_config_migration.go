@@ -17,8 +17,8 @@ const (
 )
 
 func prepareScanProjectAnalysis(dir, revision string, f codesignalFlags, status *scanStatus, view *codesignalcli.WorktreeView, stdin, stderr *os.File, ports scanPorts) (*codesignalcli.ProjectAnalysis, []codesignal.Diagnostic, error) {
-	suppressUncommitted, migrationDiags := offerDeprecatedProjectConfigMigration(dir, revision, f, status, stdin, stderr, ports)
-	prepared, err := prepareProjectAnalysis(dir, revision, f.namedPolicy, f.projectLanguage, suppressUncommitted, ports)
+	migrationDiags := offerDeprecatedProjectConfigMigration(dir, revision, f, status, stdin, stderr, ports)
+	prepared, err := prepareProjectAnalysis(dir, revision, f.namedPolicy, f.projectLanguage, ports)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -33,29 +33,29 @@ func prepareScanProjectAnalysis(dir, revision string, f codesignalFlags, status 
 	return project, append(prepared.diagnostics, migrationDiags...), nil
 }
 
-func offerDeprecatedProjectConfigMigration(dir, revision string, f codesignalFlags, status *scanStatus, stdin, stderr *os.File, ports scanPorts) (bool, []codesignal.Diagnostic) {
+func offerDeprecatedProjectConfigMigration(dir, revision string, f codesignalFlags, status *scanStatus, stdin, stderr *os.File, ports scanPorts) []codesignal.Diagnostic {
 	if !deprecatedProjectConfigCanMigrate(dir, revision, f, ports) {
-		return false, nil
+		return nil
 	}
 	if !terminal.HasControllingTerminal(stdin) || nonInteractiveRequested(f) {
-		return false, []codesignal.Diagnostic{projectConfigMigrationSkipped()}
+		return []codesignal.Diagnostic{projectConfigMigrationSkipped()}
 	}
 	fmt.Fprint(stderr, projectConfigMigrationPrompt)
 	if !answeredYes(stdin) {
-		return false, nil
+		return nil
 	}
 	return acceptProjectConfigMigrationCopy(dir, stderr, status)
 }
 
 // acceptProjectConfigMigrationCopy copies project.json, which leaves a new file that is untracked until it is
 // committed. The status is read before the copy, so that file is never counted as the customer's own dirt.
-func acceptProjectConfigMigrationCopy(dir string, stderr *os.File, status *scanStatus) (bool, []codesignal.Diagnostic) {
+func acceptProjectConfigMigrationCopy(dir string, stderr *os.File, status *scanStatus) []codesignal.Diagnostic {
 	status.get()
 	if err := copyWorktreeProjectConfig(dir); err != nil {
-		return false, []codesignal.Diagnostic{projectConfigMigrationFailed(err)}
+		return []codesignal.Diagnostic{projectConfigMigrationFailed(err)}
 	}
 	fmt.Fprint(stderr, projectConfigMigrationCopied)
-	return true, nil
+	return nil
 }
 
 func deprecatedProjectConfigCanMigrate(dir, revision string, f codesignalFlags, ports scanPorts) bool {

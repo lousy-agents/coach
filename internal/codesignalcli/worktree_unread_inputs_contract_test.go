@@ -3,10 +3,6 @@ package codesignalcli
 import (
 	"strings"
 	"testing"
-
-	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
-	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
 func TestUnreadConfigIgnoresDirectoryMarkersAndDependencies(t *testing.T) {
@@ -20,20 +16,6 @@ func assertUnreadConfig(t *testing.T, path string, want bool) {
 	t.Helper()
 	if got := (&WorktreeView{}).unreadConfig(path); got != want {
 		t.Errorf("unreadConfig(%q) = %v, want %v", path, got, want)
-	}
-}
-
-func TestAPolicyFileNamedByTwoEntriesIsDisclosedOnce(t *testing.T) {
-	entries := []gitrepo.WorktreeEntry{
-		{Code: " D", Path: projectconfig.DefaultPath},
-		{Code: "R ", Path: projectconfig.CanonicalPath, OldPath: projectconfig.DefaultPath},
-	}
-
-	inputs := (&WorktreeView{}).unreadInputs(entries, "elsewhere/policy.json")
-	got := disclosedPaths(inputs.policyDiagnostics("abc123"), codesignal.DiagKindWorktreeChangesNotAnalyzed)
-
-	if want := []string{projectconfig.CanonicalPath, projectconfig.DefaultPath}; strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("policy diagnostics name %v, want %v: each policy file once, in path order", got, want)
 	}
 }
 

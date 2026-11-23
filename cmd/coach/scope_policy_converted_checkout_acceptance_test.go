@@ -90,7 +90,7 @@ var _ = Describe("coach codesignal scope.policy.matches_head on a converted chec
 
 	for _, mode := range scopePolicyModes {
 		for _, scenario := range scenarios {
-			It("#168 item 5: converted checkout: scope.policy.matches_head is "+boolWord(scenario.wantMatching)+" for "+scenario.description+", under "+mode.name+", with no WARNING in the text", func() {
+			It("#168 item 5: converted checkout: scope.policy.matches_head is "+boolWord(scenario.wantMatching)+" for "+scenario.description+", under "+mode.name+", with the matching policy line (and WARNING for an edit) in the text", func() {
 				repo, base := scopePolicyRepo(scenario.policies...)
 				scenario.arrange(repo)
 				onDisk, err := os.ReadFile(filepath.Join(repo, scenario.policyPath))
@@ -101,18 +101,25 @@ var _ = Describe("coach codesignal scope.policy.matches_head on a converted chec
 						"the fixture must be a converted checkout that git calls clean, or matches_head true proves nothing")
 				}
 				jsonArgs := append(append([]string{}, scenario.extraArgs...), "--format=json")
+				// A converted checkout is the committed policy, so its digest is the committed blob's; any other file is read as it is on disk.
+				usedBody := string(onDisk)
+				wantSuffix, wantWarning, wantCause := "differs from HEAD.", diskPolicyDiffersWarning, diskCauseDiffersFromHead
+				if scenario.wantMatching {
+					usedBody, wantSuffix, wantWarning, wantCause = singleRootPolicyJSON, "same as HEAD.", "", diskCauseSameAsHead
+				}
 
 				jsonOut, stderr, exitCode := mode.run(repo, base, jsonArgs...)
 				Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 				Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(map[string]any{
 					"path":         scenario.policyPath,
-					"digest":       digestOfCommitted(singleRootPolicyJSON),
+					"digest":       digestOfCommitted(usedBody),
 					"matches_head": scenario.wantMatching,
+					"cause":        wantCause,
 				})))
 
 				text, stderr, exitCode := mode.run(repo, base, scenario.extraArgs...)
 				Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-				Expect(string(text)).NotTo(ContainSubstring("WARNING"))
+				expectDiskPolicyDisclosure(mode, text, diskPolicyLine(scenario.policyPath, usedBody, wantSuffix), wantWarning)
 			})
 		}
 	}

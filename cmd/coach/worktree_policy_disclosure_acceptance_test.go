@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -18,45 +16,40 @@ var _ = Describe("coach codesignal --worktree discloses an uncommitted edit to t
 		head = commitFile(repo, policyPath, policyWithoutForbiddenImports)
 		return repo, head
 	}
-	policyReadFromCommit := func(head string) string {
-		return fmt.Sprintf("the project policy is read from the commit at %s; --worktree does not read an uncommitted policy yet", head)
-	}
+	worktreeBaseline := scopePolicyModes[1]
 
-	DescribeTable("qualifies the verdict and exits 3, because the edited policy was not read",
+	DescribeTable("reads the edited policy, discloses that it differs from HEAD, and exits 0 although coverage is required to be complete",
 		func(policyPath string, policyArgs ...string) {
-			repo, head := policyRepo(policyPath)
+			repo, _ := policyRepo(policyPath)
 			overwriteOnDisk(repo, policyPath, goLayerPolicyConfigJSON)
-			args := append(policyArgs, "--worktree", "--fail-on-incomplete-coverage")
+			args := append(append([]string{}, policyArgs...), "--fail-on-incomplete-coverage")
 
-			text, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, args...)
-			jsonOut, _, _ := runCoachCodesignalBaselineRaw(repo, append(args, "--format=json")...)
+			text, stderr, exitCode := worktreeBaseline.run(repo, "", args...)
+			jsonOut, _, _ := worktreeBaseline.run(repo, "", append(args, "--format=json")...)
 
-			Expect(exitCode).To(Equal(3), "stderr: %s stdout: %s", stderr, text)
-			Expect(string(text)).NotTo(MatchRegexp(`(?m)^No active CodeSignal findings\.$`),
-				"an unqualified all-clear would tell the reader the edited policy was applied")
-			Expect(string(text)).To(ContainSubstring("the analysis is incomplete"))
-			notAnalyzed := diagnosticsOfKind(decodeCoachReport(jsonOut).Diagnostics, "worktree_changes_not_analyzed")
-			Expect(notAnalyzed).To(ConsistOf(And(
-				HaveField("Path", policyPath),
-				HaveField("Message", policyReadFromCommit(head)),
-			)))
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, text)
+			report := decodeCoachReport(jsonOut)
+			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the edited policy is applied")
+			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty(), "the policy file was read from disk")
+			Expect(string(text)).NotTo(ContainSubstring("the analysis is incomplete"))
+			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policyPath, goLayerPolicyConfigJSON, diskCauseDiffersFromHead))))
+			expectDiskPolicyDisclosure(worktreeBaseline, text, diskPolicyLine(policyPath, goLayerPolicyConfigJSON, "differs from HEAD."), diskPolicyDiffersWarning)
 		},
 		Entry("the canonical policy file, discovered", ".lousy-agents/coach.json"),
 		Entry("the deprecated root policy file, discovered", "project.json"),
 		Entry("a policy file named with --project-config", "project.json", "--project-config", "project.json"),
 	)
 
-	It("discloses the edit in a diff scan too", func() {
+	It("reads the edited policy in a diff scan too", func() {
 		repo, head := policyRepo(".lousy-agents/coach.json")
 		overwriteOnDisk(repo, ".lousy-agents/coach.json", goLayerPolicyConfigJSON)
 
 		stdout, stderr, exitCode := runCoachCodesignalRaw(repo, head, "--worktree", "--fail-on-incomplete-coverage", "--format=json")
 
-		Expect(exitCode).To(Equal(3), "stderr: %s", stderr)
-		Expect(diagnosticsOfKind(decodeCoachReport(stdout).Diagnostics, "worktree_changes_not_analyzed")).To(ContainElement(And(
-			HaveField("Path", ".lousy-agents/coach.json"),
-			HaveField("Message", policyReadFromCommit(head)),
-		)))
+		Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+		report := decodeCoachReport(stdout)
+		Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty())
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(".lousy-agents/coach.json", goLayerPolicyConfigJSON, diskCauseDiffersFromHead))))
 	})
 
 	It("keeps the all-clear and exits 0 when the policy is unchanged (control)", func() {

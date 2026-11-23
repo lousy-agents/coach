@@ -1,11 +1,8 @@
-Repository Baseline for revision {head} with working-tree changes (not a diff comparison)
-worktree: no uncommitted changes on revision {head12}.
-files discovered (tracked and new): 3, analyzed: 2, unsupported: 1, excluded: 0, unanalyzable: 0, active signals: 0, diagnostics: 0
+scope: production, filtered: 0, files analyzed: 1, active signals: 0, diagnostics: 0
+policy: .lousy-agents/coach.json (pcfg_24ee6328b822), same as HEAD.
+worktree: no uncommitted changes on revision {head12}, compared with merge-base {base12}.
 No active CodeSignal findings.
 Project summary: active=0, introduced=0, existing=0, resolved=0, baseline=0
-
-Coverage:
-  unsupported: 1 .json files
 
 Project coverage: phase=go_model_build, complete=true
   count: excluded_edges=0

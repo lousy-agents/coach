@@ -58,7 +58,7 @@ func (v *WorktreeView) unreadDisclosure(dir, revision, policyPath string) []code
 	unread := slices.DeleteFunc(slices.Clone(entries), func(entry gitrepo.WorktreeEntry) bool {
 		return v.accountedFor(entry) || inputs.hasOwnDiagnostic(entry.Path) || nested.ownsEntry(entry)
 	})
-	return append(inputs.policyDiagnostics(revision), perPathDisclosure(collectWorktreePaths(unread), uniqueSorted(inputs.config))...)
+	return append(inputs.policyDiagnostics(revision), perPathDisclosure(collectWorktreePaths(unread), uniqueSorted(inputs.named))...)
 }
 
 // perPathDisclosure names each dirty supported path in a diagnostic that

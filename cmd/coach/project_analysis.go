@@ -1,11 +1,8 @@
 package main
 
 import (
-	"encoding/json"
-
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
@@ -18,7 +15,7 @@ type preparedProject struct {
 	diagnostics []codesignal.Diagnostic
 }
 
-func prepareProjectAnalysis(dir, revision string, named policyref.Ref, language string, suppressUncommittedCanonical bool, ports scanPorts) (preparedProject, error) {
+func prepareProjectAnalysis(dir, revision string, named policyref.Ref, language string, ports scanPorts) (preparedProject, error) {
 	if named.JudgedOnDisk() {
 		return loadPreparedProject(dir, revision, named, language, nil, ports)
 	}
@@ -34,35 +31,7 @@ func prepareProjectAnalysis(dir, revision string, named policyref.Ref, language 
 		}
 		return preparedProject{}, selection.Fatal
 	}
-	diags := projectSelectionDiagnostics(selection, revision, suppressUncommittedCanonical)
-	if selection.Path == "" {
-		return preparedProject{diagnostics: diags}, nil
-	}
-	return loadPreparedProject(dir, revision, policyref.Discovered(selection.Path), language, diags, ports)
-}
-
-func loadPreparedProject(dir, revision string, source policyref.Ref, language string, diags []codesignal.Diagnostic, ports scanPorts) (preparedProject, error) {
-	config, err := ports.loader(source.JudgedOnDisk())(dir, revision, source.Path)
-	if err != nil {
-		return preparedProject{}, withReadinessForLanguage(err, dir, revision, source, language)
-	}
-	backend, unavailable, err := selectProjectBackend(ports, language)
-	if err != nil {
-		return preparedProject{}, err
-	}
-	if backend == nil {
-		return preparedProject{diagnostics: appendDiagnostic(diags, backendUnavailableDiagnostic(source.Path, unavailable))}, nil
-	}
-	return preparedProject{
-		analysis: &codesignalcli.ProjectAnalysis{
-			Policy:       source,
-			Language:     language,
-			Config:       append(json.RawMessage(nil), config...),
-			ConfigDigest: projectconfig.Digest(config),
-			Backend:      backend,
-		},
-		diagnostics: diags,
-	}, nil
+	return loadPreparedProject(dir, revision, policyref.Discovered(selection.Path), language, projectSelectionDiagnostics(selection), ports)
 }
 
 func withReadinessForLanguage(err error, dir, revision string, policy policyref.Ref, language string) error {

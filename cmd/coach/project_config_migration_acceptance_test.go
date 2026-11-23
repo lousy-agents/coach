@@ -43,7 +43,7 @@ var _ = Describe("coach project config migration", func() {
 			expectNoDiagnosticKind(report, "project_config_uncommitted")
 		})
 
-		It("copies project.json when the answer is yes, leaves project.json in place, and matches the no answer's exit code and diagnostics", func() {
+		It("copies project.json when the answer is yes, leaves project.json in place, and then scans the copy as the policy on disk", func() {
 			repo := commitDeprecatedProjectConfigRepo()
 			before := readRepoFile(repo, legacyConfigPath)
 			noStdout, noStderr, noExit := runMigrationBaselineOnTerminal(repo, projectConfigMigrationEnv(), "\n")
@@ -51,6 +51,8 @@ var _ = Describe("coach project config migration", func() {
 			Expect(readRepoFile(repo, legacyConfigPath)).To(Equal(before))
 			expectRepoFileAbsent(repo, coachConfigPath)
 			noReport := decodeCoachReport(noStdout)
+			Expect(scopePolicyScopeOf(noStdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(legacyConfigPath, singleRootPolicyJSON, diskCauseSameAsHead))))
+			expectDiagnosticKind(noReport, "project_config_deprecated", legacyConfigPath)
 
 			stdout, stderr, exitCode := runMigrationBaselineOnTerminal(repo, projectConfigMigrationEnv(), "y\n")
 
@@ -63,9 +65,9 @@ var _ = Describe("coach project config migration", func() {
 
 			report := decodeCoachReport(stdout)
 			Expect(report.SchemaVersion).To(Equal("2"))
-			Expect(report.Signals).To(Equal(noReport.Signals), "a yes answer still analyzes the committed project.json")
-			Expect(report.Diagnostics).To(Equal(noReport.Diagnostics))
-			expectDiagnosticKind(report, "project_config_deprecated", legacyConfigPath)
+			Expect(report.Signals).To(Equal(noReport.Signals), "the copy holds the same policy bytes, so the analysis is the same")
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, singleRootPolicyJSON, diskCauseNotCommitted))))
+			expectNoDiagnosticKind(report, "project_config_deprecated")
 			expectNoDiagnosticKind(report, "project_config_uncommitted")
 			expectNoDiagnosticKind(report, "project_config_migration_skipped")
 		})
@@ -148,8 +150,11 @@ var _ = Describe("coach project config migration", func() {
 			Expect(readRepoFile(repo, coachConfigPath)).To(Equal(existing))
 
 			report := decodeCoachReport(stdout)
+			// The existing file is invalid (unknown field), so the scan falls back to the committed project.json, which is
+			// not "same as HEAD" because the policy on disk was selected and could not be used.
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(legacyConfigPath, singleRootPolicyJSON, diskCauseUnusableOnDisk))))
 			expectDiagnosticKind(report, "project_config_deprecated", legacyConfigPath)
-			expectDiagnosticKind(report, "project_config_uncommitted", coachConfigPath)
+			expectNoDiagnosticKind(report, "project_config_uncommitted")
 			expectNoDiagnosticKind(report, "project_config_migration_skipped")
 		})
 	})

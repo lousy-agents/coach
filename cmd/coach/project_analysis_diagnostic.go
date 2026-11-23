@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
@@ -26,7 +24,7 @@ func withProjectDiagnostic(report *codesignal.Report, diag *codesignal.Diagnosti
 	return &out
 }
 
-func projectSelectionDiagnostics(selection projectconfig.Selection, revision string, suppressUncommittedCanonical bool) []codesignal.Diagnostic {
+func projectSelectionDiagnostics(selection projectconfig.Selection) []codesignal.Diagnostic {
 	var diags []codesignal.Diagnostic
 	if selection.Deprecated {
 		diags = append(diags, codesignal.Diagnostic{
@@ -35,9 +33,6 @@ func projectSelectionDiagnostics(selection projectconfig.Selection, revision str
 			Message: deprecatedProjectConfigMessage,
 		})
 	}
-	// suppressUncommittedCanonical is set only after this invocation created
-	// .lousy-agents/coach.json. Discover runs again inside prepareProjectAnalysis
-	// and would otherwise report that new worktree file.
 	if selection.UnusableCanonical != nil {
 		diags = append(diags, codesignal.Diagnostic{
 			Kind:    "project_config_unusable",
@@ -45,12 +40,20 @@ func projectSelectionDiagnostics(selection projectconfig.Selection, revision str
 			Message: projectconfig.UnusableCanonicalMessage(selection.UnusableCanonical),
 		})
 	}
-	if selection.UncommittedCanonical && !suppressUncommittedCanonical {
-		diags = append(diags, codesignal.Diagnostic{
-			Kind:    "project_config_uncommitted",
-			Path:    projectconfig.CanonicalPath,
-			Message: fmt.Sprintf(".lousy-agents/coach.json is in the worktree but is not committed at %s, so this scan did not read it.", revision),
-		})
-	}
 	return diags
+}
+
+// withoutOutdatedDeprecation drops the deprecation of the root project.json when the scan used another policy, which
+// is the case where the canonical file on disk replaces it.
+func withoutOutdatedDeprecation(diags []codesignal.Diagnostic, usedPath string) []codesignal.Diagnostic {
+	if usedPath == projectconfig.DefaultPath {
+		return diags
+	}
+	var kept []codesignal.Diagnostic
+	for _, diag := range diags {
+		if diag.Kind != "project_config_deprecated" {
+			kept = append(kept, diag)
+		}
+	}
+	return kept
 }

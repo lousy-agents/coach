@@ -22,7 +22,14 @@ func readBounded(root *os.Root, repoPath string) ([]byte, error) {
 		return nil, fmt.Errorf("reading %s: %s", repoPath, causeText(err))
 	}
 	if int64(len(content)) > MaxBytes {
-		return nil, fmt.Errorf("%s exceeds the %d-byte size budget", repoPath, MaxBytes)
+		return nil, &oversizePolicyError{path: repoPath}
 	}
 	return content, nil
+}
+
+// oversizePolicyError is typed so a caller can tell a policy over the size limit from one it could not read.
+type oversizePolicyError struct{ path string }
+
+func (err *oversizePolicyError) Error() string {
+	return fmt.Sprintf("%s exceeds the %d-byte size budget", err.path, MaxBytes)
 }

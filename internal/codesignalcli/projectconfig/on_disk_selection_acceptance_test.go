@@ -41,7 +41,7 @@ var _ = Describe("the policy the working tree selects", func() {
 			selected, err := SelectOnDisk(repo, discovered)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(selected).To(Equal(DiskSelection{Path: CanonicalPath, Digest: digestOf(canonicalBytes)}))
+			Expect(selected).To(Equal(DiskSelection{Path: CanonicalPath, Digest: digestOf(canonicalBytes), Content: []byte(canonicalBytes)}))
 		})
 
 		It("selects project.json when the canonical file is absent", func() {
@@ -50,7 +50,7 @@ var _ = Describe("the policy the working tree selects", func() {
 			selected, err := SelectOnDisk(repo, discovered)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(selected).To(Equal(DiskSelection{Path: DefaultPath, Digest: digestOf(legacyBytes)}))
+			Expect(selected).To(Equal(DiskSelection{Path: DefaultPath, Digest: digestOf(legacyBytes), Content: []byte(legacyBytes)}))
 		})
 
 		It("selects project.json when the canonical path is a symbolic link", func() {
@@ -62,7 +62,7 @@ var _ = Describe("the policy the working tree selects", func() {
 			selected, err := SelectOnDisk(repo, discovered)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(selected).To(Equal(DiskSelection{Path: DefaultPath, Digest: digestOf(legacyBytes)}))
+			Expect(selected).To(Equal(DiskSelection{Path: DefaultPath, Digest: digestOf(legacyBytes), Content: []byte(legacyBytes)}))
 		})
 
 		It("selects nothing when neither spelling is on disk", func() {
@@ -104,7 +104,7 @@ var _ = Describe("the policy the working tree selects", func() {
 			selected, err := SelectOnDisk(filepath.Join(repo, "pkg", "deep"), discovered)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(selected).To(Equal(DiskSelection{Path: CanonicalPath, Digest: digestOf(canonicalBytes)}))
+			Expect(selected).To(Equal(DiskSelection{Path: CanonicalPath, Digest: digestOf(canonicalBytes), Content: []byte(canonicalBytes)}))
 		})
 
 		It("selects a canonical file of exactly the size bound", func() {
@@ -114,7 +114,7 @@ var _ = Describe("the policy the working tree selects", func() {
 			selected, err := SelectOnDisk(repo, discovered)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(selected).To(Equal(DiskSelection{Path: CanonicalPath, Digest: digestOf(atBound)}))
+			Expect(selected).To(Equal(DiskSelection{Path: CanonicalPath, Digest: digestOf(atBound), Content: []byte(atBound)}))
 		})
 
 		It("refuses a canonical file over the size bound and selects nothing", func() {
@@ -146,7 +146,7 @@ var _ = Describe("the policy the working tree selects", func() {
 			selected, err := SelectOnDisk(repo, discovered)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(selected).To(Equal(DiskSelection{Path: DefaultPath, Digest: digestOf(legacyBytes)}))
+			Expect(selected).To(Equal(DiskSelection{Path: DefaultPath, Digest: digestOf(legacyBytes), Content: []byte(legacyBytes)}))
 		})
 	})
 
@@ -160,7 +160,7 @@ var _ = Describe("the policy the working tree selects", func() {
 			selected, err := SelectOnDisk(repo, named)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(selected).To(Equal(DiskSelection{Path: namedPath, Digest: digestOf(legacyBytes)}))
+			Expect(selected).To(Equal(DiskSelection{Path: namedPath, Digest: digestOf(legacyBytes), Content: []byte(legacyBytes)}))
 		})
 
 		It("selects nothing when the named file is missing, though project.json is on disk", func() {
@@ -221,7 +221,7 @@ var _ = Describe("the policy the working tree selects", func() {
 			selected, err := SelectOnDisk(filepath.Join(repo, "pkg"), named)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(selected).To(Equal(DiskSelection{Path: namedPath, Digest: digestOf(legacyBytes)}))
+			Expect(selected).To(Equal(DiskSelection{Path: namedPath, Digest: digestOf(legacyBytes), Content: []byte(legacyBytes)}))
 		})
 
 		It("selects a named file of exactly the size bound", func() {
@@ -231,7 +231,7 @@ var _ = Describe("the policy the working tree selects", func() {
 			selected, err := SelectOnDisk(repo, named)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(selected).To(Equal(DiskSelection{Path: namedPath, Digest: digestOf(atBound)}))
+			Expect(selected).To(Equal(DiskSelection{Path: namedPath, Digest: digestOf(atBound), Content: []byte(atBound)}))
 		})
 
 		It("refuses a named file over the size bound", func() {
