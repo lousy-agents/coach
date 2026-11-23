@@ -45,9 +45,9 @@ func TestIsPartialCloneAsksGitToReadThePromisorSettingAsABoolean(t *testing.T) {
 	_, _ = IsPartialClone(run, "repo")
 
 	if !slices.ContainsFunc(asked, func(command string) bool {
-		return strings.Contains(command, "--type=bool") && strings.Contains(command, "promisor")
+		return strings.Contains(command, "--bool") && strings.Contains(command, "promisor")
 	}) {
-		t.Errorf("asked %q; want the promisor setting read with --type=bool", asked)
+		t.Errorf("asked %q; want the promisor setting read with --bool", asked)
 	}
 }
 

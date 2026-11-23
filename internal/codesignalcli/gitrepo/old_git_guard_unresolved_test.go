@@ -45,14 +45,8 @@ func assertLeftToTheScan(t *testing.T, name string, repository fakeRepository, b
 func TestOnAnOldGitAProbeThatFailsOnARevisionGitCannotBeAskedAboutIsRefused(t *testing.T) {
 	repository := fakeRepository{version: oldGit, probes: map[string]probeAnswer{"HEAD": {err: exitStatus128}}}
 	timedOut := &BoundError{Kind: BoundTimeout, message: "git execution timed out after 30s"}
-	run := func(dir string, args ...string) ([]byte, error) {
-		if args[0] == "rev-parse" {
-			return nil, timedOut
-		}
-		return repository.run(dir, args...)
-	}
 
-	err := RefuseMissingObjects(run, "repo", "")
+	err := RefuseMissingObjects(headResolvesThen(timedOut, repository.run), "repo", "")
 
 	var refusal *OperationalError
 	if !errors.As(err, &refusal) || !strings.Contains(err.Error(), "could not tell whether") || !strings.Contains(err.Error(), "use git 2.44 or later") {

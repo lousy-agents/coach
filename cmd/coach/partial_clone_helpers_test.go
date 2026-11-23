@@ -69,15 +69,20 @@ func packFilesIn(clone string) int {
 
 // skipUnlessGitCanRefuseLazyFetch skips a spec that rests on GIT_NO_LAZY_FETCH, which git has from 2.44.
 func skipUnlessGitCanRefuseLazyFetch() {
+	if can, printed := gitCanRefuseLazyFetch(); !can {
+		Skip("needs git 2.44 or later: this git (" + printed + ") predates GIT_NO_LAZY_FETCH, so it cannot be told not to fetch; `mise run acceptance-ci-env` runs it under CI's pinned git")
+	}
+}
+
+// gitCanRefuseLazyFetch is whether the git on PATH reads GIT_NO_LAZY_FETCH (2.44), and the version it printed.
+func gitCanRefuseLazyFetch() (bool, string) {
 	printed, err := exec.Command("git", "version").Output()
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	ExpectWithOffset(2, err).NotTo(HaveOccurred())
 	match := regexp.MustCompile(`^git version (\d+)\.(\d+)`).FindStringSubmatch(string(printed))
-	ExpectWithOffset(1, match).NotTo(BeNil(), "git printed %q", printed)
+	ExpectWithOffset(2, match).NotTo(BeNil(), "git printed %q", printed)
 	major, _ := strconv.Atoi(match[1])
 	minor, _ := strconv.Atoi(match[2])
-	if major < 2 || major == 2 && minor < 44 {
-		Skip("needs git 2.44 or later: this git (" + strings.TrimSpace(string(printed)) + ") predates GIT_NO_LAZY_FETCH, so it cannot be told not to fetch; `mise run acceptance-ci-env` runs it under CI's pinned git")
-	}
+	return major > 2 || major == 2 && minor >= 44, strings.TrimSpace(string(printed))
 }
 
 // unreachableRemote is a remote whose transport is a program that could not answer, so a fetch that was
