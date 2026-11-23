@@ -13,6 +13,9 @@ import (
 const (
 	renameOnDisk          = "rename the file on disk"
 	passTheSpellingOnDisk = "pass the spelling on disk"
+	// renameWithGitsMove is the advice for a policy git tracks: a rename on disk alone leaves the index with the old
+	// spelling on a disk that folds case, so the next checkout elsewhere reads the old one.
+	renameWithGitsMove = "with git's own move, so that the index records the rename as well as the disk"
 )
 
 // spellingTarget is one way a scan is told which policy to read, with the spellings of that path that differ from it
@@ -86,6 +89,7 @@ var _ = Describe("coach codesignal: the spelling of the policy path is the one t
 
 						expectTheDiskSpellingRefusal(stderr)
 						Expect(stderr).To(ContainSubstring(`the policy is on disk as "`+variant(target)+`", but Coach reads "`+target.policy+`", so it is not read: `), "stderr:\n%s", stderr)
+						Expect(stderr).NotTo(ContainSubstring(renameWithGitsMove), "an untracked policy has no index entry to rename:\n%s", stderr)
 					},
 					Entry("the file's name differs", func(t spellingTarget) string { return t.fileCase }),
 					Entry("a directory's name differs", func(t spellingTarget) string { return t.directoryCase }),
@@ -98,6 +102,7 @@ var _ = Describe("coach codesignal: the spelling of the policy path is the one t
 					stderr := scanJSONRefused(mode, repo, base, target)
 
 					expectTheDiskSpellingRefusal(stderr)
+					Expect(stderr).To(ContainSubstring(renameWithGitsMove), "a tracked policy is renamed in the index as well:\n%s", stderr)
 				})
 
 				It("reads the entry spelled exactly as the path, and not the case variants beside it", func() {
