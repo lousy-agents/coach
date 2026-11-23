@@ -240,11 +240,22 @@ The project policy is read from the commit under `--worktree`. An uncommitted ch
 
 Once policy-from-disk lands, every scan reports which project policy it used, and not only under `--worktree`:
 
-- JSON `scope.policy` holds `path`, `digest` and `matches_head`. It is `null` when neither the disk nor `HEAD` selects a policy.
+- JSON `scope.policy` holds `path`, `digest`, `matches_head` and `cause`. It is `null` when neither the disk nor `HEAD` selects a policy.
+- `cause` is a closed enum that says why the policy used is or is not the one at `HEAD`. It is present whenever `scope.policy` is an object. The human reason that a policy on disk was unusable is text-only and is not in the JSON.
 - `matches_head` is `true` when the policy selected from disk and the policy selected at `HEAD` have the same path and the same digest.
 - When only one of the disk and `HEAD` selects a policy, `matches_head` is `false` and the text prints a WARNING. A difference qualifies a clean result.
 - When the committed copy of the selected policy cannot be read at `HEAD` within git's time or stderr bound, Coach uses the policy on disk, `matches_head` is `false`, and the WARNING says the committed copy could not be read and names the bound that tripped, not that the content differs.
 - Text prints a policy line when a policy is selected or the two differ.
+
+| `cause` | `matches_head` | Meaning |
+| --- | --- | --- |
+| `same_as_head` | `true` | The policy on disk is the committed one, or a line-ending-converted copy of it. The scan used the committed bytes. |
+| `differs_from_head` | `false` | The policy on disk differs from the committed policy at the same path. The scan used the bytes on disk. |
+| `not_committed` | `false` | The policy on disk has no committed copy at that path at `HEAD`. The scan used the bytes on disk. |
+| `missing_on_disk` | `false` | The policy is committed at `HEAD` and absent on disk. The scan used the committed copy. <!-- TODO(#168 A2b/A3): interim until A3 (discovery fallbacks when the canonical policy is deleted); remove this row's interim status when A3 merges. --> |
+| `unusable_on_disk` | `false` | The policy on disk cannot be used: over the size bound, unreadable, invalid, or not a regular file. The scan used the committed copy. <!-- TODO(#168 A2b/A3): interim until A2b (an unusable policy on disk exits `2` `project_config_invalid` with no fall-through); remove this row's interim status when A2b merges. --> |
+
+A report from a version that predates `cause` has no `cause` key. A consumer reads `matches_head` alone for it.
 
 ### Unread parts of the working tree
 
