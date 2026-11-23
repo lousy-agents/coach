@@ -62,7 +62,7 @@ func listedInAnotherCase(t *testing.T) error {
 	if err := os.WriteFile(filepath.Join(root, ".Lousy-Agents", "Coach.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	refusal := wrongCaseUnder(root, CanonicalPath, chosenByCoach)
+	refusal := wrongCaseUnder(root, CanonicalPath, chosenByCoach, untracked)
 	if refusal == nil {
 		t.Fatalf("wrongCaseUnder = nil; want the refusal for a policy the disk lists in another case")
 	}

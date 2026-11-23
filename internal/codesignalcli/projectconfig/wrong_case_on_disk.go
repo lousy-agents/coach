@@ -34,11 +34,20 @@ func WrongCaseOnDisk(run gitrepo.Runner, dir, repoPath string, named bool) (*Con
 	if named {
 		chooser = chosenByTheUser
 	}
-	return wrongCaseUnder(root, repoPath, chooser), nil
+	return wrongCaseUnder(root, repoPath, chooser, trackedBy(run, root)), nil
+}
+
+// trackedBy is whether git's index holds a spelling under root. A question git cannot answer counts as untracked:
+// the answer only adds a sentence to the advice.
+func trackedBy(run gitrepo.Runner, root string) func(spelling string) bool {
+	return func(spelling string) bool {
+		output, err := run(root, "ls-files", "-z", "--full-name", "--", ":(top,literal)"+spelling)
+		return err == nil && len(output) > 0
+	}
 }
 
 // wrongCaseUnder is WrongCaseOnDisk for the repository root given.
-func wrongCaseUnder(root, repoPath string, chooser pathChooser) *ConfigError {
+func wrongCaseUnder(root, repoPath string, chooser pathChooser, tracked func(spelling string) bool) *ConfigError {
 	listed, held, truncated, _ := spellingsListed(diskEntries(root), strings.Split(repoPath, "/"))
 	if held || slices.ContainsFunc(listed, func(spelling string) bool { return throughARepository(root, spelling) }) {
 		return nil
@@ -48,9 +57,9 @@ func wrongCaseUnder(root, repoPath string, chooser pathChooser) *ConfigError {
 	case 0:
 		return nil
 	case 1:
-		return diskCaseRefusal(fmt.Sprintf("the policy is on disk as %q, but Coach reads %q, so it is not read: %s", others[0], repoPath, oneSpellingOnDisk(others[0], repoPath, chooser)))
+		return diskCaseRefusal(fmt.Sprintf("the policy is on disk as %q, but Coach reads %q, so it is not read: %s", others[0], repoPath, oneSpellingOnDisk(others[0], repoPath, chooser)+movedByGit(tracked(others[0]))))
 	}
-	return diskCaseRefusal(severalSpellingsOnDisk(others, truncated, repoPath, chooser))
+	return diskCaseRefusal(severalSpellingsOnDisk(others, truncated, repoPath, chooser, tracked))
 }
 
 // regularFileUnder is whether a spelling names a regular file under root. Anything else there, a directory, a link or
@@ -138,7 +147,7 @@ func withTheFlag(chooser pathChooser) string {
 
 // severalSpellingsOnDisk names every spelling the disk lists besides the one Coach reads, so that none is read unseen,
 // and says how to keep one. With more spellings than are named, none is chosen.
-func severalSpellingsOnDisk(others []string, truncated bool, repoPath string, chooser pathChooser) string {
+func severalSpellingsOnDisk(others []string, truncated bool, repoPath string, chooser pathChooser, tracked func(spelling string) bool) string {
 	listed := slices.Sorted(slices.Values(others))
 	named := quotedList(listed)
 	if truncated {
@@ -154,7 +163,16 @@ func severalSpellingsOnDisk(others []string, truncated bool, repoPath string, ch
 	if keep == target {
 		return fmt.Sprintf("%s. To keep %q, remove %s.", reason, keep, quotedList(rest))
 	}
-	return fmt.Sprintf("%s. To keep %q, rename it on disk to %q and remove %s.%s", reason, keep, target, quotedList(rest), directoryInCase(keep, target))
+	return fmt.Sprintf("%s. To keep %q, rename it on disk to %q and remove %s.%s%s", reason, keep, target, quotedList(rest), directoryInCase(keep, target), movedByGit(tracked(keep)))
+}
+
+// movedByGit is the advice for a policy git tracks: on a disk that folds case, a rename on disk alone leaves the index
+// with the old spelling, which every other checkout then reads.
+func movedByGit(tracked bool) string {
+	if !tracked {
+		return ""
+	}
+	return " Rename it with git's own move, so that the index records the rename as well as the disk."
 }
 
 func diskCaseRefusal(reason string) *ConfigError {
