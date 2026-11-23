@@ -45,8 +45,13 @@ func assertLeftToTheScan(t *testing.T, name string, repository fakeRepository, b
 func TestOnAnOldGitAProbeThatFailsOnARevisionGitCannotBeAskedAboutIsRefused(t *testing.T) {
 	repository := fakeRepository{version: oldGit, probes: map[string]probeAnswer{"HEAD": {err: exitStatus128}}}
 	timedOut := &BoundError{Kind: BoundTimeout, message: "git execution timed out after 30s"}
+	resolved := 0
 	run := func(dir string, args ...string) ([]byte, error) {
 		if args[0] == "rev-parse" {
+			resolved++
+			if resolved == 1 {
+				return []byte(firstMissing + "\n"), nil
+			}
 			return nil, timedOut
 		}
 		return repository.run(dir, args...)

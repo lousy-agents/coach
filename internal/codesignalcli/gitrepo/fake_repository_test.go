@@ -27,8 +27,11 @@ type fakeRepository struct {
 	// revParseErr and revParseOutput are what rev-parse --verify says of any name, when they are set.
 	revParseErr    error
 	revParseOutput string
-	probes         map[string]probeAnswer
-	probed         []string
+	// headResolves answers HEAD's resolution with a commit even when revParseErr or revParseOutput is set, so that
+	// they describe the name --base gives alone.
+	headResolves bool
+	probes       map[string]probeAnswer
+	probed       []string
 	// mergeBaseAsked is the arguments of each merge-base question, so a test can see how the base was passed.
 	mergeBaseAsked [][]string
 }
@@ -45,6 +48,9 @@ func (r *fakeRepository) run(_ string, args ...string) ([]byte, error) {
 	case "rev-list":
 		return r.answerProbe(args)
 	case "rev-parse":
+		if r.headResolves && args[len(args)-1] == "HEAD" {
+			return []byte(firstMissing + "\n"), nil
+		}
 		return r.answerResolution()
 	}
 	return nil, exitStatus128

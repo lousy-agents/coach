@@ -11,6 +11,9 @@ import (
 // on a guess.
 
 func refuseWhenReadRevisionsLackObjects(run Runner, dir, base, version string) error {
+	if _, err := run(dir, headResolution...); BoundFailure(err) != nil {
+		return nil
+	}
 	if err := refuseWhenTheBaseCommitIsNotHere(run, dir, base, version); err != nil {
 		return err
 	}
@@ -26,6 +29,12 @@ func refuseWhenReadRevisionsLackObjects(run Runner, dir, base, version string) e
 	}
 	return nil
 }
+
+// headResolution resolves HEAD, reading HEAD and the ref it names and no object. When it does not answer within
+// headResolveTimeout (a named pipe at the branch's ref, say), the guard passes rather than wait out the probe's two
+// minutes on the same ref, as unansweredProbe passes a HEAD that names nothing. This is safe because nothing reads
+// an object before resolving HEAD, so the scan's own read of HEAD, held to its own limit, ends the run first (#737).
+var headResolution = []string{"rev-parse", "--verify", "--quiet", "HEAD"}
 
 // unansweredProbe is a refusal only for a revision that exists. One that does not resolve (a HEAD with no commit
 // behind it, a directory that is no repository) is a read the scan never makes: it ends on the revision and says

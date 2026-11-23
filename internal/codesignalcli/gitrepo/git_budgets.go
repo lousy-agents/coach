@@ -32,6 +32,8 @@ const (
 	// grows with the repository, so it gets longer than a lookup. It prints one record per changed path.
 	// The diff of one path is a lookup like git show: it reads two blobs.
 	diffListingTimeout = 2 * time.Minute
+	// The old-git guard's first question, which reads only HEAD and the ref it names (see headResolution).
+	headResolveTimeout = 5 * time.Second
 	// A git subcommand no one has named: a small read.
 	unnamedBytes = 16 << 20
 )
@@ -137,6 +139,9 @@ func defaultBudgetFor(args []string) budget {
 	subcommand := ""
 	if len(args) > 0 {
 		subcommand = args[0]
+	}
+	if slices.Equal(args, headResolution) {
+		return budget{timeout: headResolveTimeout, stdout: metadataBytes, stderr: gitStderrBudget}
 	}
 	switch subcommand {
 	case "config", "rev-parse", "merge-base", "version", "cat-file", "ls-files", "check-attr", "hash-object":
