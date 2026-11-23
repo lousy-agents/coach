@@ -75,6 +75,7 @@ coach codesignal --worktree --baseline       # every tracked and new Go/TS/TSX f
 
 - With `--worktree` alone, Coach compares the working tree with `HEAD`. `--base <ref>` or `--baseline` composes with it and selects the comparison.
 - Supported-language source and project configuration files are read from the working tree, new and untracked files included. A deleted file is absent. A symbolic link is not followed and is named.
+- A file renamed with `git mv` is, on a git before 2.44, two paths: the moved file's signals read `introduced` and the old name's read `resolved`, with no `continuity_not_determined` diagnostic. On git 2.44 or later the rename is selected as a committed rename is: its signals read `unknown`, with `continuity_not_determined`.
 - The project policy (`.lousy-agents/coach.json`) is read from the working tree, as in a scan without `--worktree`. An uncommitted edit to it, or an untracked policy file, is the policy the scan uses: `scope.policy` names it (`matches_head` is `false`, `cause` is `differs_from_head` or `not_committed`), the text prints a `policy:` line and a WARNING, and a clean verdict is qualified because the result can differ from CI, which reads the committed policy.
 - Run it from the repository root. Elsewhere it exits `2` and prints the command to run.
 - `scope.worktree` reports the revision, the modified, added, deleted and untracked counts, and the configuration files read from disk.
@@ -89,7 +90,7 @@ It is a local check, not a pull-request check. See [`--worktree` in the CLI cont
 | `0` | Analysis completed (signals or none). Not a quality gate. |
 | `1` | Operational failure (not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O; also `--check-project` when git cannot answer a question about an explicit `--project-config`: empty stdout, stderr names the question); and, in a partial clone, an object the clone lacks (Coach never fetches; this includes the merge base's version of a file a `--base` diff compares, and with a git older than 2.44 it is refused before anything runs). |
 | `2` | Usage or invalid `--project-config`, or a TypeScript scan that cannot resolve a supported compiler or host Node (empty stdout except the policy-candidate document on the guided-authoring path; one or more stderr lines). |
-| `3` | Required project coverage incomplete, or under `--worktree` part of the working tree unread, and `--fail-on-incomplete-coverage` was supplied (report still written to stdout); or `--prepare-compiler` operational failure resolving the revision or computing readiness. |
+| `3` | Required project coverage incomplete, or under `--worktree` part of the working tree that is in scope unread (a `worktree_scan_incomplete` entry whose `hides_in_scope` is `yes` or `unknown`, or a changed file that could not be read; an entry with `hides_in_scope: no` exits `0`), and `--fail-on-incomplete-coverage` was supplied (report still written to stdout); or `--prepare-compiler` operational failure resolving the revision or computing readiness. |
 
 ### What you should see
 
@@ -228,10 +229,9 @@ top="$(git rev-parse --show-toplevel)" && mkdir -p "$top"/.lousy-agents && git -
 
 An explicit `--project-config` still reads only that path. A schema-valid root `project.json` is still read with a deprecation diagnostic until the follow-up removal ([issue #511](https://github.com/lousy-agents/coach/issues/511)). The lookup is [`.lousy-agents` config](./docs/conventions/lousy-agents-config.md).
 
-`--project-config` content is read from the **analyzed revision**, not your <!-- TODO(#168 A2b/A3): this paragraph and the refusal list below say the policy is read from the analyzed revision and name the staged copy, merge conflict, index lock and committed-as-link causes; rewrite when A2b-1 (scan refusals) and A2b-2 (--check-project causes) merge -->
-dirty worktree. The path itself is checked on disk first, and what is there
+`--project-config` content is read from the working tree, and `scope.policy` discloses how it differs from `HEAD`. The path itself is checked on disk first, and what is there
 decides what Coach says. Every case below exits `2`, and stdout stays empty
-except for the policy-candidate document on the guided-authoring path.
+except for the policy-candidate document on the guided-authoring path. <!-- TODO(#168 A2b-1): the refusal list below still names the staged copy, merge conflict, index lock and committed-as-link causes of the scan refusals; rewrite when A2b-1 (disk-judged scan refusals) merges -->
 
 - Nothing is there, the policy was never committed, and the index holds nothing
   for it: `project_config_missing`. A Go scan then prints
