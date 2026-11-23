@@ -6,7 +6,7 @@ Coach gives you, or your coding agent, a private and repeatable report on struct
 
 - **Local and private.** The default command calls no model, contacts no GitHub, writes nothing to your repository, and sends no telemetry. The same input gives the same report.
 - **Every finding can be acted on.** Each finding gives its rule, severity, file and line, the evidence, why it matters, and a suggested fix. A finding's fingerprint is built from its rule, path, subject, evidence, and occurrence, not from its line or severity, so it keeps its identity when code moves or its severity changes.
-- **It enforces the layers you define.** Commit a layer policy, and coach reports the exact import that breaks it.
+- **It enforces the layers you define.** Commit a layer policy, and coach reports the file and line where a forbidden import breaks it.
 
 ## Who it's for
 
@@ -33,7 +33,7 @@ From the root of a Git repository:
 coach codesignal --baseline --top 10
 ```
 
-This scans every tracked Go, TypeScript, and TSX file at `HEAD` and prints the ten highest-ranked findings. Each finding shows its rule, severity, path, line, evidence, why it matters, and a recommendation. The header counts the files analyzed and the signals found, and a line says how many signals `--top` withheld.
+This scans the Go, TypeScript, and TSX files that ship at `HEAD` and prints the ten highest-ranked findings. The default `--scope production` leaves out test-only and excluded files; `--scope all` analyzes every tracked file. Each finding shows its rule, severity, path, line, evidence, why it matters, and a recommendation. The header counts the files analyzed and the signals found, and a line says how many signals `--top` withheld.
 
 If no rule matches, the report says `No active CodeSignal findings.` That means no rule matched the committed code, not that the code is clean. [What you should see](./docs/cli-codesignal.md#what-you-should-see) describes the full output.
 
@@ -80,7 +80,7 @@ problem=""
 case $rc in
   0) printf '%s' "$report" | tr -d ' \n' | grep -q '"matches_head":false' && problem="the project policy on disk differs from HEAD" ;;
   1|2|127) problem="the review did not run (exit $rc)" ;;
-  *) problem="part of the working tree was not read (exit $rc)" ;;
+  *) problem="the review is incomplete: a project or working-tree input was not analyzed (exit $rc)" ;;
 esac
 [ -z "$problem" ] && exit 0
 echo "coach self-review is not clean: $problem. Tell the user." >&2
