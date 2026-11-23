@@ -38,7 +38,7 @@ func (refusal *DiskPolicyRefusal) ScanError(explicit, unmerged bool, committed e
 	if unmerged {
 		message += ". " + mergeConflictAdvice
 	}
-	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: refusal.Cause(), Message: message}
+	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: refusal.Cause(), Message: message, UnusableOnDisk: refusal.Cause() == ""}
 }
 
 // CauseWorded is err with the refusal's stable cause appended, for a committed pipeline's words that name the entry

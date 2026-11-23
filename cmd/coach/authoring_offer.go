@@ -61,7 +61,7 @@ func authoringInteractive(noInteractive bool) bool {
 // beside it, with words that say to replace the policy with it; TypeScript is not offered authoring at all
 // (offerAuthoring), so it gets the words that say how to get past the policy (unusablePolicyStep), terminal or not.
 func authoringRemediation(configErr *projectconfig.ConfigError, policy policyref.Ref, language string, interactive bool, dir string) string {
-	if language == "typescript" && configErr.ReplacesPolicy() {
+	if language == "typescript" && (configErr.ReplacesPolicy() || configErr.UnusableOnDisk) {
 		return "coach codesignal: " + unusablePolicyStep + "."
 	}
 	if offerAuthoring(configErr, language, interactive) != authoringCommand {
