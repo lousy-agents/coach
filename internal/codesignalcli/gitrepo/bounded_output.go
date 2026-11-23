@@ -70,7 +70,7 @@ func gitWaitError(waitErr error, stderr []byte) error {
 	}
 	message := fmt.Sprintf("%s: %s", waitErr, TerminalSafe(strings.TrimSpace(string(stderr))))
 	if gitRanAndFailed(waitErr) {
-		return &gitExitFailure{message: message}
+		return newGitExitFailure(message, waitErr, strings.TrimSpace(string(stderr)))
 	}
 	return errors.New(message)
 }

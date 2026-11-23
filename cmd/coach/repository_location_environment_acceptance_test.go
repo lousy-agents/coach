@@ -22,7 +22,7 @@ func gitWith(dir string, extra []string, args ...string) string {
 
 // scanRevision runs a baseline scan in dir with the extra environment and returns the revision it reports on.
 func scanRevision(dir string, extra []string) string {
-	stdout, stderr, exitCode := runCoachBinary(commandPath, dir, append(os.Environ(), extra...), "codesignal", "--baseline", "--format=json", "--no-interactive")
+	stdout, stderr, exitCode := runCoachBinary(commandPath, dir, environmentNamingNoRepository(extra...), "codesignal", "--baseline", "--format=json", "--no-interactive")
 	ExpectWithOffset(1, exitCode).To(Equal(0), "stdout: %s\nstderr: %s", stdout, stderr)
 	return decodeCoachReport(stdout).Scope.Revision
 }
