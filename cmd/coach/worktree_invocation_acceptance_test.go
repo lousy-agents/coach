@@ -41,10 +41,12 @@ var _ = Describe("coach codesignal --worktree invocation", func() {
 		})
 
 		It("does not print the missing-mode message (#168 worktree graduation control)", func() {
-			_, stderr, _ := runCoachBinary(commandPath, editedRepo(), nil, "codesignal", "--worktree", "--format=json")
+			stdout, stderr, exitCode := runCoachBinary(commandPath, editedRepo(), nil, "codesignal", "--worktree", "--format=json")
 
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 			Expect(string(stderr)).NotTo(MatchRegexp(missingModeMessage))
 			Expect(string(stderr)).NotTo(ContainSubstring("missing required"))
+			Expect(decodeCoachReport(stdout).Scope.Worktree).NotTo(BeNil(), "a --worktree scan ran")
 		})
 
 		It("still requires a mode when --worktree is absent, and the message names all three modes (#168 worktree graduation)", func() {
