@@ -11,7 +11,7 @@ import (
 const suggestCommand = "--suggest-project-config"
 
 // What the message for a path under a regular file says, by whether the analyzed revision commits that file. The
-// README states the same two things, and a spec reads it for them.
+// the CLI contract states the same two things, and a spec reads it for them.
 const (
 	adviceForAFileNothingCommits = "move or remove it"
 	wordingForACommittedFile     = "a file the analyzed revision commits, so the path is probably wrong"
@@ -117,8 +117,8 @@ var _ = Describe("coach codesignal: the next step offered after an explicit --pr
 			Expect(string(stderr)).NotTo(ContainSubstring(suggestCommand), "stderr:\n%s", stderr)
 		})
 
-		It("is stated in the README as the message has it: a file nothing commits is moved or removed, a file the revision commits is not", func() {
-			bullet := readmeBullet("A path under a regular file")
+		It("is stated in the CLI contract as the message has it: a file nothing commits is moved or removed, a file the revision commits is not", func() {
+			bullet := cliContractBullet("A path under a regular file")
 
 			Expect(bullet).To(ContainSubstring("says to "+adviceForAFileNothingCommits), "the advice for a file nothing commits")
 			Expect(bullet).To(ContainSubstring(wordingForACommittedFile), "what the message says of a file the analyzed revision commits")

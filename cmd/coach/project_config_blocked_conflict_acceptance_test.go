@@ -127,8 +127,8 @@ var _ = Describe("coach codesignal: advice for a conflicted policy does not dele
 		Expect(gitIn(repo, "ls-files", "--unmerged")).To(BeEmpty())
 	})
 
-	It("is described by the README: the step is described behind the step that moves the file", func() {
-		Expect(readmeBullet("A path under a regular file")).To(ContainSubstring("is described behind the step that moves the file"))
+	It("is described by the CLI contract: the step is described behind the step that moves the file", func() {
+		Expect(cliContractBullet("A path under a regular file")).To(ContainSubstring("is described behind the step that moves the file"))
 	})
 
 	It("--check-project prints no command for it", func() {

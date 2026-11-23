@@ -19,7 +19,7 @@ func documentText(relative string) string {
 // A committed policy that is gone from disk, with an edit to it staged, has two restores and Coach prints both: the
 // restore from the index, which keeps the edit, and the restore from the revision, which brings the committed copy
 // back and drops the edit. The second is not the default and is labelled, and the message must not say that no
-// restore is offered while it prints one. The README, the PRD and the ADR describe the same two choices.
+// restore is offered while it prints one. The CLI contract, the PRD and the ADR describe the same two choices.
 var _ = Describe("coach codesignal: a committed policy with a staged edit, gone from disk, has a keep choice and a labelled drop choice", func() {
 	const (
 		policy       = "pol.json"
@@ -43,8 +43,8 @@ var _ = Describe("coach codesignal: a committed policy with a staged edit, gone 
 		Expect(string(stderr)).To(ContainSubstring(dropPhrase+" instead, restore it with git restore --source="), "the drop is labelled and printed:\n%s", stderr)
 	})
 
-	It("is described by the README as two choices, and not as no restore", func() {
-		bullet := readmeBullet("Nothing is there but the policy is committed at the analyzed revision")
+	It("is described by the CLI contract as two choices, and not as no restore", func() {
+		bullet := cliContractBullet("Nothing is there but the policy is committed at the analyzed revision")
 
 		Expect(bullet).To(ContainSubstring(dropPhrase))
 		Expect(bullet).NotTo(ContainSubstring("a staged edit to the policy or an unmerged entry for it"), "a staged edit is no longer grouped with the cases that get no restore")
