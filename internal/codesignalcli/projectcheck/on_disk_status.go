@@ -10,8 +10,8 @@ import (
 
 // onDiskStatus is what the working tree says about the policy path: nil for a regular file, the error that says
 // why not otherwise, and the operational error when git could not answer a question the verdict depends on.
-func onDiskStatus(run gitrepo.Runner, dir, revision, policyPath string) (*projectconfig.ConfigError, error) {
-	status, err := projectconfig.ExplicitOnDiskStatus(run, dir, revision, policyPath)
+func onDiskStatus(run gitrepo.Runner, dir, revision, policyPath string, named bool) (*projectconfig.ConfigError, error) {
+	status, err := projectconfig.OnDiskStatus(run, dir, revision, policyPath, named)
 	if err != nil {
 		return nil, err
 	}

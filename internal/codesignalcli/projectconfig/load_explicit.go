@@ -32,8 +32,13 @@ func LoadExplicit(dir, revision, repoPath string) (json.RawMessage, error) {
 // The disk is asked first whether it lists the path in another case, because the disk decides what the path names
 // (WrongCaseOnDisk).
 func ExplicitOnDiskStatus(run gitrepo.Runner, dir, revision, repoPath string) (*ConfigError, error) {
+	return OnDiskStatus(run, dir, revision, repoPath, true)
+}
+
+// OnDiskStatus is ExplicitOnDiskStatus for a policy path the user named, or one Coach found where named is false.
+func OnDiskStatus(run gitrepo.Runner, dir, revision, repoPath string, named bool) (*ConfigError, error) {
 	if ValidatePath(repoPath) == nil {
-		respelled, err := WrongCaseOnDisk(run, dir, repoPath, true)
+		respelled, err := WrongCaseOnDisk(run, dir, repoPath, named)
 		if err != nil {
 			return nil, err
 		}
