@@ -26,7 +26,18 @@ const (
 type CommittedCopy struct {
 	Kind    CommittedCopyKind
 	Content []byte
+	// Bound is the bound of git that stopped the read of an unreadable blob. It is CopyBoundNone for every other copy.
+	Bound CopyBound
 }
+
+// CopyBound is the bound of git that tripped while reading one committed blob.
+type CopyBound int
+
+const (
+	CopyBoundNone CopyBound = iota
+	CopyBoundTime
+	CopyBoundStderr
+)
 
 // ReadCommittedCopy reads what revision holds at repoPath. A blob that is over the size budget or that git cannot read
 // is CopyUnreadable. A failure to say what the path holds at all, or a timeout, is returned: it describes the

@@ -47,10 +47,9 @@ func TestReadCommittedCopyTellsACopyThatCannotBeReadFromARepositoryThatFails(t *
 }
 
 func TestReadCommittedCopyReturnsAFailureThatIsAboutTheRepositoryAndNotTheCopy(t *testing.T) {
-	regular := listedEntry("100644", "blob")
 	tests := []copyCase{
-		{"a read that timed out", runnerOf(regular, nil, &gitrepo.BoundError{Kind: gitrepo.BoundTimeout}), CopyAbsent},
-		{"a read over the stderr budget", runnerOf(regular, nil, &gitrepo.BoundError{Kind: gitrepo.BoundStderr}), CopyAbsent},
+		{"a listing that timed out", runnerOf(nil, &gitrepo.BoundError{Kind: gitrepo.BoundTimeout}, nil), CopyAbsent},
+		{"a listing over the stderr budget", runnerOf(nil, &gitrepo.BoundError{Kind: gitrepo.BoundStderr}, nil), CopyAbsent},
 		{"a tree that cannot be listed", runnerOf(nil, errUnreadableObject, nil), CopyAbsent},
 	}
 	for _, tt := range tests {

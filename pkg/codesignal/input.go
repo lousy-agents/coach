@@ -126,7 +126,20 @@ type PolicyScope struct {
 	// Cause says why the scan used this policy; its values are part of the JSON contract. A producer always
 	// sets it, and a report from an older version that lacks it decodes to PolicyCauseUnset.
 	Cause PolicyCause `json:"cause"`
+	// HeadBound says which bound of git stopped the read of HEAD's copy when Cause is PolicyCauseHeadUnreadable. It is
+	// for the text report only and is not serialized: scope.policy keeps its frozen fields.
+	HeadBound HeadBound `json:"-"`
 }
+
+// HeadBound is the bound of git that stopped a read of HEAD's copy of the policy. The zero value is no bound: the
+// copy was over the size budget or git could not read it.
+type HeadBound string
+
+const (
+	HeadBoundNone   HeadBound = ""
+	HeadBoundTime   HeadBound = "time"
+	HeadBoundStderr HeadBound = "stderr"
+)
 
 // PolicyCause says how the policy a scan used relates to the one committed at HEAD. It is a closed enum
 // serialized as scope.policy.cause.
