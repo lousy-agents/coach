@@ -24,6 +24,7 @@ var _ = Describe("coach codesignal scope.policy for a discovered policy the work
 				"path":         coachConfigPath,
 				"digest":       "pcfg_" + hex.EncodeToString(sum[:]),
 				"matches_head": false,
+				"cause":        diskCauseNotCommitted,
 			})))
 
 			text, stderr, exitCode := mode.run(repo, base)

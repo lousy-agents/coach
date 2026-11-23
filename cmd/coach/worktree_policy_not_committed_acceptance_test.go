@@ -27,7 +27,7 @@ var _ = Describe("coach codesignal --worktree for a project policy that is not c
 			report := decodeCoachReport(jsonOut)
 			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the untracked policy is applied")
 			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty())
-			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(untrackedPolicy, goLayerPolicyConfigJSON, false))))
+			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(untrackedPolicy, goLayerPolicyConfigJSON, diskCauseNotCommitted))))
 			expectDiskPolicyDisclosure(worktreeBaseline, text, diskPolicyLine(untrackedPolicy, goLayerPolicyConfigJSON, "not committed at HEAD."), diskPolicyNotCommittedWarning(untrackedPolicy))
 		},
 		Entry("the canonical policy file", ".lousy-agents/coach.json"),
@@ -48,7 +48,7 @@ var _ = Describe("coach codesignal --worktree for a project policy that is not c
 			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the staged policy is applied")
 			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty(),
 				"a policy the scan read from disk went unread under no status code")
-			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policyPath, goLayerPolicyConfigJSON, false))))
+			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policyPath, goLayerPolicyConfigJSON, diskCauseNotCommitted))))
 			expectDiskPolicyDisclosure(worktreeBaseline, text, diskPolicyLine(policyPath, goLayerPolicyConfigJSON, "not committed at HEAD."), diskPolicyNotCommittedWarning(policyPath))
 		},
 		Entry("a staged new policy file", func(repo string) {
@@ -84,7 +84,7 @@ var _ = Describe("coach codesignal --worktree for a project policy that is not c
 
 		Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, text)
 		Expect(diagnosticsOfKind(decodeCoachReport(jsonOut).Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty())
-		Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope("project.json", goLayerPolicyConfigJSON, false))))
+		Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope("project.json", goLayerPolicyConfigJSON, diskCauseMissingOnDisk))))
 		Expect(string(text)).To(ContainSubstring(diskPolicyMissingOnDiskWarning("project.json")))
 	})
 
@@ -100,7 +100,7 @@ var _ = Describe("coach codesignal --worktree for a project policy that is not c
 		report := decodeCoachReport(stdout)
 		Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the canonical file on disk wins over the committed project.json")
 		Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty())
-		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(".lousy-agents/coach.json", goLayerPolicyConfigJSON, false))))
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(".lousy-agents/coach.json", goLayerPolicyConfigJSON, diskCauseNotCommitted))))
 	})
 
 	It("does not emit project_config_uncommitted for the untracked canonical policy, which scope.policy discloses instead", func() {
@@ -110,7 +110,7 @@ var _ = Describe("coach codesignal --worktree for a project policy that is not c
 		stdout, _, _ := worktreeBaseline.run(repo, "", "--format=json")
 
 		Expect(diagnosticsOfKind(decodeCoachReport(stdout).Diagnostics, "project_config_uncommitted")).To(BeEmpty())
-		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(".lousy-agents/coach.json", goLayerPolicyConfigJSON, false))))
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(".lousy-agents/coach.json", goLayerPolicyConfigJSON, diskCauseNotCommitted))))
 	})
 
 	It("reads an edited policy, and neither names it as unread nor calls the working tree not clean", func() {

@@ -28,7 +28,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: an edited
 
 			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the findings must use the edited policy")
 			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy",
-				Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, false))))
+				Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, diskCauseDiffersFromHead))))
 			text := diskPolicyTextScan(mode, repo, base)
 			expectDiskPolicyDisclosure(mode, text, diskPolicyLine(coachConfigPath, goLayerPolicyConfigJSON, "differs from HEAD."), diskPolicyDiffersWarning)
 		})
@@ -41,7 +41,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: an edited
 
 			Expect(diskPolicyLayerViolations(report)).To(BeEmpty(), "the findings must use the edited policy")
 			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy",
-				Equal(diskPolicyScope(coachConfigPath, diskPolicyWithoutForbiddenImports, false))))
+				Equal(diskPolicyScope(coachConfigPath, diskPolicyWithoutForbiddenImports, diskCauseDiffersFromHead))))
 			text := diskPolicyTextScan(mode, repo, base)
 			expectDiskPolicyDisclosure(mode, text, diskPolicyLine(coachConfigPath, diskPolicyWithoutForbiddenImports, "differs from HEAD."), diskPolicyDiffersWarning)
 			Expect(string(text)).NotTo(MatchRegexp(`(?m)^No active CodeSignal findings\.$`))
@@ -62,7 +62,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: an edited
 
 			_, jsonOut := diskPolicyJSONScan(mode, repo, base)
 
-			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, committed, true))))
+			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, committed, diskCauseSameAsHead))))
 			text := diskPolicyTextScan(mode, repo, base)
 			expectDiskPolicyDisclosure(mode, text, diskPolicyLine(coachConfigPath, committed, "same as HEAD."), "")
 			Expect(noFindingsHeadline(string(text))).To(Equal("No active CodeSignal findings."))

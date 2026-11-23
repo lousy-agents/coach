@@ -51,7 +51,7 @@ var _ = Describe("coach project config migration", func() {
 			Expect(readRepoFile(repo, legacyConfigPath)).To(Equal(before))
 			expectRepoFileAbsent(repo, coachConfigPath)
 			noReport := decodeCoachReport(noStdout)
-			Expect(scopePolicyScopeOf(noStdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(legacyConfigPath, singleRootPolicyJSON, true))))
+			Expect(scopePolicyScopeOf(noStdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(legacyConfigPath, singleRootPolicyJSON, diskCauseSameAsHead))))
 			expectDiagnosticKind(noReport, "project_config_deprecated", legacyConfigPath)
 
 			stdout, stderr, exitCode := runMigrationBaselineOnTerminal(repo, projectConfigMigrationEnv(), "y\n")
@@ -66,7 +66,7 @@ var _ = Describe("coach project config migration", func() {
 			report := decodeCoachReport(stdout)
 			Expect(report.SchemaVersion).To(Equal("2"))
 			Expect(report.Signals).To(Equal(noReport.Signals), "the copy holds the same policy bytes, so the analysis is the same")
-			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, singleRootPolicyJSON, false))))
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, singleRootPolicyJSON, diskCauseNotCommitted))))
 			expectNoDiagnosticKind(report, "project_config_deprecated")
 			expectNoDiagnosticKind(report, "project_config_uncommitted")
 			expectNoDiagnosticKind(report, "project_config_migration_skipped")
@@ -152,7 +152,7 @@ var _ = Describe("coach project config migration", func() {
 			report := decodeCoachReport(stdout)
 			// The existing file is invalid (unknown field), so the scan falls back to the committed project.json, which is
 			// not "same as HEAD" because the policy on disk was selected and could not be used.
-			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(legacyConfigPath, singleRootPolicyJSON, false))))
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(legacyConfigPath, singleRootPolicyJSON, diskCauseUnusableOnDisk))))
 			expectDiagnosticKind(report, "project_config_deprecated", legacyConfigPath)
 			expectNoDiagnosticKind(report, "project_config_uncommitted")
 			expectNoDiagnosticKind(report, "project_config_migration_skipped")

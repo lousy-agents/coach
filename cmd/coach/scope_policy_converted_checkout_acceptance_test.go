@@ -103,9 +103,9 @@ var _ = Describe("coach codesignal scope.policy.matches_head on a converted chec
 				jsonArgs := append(append([]string{}, scenario.extraArgs...), "--format=json")
 				// A converted checkout is the committed policy, so its digest is the committed blob's; any other file is read as it is on disk.
 				usedBody := string(onDisk)
-				wantSuffix, wantWarning := "differs from HEAD.", diskPolicyDiffersWarning
+				wantSuffix, wantWarning, wantCause := "differs from HEAD.", diskPolicyDiffersWarning, diskCauseDiffersFromHead
 				if scenario.wantMatching {
-					usedBody, wantSuffix, wantWarning = singleRootPolicyJSON, "same as HEAD.", ""
+					usedBody, wantSuffix, wantWarning, wantCause = singleRootPolicyJSON, "same as HEAD.", "", diskCauseSameAsHead
 				}
 
 				jsonOut, stderr, exitCode := mode.run(repo, base, jsonArgs...)
@@ -114,6 +114,7 @@ var _ = Describe("coach codesignal scope.policy.matches_head on a converted chec
 					"path":         scenario.policyPath,
 					"digest":       digestOfCommitted(usedBody),
 					"matches_head": scenario.wantMatching,
+					"cause":        wantCause,
 				})))
 
 				text, stderr, exitCode := mode.run(repo, base, scenario.extraArgs...)

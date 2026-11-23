@@ -32,7 +32,7 @@ var _ = Describe("coach codesignal --worktree discloses an uncommitted edit to t
 			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the edited policy is applied")
 			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty(), "the policy file was read from disk")
 			Expect(string(text)).NotTo(ContainSubstring("the analysis is incomplete"))
-			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policyPath, goLayerPolicyConfigJSON, false))))
+			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policyPath, goLayerPolicyConfigJSON, diskCauseDiffersFromHead))))
 			expectDiskPolicyDisclosure(worktreeBaseline, text, diskPolicyLine(policyPath, goLayerPolicyConfigJSON, "differs from HEAD."), diskPolicyDiffersWarning)
 		},
 		Entry("the canonical policy file, discovered", ".lousy-agents/coach.json"),
@@ -49,7 +49,7 @@ var _ = Describe("coach codesignal --worktree discloses an uncommitted edit to t
 		Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 		report := decodeCoachReport(stdout)
 		Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty())
-		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(".lousy-agents/coach.json", goLayerPolicyConfigJSON, false))))
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(".lousy-agents/coach.json", goLayerPolicyConfigJSON, diskCauseDiffersFromHead))))
 	})
 
 	It("keeps the all-clear and exits 0 when the policy is unchanged (control)", func() {

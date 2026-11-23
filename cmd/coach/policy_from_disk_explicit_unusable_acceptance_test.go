@@ -59,7 +59,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: a policy 
 				report, jsonOut := diskPolicyJSONScan(mode, repo, base, "--project-config", customPolicyPath)
 
 				Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the committed copy must be used")
-				Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(customPolicyPath, goLayerPolicyConfigJSON, false))))
+				Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(customPolicyPath, goLayerPolicyConfigJSON, diskCauseUnusableOnDisk))))
 				text := diskPolicyTextScan(mode, repo, base, "--project-config", customPolicyPath)
 				expectDiskPolicyDisclosure(mode, text,
 					diskPolicyLine(customPolicyPath, goLayerPolicyConfigJSON, "differs from HEAD."),

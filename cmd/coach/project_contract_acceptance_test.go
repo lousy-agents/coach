@@ -173,7 +173,7 @@ var _ = Describe("coach project-analysis failure reports", func() {
 		stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--project-config", "project.json", "--format=json")
 
 		Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
-		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope("project.json", uncommitted, false))))
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope("project.json", uncommitted, diskCauseNotCommitted))))
 
 		text, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--project-config", "project.json", "--format=text")
 		Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", text, stderr)
@@ -192,7 +192,7 @@ var _ = Describe("coach project-analysis failure reports", func() {
 		stdout, stderr, exitCode := runCoachCodesignalRaw(repo, headSHA, "--project-config", "project.json", "--format=json")
 
 		Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
-		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope("project.json", string(candidate), false))))
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope("project.json", string(candidate), diskCauseNotCommitted))))
 	})
 
 	// Re-sorting after Build must match pkg/codesignal's path/kind/location/message

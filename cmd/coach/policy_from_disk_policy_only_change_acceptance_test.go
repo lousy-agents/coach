@@ -21,7 +21,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: a policy-
 			continue
 		}
 
-		It("characterization (passes today, reported to the supervisor), #168 item 7: a violation that only a committed policy change makes visible is existing, not introduced, under "+mode.name, func() {
+		It("#168 item 7: a violation that only a committed policy change makes visible is existing, not introduced, under "+mode.name, func() {
 			repo := handlersImportDBRepo()
 			base := commitFile(repo, coachConfigPath, diskPolicyWithoutForbiddenImports)
 			commitFile(repo, coachConfigPath, goLayerPolicyConfigJSON)

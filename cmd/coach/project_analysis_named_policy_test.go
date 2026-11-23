@@ -50,7 +50,7 @@ var _ = Describe("loading the project when no backend can run the policy", func(
 		}
 		earlier := codesignal.Diagnostic{Kind: "project_config_deprecated", Path: "project.json"}
 
-		prepared, err := loadPreparedProject("", "rev", policyref.Discovered("project.json"), "go", []codesignal.Diagnostic{earlier}, ports)
+		prepared, err := loadPreparedProject(GinkgoT().TempDir(), "rev", policyref.Discovered("project.json"), "go", []codesignal.Diagnostic{earlier}, ports)
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prepared.analysis).To(BeNil())

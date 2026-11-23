@@ -48,6 +48,7 @@ var _ = Describe("coach codesignal scope.policy when the on-disk policy cannot b
 					"path":         scenario.policyPath,
 					"digest":       committedDigest,
 					"matches_head": false,
+					"cause":        diskCauseUnusableOnDisk,
 				})))
 
 				text, stderr, exitCode := mode.run(repo, base, scenario.extraArgs...)

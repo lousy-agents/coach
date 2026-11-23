@@ -80,7 +80,7 @@ var _ = Describe("coach codesignal: an explicit --project-config that does not e
 
 			Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("project_config_missing"))
-			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, singleRootPolicyJSON, false))))
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, singleRootPolicyJSON, diskCauseMissingOnDisk))))
 			var kinds []string
 			for _, diagnostic := range decodeCoachReport(stdout).Diagnostics {
 				kinds = append(kinds, diagnostic.Kind)
@@ -163,7 +163,7 @@ var _ = Describe("coach codesignal: an explicit --project-config that does not e
 			stdout, stderr, exitCode := runCoachBinary(commandPath, subdir, nil, "codesignal", "--baseline", "--project-config", "unc.json", "--format=json")
 
 			Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
-			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope("unc.json", singleRootPolicyJSON, false))))
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope("unc.json", singleRootPolicyJSON, diskCauseNotCommitted))))
 			Expect(string(stderr)).NotTo(ContainSubstring("project_config_missing"))
 		})
 

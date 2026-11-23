@@ -9,10 +9,10 @@ import (
 
 var _ = Describe("ReportText verdict qualified by the project policy (#168 A2a)", func() {
 	differs := func() *codesignal.PolicyScope {
-		return scopePolicy(false, codesignal.PolicyOriginDiffersFromHead, "")
+		return scopePolicy(false, codesignal.PolicyCauseDiffersFromHead, "")
 	}
 	matchesHead := func() *codesignal.PolicyScope {
-		return scopePolicy(true, codesignal.PolicyOriginMatchesHead, "")
+		return scopePolicy(true, codesignal.PolicyCauseSameAsHead, "")
 	}
 	coveredReport := func(policy *codesignal.PolicyScope) *codesignal.Report {
 		report := policyReport(policyLayouts[0], policy)

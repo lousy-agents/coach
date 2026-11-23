@@ -202,7 +202,7 @@ var _ = Describe("coach project config discovery", func() {
 
 			report := decodeCoachReport(stdout)
 			Expect(report.SchemaVersion).To(Equal("2"))
-			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, singleRootPolicyJSON, false))))
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, singleRootPolicyJSON, diskCauseNotCommitted))))
 			Expect(report.Diagnostics).NotTo(ContainElement(HaveField("Kind", "project_config_uncommitted")))
 			Expect(report.Diagnostics).NotTo(ContainElement(HaveField("Kind", "project_config_deprecated")))
 		})
@@ -218,7 +218,7 @@ var _ = Describe("coach project config discovery", func() {
 
 			report := decodeCoachReport(stdout)
 			Expect(report.SchemaVersion).To(Equal("2"))
-			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, singleRootPolicyJSON, false))))
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, singleRootPolicyJSON, diskCauseNotCommitted))))
 			Expect(report.Diagnostics).NotTo(ContainElement(HaveField("Kind", "project_config_uncommitted")))
 		})
 	})
