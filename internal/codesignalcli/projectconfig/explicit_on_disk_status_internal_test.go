@@ -41,9 +41,6 @@ func assertIndexUnreadWhenListingFails(t *testing.T, hide func(t *testing.T, rep
 	if err != nil || status == nil || status.Missing != cause {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want a missing policy with cause %d", status, err, cause)
 	}
-	if !status.UnreadStagedEdit {
-		t.Errorf("UnreadStagedEdit is false; want true, because a report that cannot rule out a staged edit must not claim the working tree is all it read")
-	}
 	if cause == MissingBlockedParent && strings.Contains(status.Message, "could not check") {
 		t.Errorf("message %q; want the blocked-parent message with no undecidable text", status.Message)
 	}

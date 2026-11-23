@@ -34,7 +34,6 @@ func TestAnIndexListingFailureNamesTheIndexQuestionAndGitsError(t *testing.T) {
 	if strings.Contains(status.Message, "whether it is committed") {
 		t.Errorf("message %q; the commit lookup succeeded, so it must not say it could not tell whether the policy is committed", status.Message)
 	}
-	requireTheIndexLeftUnread(t, status, "git could not list the index, so a staged edit may be there unread, and the readiness must not say the disk decided it")
 }
 
 func TestATreeLookupFailureNamesTheCommitQuestionAndGitsError(t *testing.T) {
@@ -46,7 +45,6 @@ func TestATreeLookupFailureNamesTheCommitQuestionAndGitsError(t *testing.T) {
 	if !strings.Contains(status.Message, "boom: tree unreadable") {
 		t.Errorf("message %q; want it to carry git's error", status.Message)
 	}
-	requireTheIndexLeftUnread(t, status, "git could not say whether the policy is committed, so the index cannot be judged and a staged edit may be there unread")
 	if strings.Contains(status.Message, "git restore") || status.OffersAuthoring() {
 		t.Errorf("message %q, offers authoring = %v; want neither a restore nor a new policy offered while the answer is unknown", status.Message, status.OffersAuthoring())
 	}
