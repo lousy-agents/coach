@@ -6,6 +6,7 @@ source_author: "Daniele Procida"
 source_url: "https://diataxis.fr/"
 source_license: "CC BY-SA 4.0"
 source_license_url: "https://creativecommons.org/licenses/by-sa/4.0/"
+source_license_evidence: "https://github.com/evildmp/diataxis-documentation-framework/blob/main/LICENSE.rst"
 license: "CC BY-SA 4.0"
 provenance: "AI-generated paraphrase and synthesis of diataxis.fr, read through a summarizing fetch rather than verbatim; not reviewed or endorsed by the author"
 secondary_sources:
