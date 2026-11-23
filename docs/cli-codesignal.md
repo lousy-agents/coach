@@ -501,7 +501,7 @@ foreign-repository TypeScript journey.
 
 ## Agent self-review hook (preview)
 
-The hook in the [README](../README.md#agent-self-review-preview) runs `coach codesignal --worktree` when a Claude Code session is about to stop. It blocks the stop with a message when the review did not run or was not clean. The `--worktree` flag is experimental until [#720](https://github.com/lousy-agents/coach/pull/720) merges. The PRD change that brings this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730).
+The hook in the [README](../README.md#agent-self-review-preview) runs `coach codesignal --worktree` when a Claude Code session is about to stop. It blocks the stop with a message when the review did not run or was not clean. `--worktree` is labelled experimental until [#720](https://github.com/lousy-agents/coach/pull/720) merges. The PRD change that brings this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730).
 
 Each flag in the hook's command has a reason:
 
@@ -513,16 +513,16 @@ The hook's exit-code handling:
 
 | Exit | What the hook does |
 | --- | --- |
-| `0` | The review ran. It is clean unless `scope.policy.matches_head` is `false`. If the report carries no `scope.policy` and no policy is absent (`"policy":null`), the hook blocks, because the policy check could not run. |
+| `0` | The review ran. It is clean unless `scope.policy.matches_head` is `false`. A report with no `scope.policy` key makes the hook block, because the policy check could not run. `"policy":null` (no policy selected) passes. |
 | `1`, `2`, `127` | The review did not run: an operational failure (`1`), a usage error such as running outside the repository root (`2`), or `coach` not on `PATH` (`127`). The hook says so and blocks. |
 | `3` | Required coverage is incomplete: a project-level gap, or part of the in-scope working tree was not read. Not clean. |
 | any other | Not clean. |
 
-`matches_head: false` counts as not clean. The hook needs a coach build that reports `scope.policy`: the v0.12.0 release does not, so on that release the hook blocks with a message instead of passing without the check. The policy file is read from disk, so an agent that loosens `.lousy-agents/coach.json` could otherwise review its own change and come back clean. `scope.policy.cause` says why the policy differs: `differs_from_head` or `not_committed` ([Policy disclosure](#policy-disclosure-scopepolicy)).
+`matches_head: false` counts as not clean. The hook needs a coach build that reports `scope.policy`: the v0.12.0 release does not, so on that release the hook blocks with a message instead of passing without the check. The policy file is read from disk, so an uncommitted edit that loosens `.lousy-agents/coach.json` would otherwise be reviewed against itself and pass. The hook covers uncommitted work only: a policy or code change already committed is not flagged, so review it in the pull request. `scope.policy.cause` says why the policy differs: `differs_from_head` or `not_committed` ([Policy disclosure](#policy-disclosure-scopepolicy)).
 
 Clean does not mean no findings. The hook does not block on findings, which stay advisory.
 
-Claude Code sets `stop_hook_active` to `true` in the hook's input when a Stop hook has already continued the session. On that second attempt the hook exits `0`, so it cannot block the same stop forever. Claude Code does not pass stderr from a hook that exits `0` to the model, so the reason is not shown to Claude on that attempt; the first block carries it. Claude Code also caps consecutive stop-hook continuations, as described in the hooks reference.
+Claude Code sets `stop_hook_active` to `true` in the hook's input when a Stop hook has already continued the session. On that second attempt the hook exits `0`, so it cannot block the same stop forever. It enforces one nudge per stop, not a guarantee. Claude Code does not pass stderr from a hook that exits `0` to the model, so the reason is not shown to Claude on that attempt; the first block carries it. Claude Code also caps consecutive stop-hook continuations, as described in the hooks reference.
 
 The hook needs `coach` on `PATH` (see [Install](#install)) and uses `CLAUDE_PROJECT_DIR` as the repository root. To test it by hand, pipe input to it, for example `echo '{}' | sh .claude/hooks/coach-self-review.sh`, because the hook reads its input from stdin.
 

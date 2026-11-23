@@ -5,7 +5,7 @@ Coach gives you, or your coding agent, a private and repeatable report on struct
 ## Why use it
 
 - **Local and private.** The default command calls no model, contacts no GitHub, writes nothing to your repository, and sends no telemetry. The same input gives the same report.
-- **Every finding can be acted on.** Each finding gives its rule, severity, file and line, the evidence, why it matters, and a suggested fix. A finding's fingerprint is built from its rule, path, subject, evidence, and occurrence, not from its line or severity, so it keeps its identity when code moves or its severity changes.
+- **Every finding can be acted on.** Each finding gives its rule, severity, file and line, the evidence, why it matters, and a suggested fix. A finding's fingerprint is built from its rule, path, subject, evidence, and occurrence, not from its line or severity, so it keeps its identity when its line moves or its severity changes. A change of file path gives it a new fingerprint.
 - **It enforces the layers you define.** Commit a layer policy, and coach reports the file and line where a forbidden import breaks it.
 
 ## Who it's for
@@ -45,7 +45,7 @@ If no rule matches, the report says `No active CodeSignal findings.` That means 
 coach codesignal --worktree --no-interactive --fail-on-incomplete-coverage --format json
 ```
 
-The hook needs a coach build that reports `scope.policy`. v0.12.0 does not, so there the hook blocks and says so. This flag is experimental until [#720](https://github.com/lousy-agents/coach/pull/720) merges. The PRD change that brings this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730). Coach ships the CLI behaviour and this example hook. It does not run a hosted hook service.
+The hook needs a coach build that reports `scope.policy`. v0.12.0 does not, so there the hook blocks and says so. `--worktree` is labelled experimental until [#720](https://github.com/lousy-agents/coach/pull/720) merges. The PRD change that brings this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730). Coach ships the CLI behaviour. The hook below is an example to copy; Coach does not run a hosted hook service.
 
 To run the review when Claude Code finishes a response, add this to `.claude/settings.json`:
 
@@ -92,7 +92,7 @@ echo "coach self-review is not clean: $problem. Tell the user." >&2
 exit $block
 ```
 
-A policy that differs from `HEAD` counts as not clean, because an agent could loosen the policy and then review itself clean. The reasoning and the exit-code handling are in the [agent self-review hook](./docs/cli-codesignal.md#agent-self-review-hook-preview) section.
+An uncommitted policy edit counts as not clean. The hook covers uncommitted work only: a policy or code change the agent has already committed is not flagged, so review committed changes in the pull request. The reasoning and the exit-code handling are in the [agent self-review hook](./docs/cli-codesignal.md#agent-self-review-hook-preview) section.
 
 ## Learn more
 
@@ -100,5 +100,6 @@ A policy that differs from `HEAD` counts as not clean, because an agent could lo
 - [Project policy](./docs/cli-codesignal.md#project-policy): declare layers and forbidden imports, and what Coach reports when a policy is missing or invalid.
 - [TypeScript setup](./docs/cli-codesignal.md#typescript-project-readiness): readiness checks, `--prepare-compiler`, and unattended runs.
 - [Product requirements](./docs/product/prd.md).
+- [Local quickstart](./docs/pilot-local-quickstart.md): the end-user steps for the local CLI.
 - [Local platform lab](./docs/development/local-platform.md): an optional Docker stack that adds agent judgments. It is not the default install.
 - Libraries: [`pkg/semantics`](./docs/cli-codesignal.md#pkgsemantics-quickstart) and `@lousy-agents/coach-semantics`. You do not need them to run `coach`.
