@@ -6,7 +6,6 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
@@ -44,11 +43,10 @@ func prepareProjectAnalysis(dir, revision string, named policyref.Ref, language 
 }
 
 // supersededByDisk is whether a refusal of the committed canonical policy gives way to a canonical policy that is usable
-// on disk, which the scan uses whatever the revision holds there. A refusal that is about the path, not about the copy
-// the revision holds at it, stands: a policy committed in another case is a policy the scan cannot read.
+// on disk, which the scan uses whatever the revision holds there.
 func supersededByDisk(fatal error, disk projectconfig.DiskSelection) bool {
 	var refusal *projectconfig.ConfigError
-	return disk.Path == projectconfig.CanonicalPath && errors.As(fatal, &refusal) && refusal.PolicyCause != projectreadiness.CauseNameCaseDiffers
+	return disk.Path == projectconfig.CanonicalPath && errors.As(fatal, &refusal)
 }
 
 func withReadinessForLanguage(err error, dir, revision string, policy policyref.Ref, language string) error {
