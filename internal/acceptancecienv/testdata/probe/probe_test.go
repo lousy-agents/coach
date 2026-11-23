@@ -2,7 +2,6 @@ package probe
 
 import (
 	"encoding/json"
-	"flag"
 	"os"
 	"os/exec"
 	"strings"
@@ -16,14 +15,6 @@ var scrubbedVariables = []string{
 	"GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
 	"GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
 }
-
-// The probe accepts Ginkgo's label filter, so a spec can run it the way a run
-// that selects the ts-project-backend label is run.
-var _ = flag.String("ginkgo.label-filter", "", "accepted and ignored")
-
-// installedJS is where the run's repository holds the installed js/semantics,
-// seen from this package's directory.
-const installedJS = "../../../../js/semantics/node_modules"
 
 // TestRecordTheConditions writes what this test process sees to the file
 // COACH_CI_ENV_PROBE_OUT names, so the acceptance specs can check the
@@ -93,19 +84,4 @@ func listed(variable string) (dir string, entries []string, readErr string) {
 		entries = append(entries, entry.Name())
 	}
 	return dir, entries, ""
-}
-
-// readInstalledJS reads each fixture file a spec may have installed, giving its
-// content, or the error that kept it from being read.
-func readInstalledJS() map[string]string {
-	read := map[string]string{}
-	for _, name := range []string{"fixture/index.js", "linked/file.txt"} {
-		data, err := os.ReadFile(installedJS + "/" + name)
-		if err != nil {
-			read[name] = "error: " + err.Error()
-			continue
-		}
-		read[name] = string(data)
-	}
-	return read
 }
