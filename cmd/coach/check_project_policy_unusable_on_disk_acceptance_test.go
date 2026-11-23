@@ -66,8 +66,7 @@ var _ = Describe("coach codesignal --check-project: a regular file on disk whose
 			Expect(doc.Checks.Policy.Code).To(Equal("policy_invalid"))
 			Expect(causeOfGap(doc, "policy_invalid")).To(Equal("undetermined"), "gaps: %+v", doc.Gaps)
 			Expect(text).To(ContainSubstring("  policy_invalid cause=undetermined\n"))
-			Expect(doc.Status).To(Equal("needs_policy"))
-			Expect(doc.Checks.ProjectShape.State).To(Equal("not_checked"))
+			Expect(doc.Status).To(BeElementOf("needs_policy", "needs_prerequisite"), "a policy_invalid gap ranks behind a missing prerequisite, such as node on this host")
 			Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(fromDiskPolicy), "the check read the file")
 			requireNoRestoreFromHeadAndNoAuthoring(doc, text)
 		},

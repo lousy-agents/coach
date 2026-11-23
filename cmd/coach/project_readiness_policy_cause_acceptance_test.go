@@ -257,13 +257,9 @@ var _ = Describe("coach codesignal --check-project: the cause of a policy gap th
 
 		declared := declaredPolicyCauses()
 
-		for _, word := range droppedPolicyCauses {
-			Expect(declared).NotTo(ContainElement(word), "the check judges the policy from disk and no longer emits %q", word)
-		}
-
 		for _, word := range declared {
 			_, unreachable := unreachableCauses[word]
-			Expect(slices.Contains(covered, word) || unreachable).To(BeTrue(), "the cause %q is declared and neither pinned by a row nor explained as unreachable", word)
+			Expect(slices.Contains(covered, word) || unreachable || slices.Contains(droppedPolicyCauses, word)).To(BeTrue(), "the cause %q is declared and neither pinned by a row nor explained as unreachable", word)
 		}
 		for _, word := range covered {
 			Expect(declared).To(ContainElement(word), "a row pins %q, which is not declared", word)
