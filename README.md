@@ -11,7 +11,7 @@ and the TypeScript compiler; that is still local, not the platform preview.
 
 ## Quick start (TypeScript)
 
-Scan committed `.ts` / `.tsx`. No API key, no model, no merge gate. Uncommitted edits are invisible.
+Scan committed `.ts` / `.tsx`. No API key, no model, no merge gate. To scan uncommitted edits, see [`--worktree`](#uncommitted-work---worktree).
 
 ```sh
 mise exec github:lousy-agents/coach -- coach codesignal --baseline
@@ -35,7 +35,7 @@ Full flags and schema: [CLI contract](./docs/cli-codesignal.md).
 ## Contract
 
 - **Languages:** Go, TypeScript, TSX. Other files get an `unsupported_language` diagnostic and are skipped.
-- **Input:** committed Git objects at the selected revision, not the dirty worktree. Uncommitted edits are invisible.
+- **Input:** committed Git objects at the selected revision. Uncommitted edits are not read unless you pass [`--worktree`](#uncommitted-work---worktree).
 - **Git:** `git` 2.42 or later must be on `PATH`: a scan needs 2.16 to start and `--baseline` needs 2.42 to read the files it analyzes; see [git version](./docs/cli-codesignal.md#git-version). No Docker, no API key, no network for the default CLI path. In a partial clone Coach never fetches a missing object; a git older than 2.44 cannot be told that, so with it a read is made only when every object of the revisions the scan reads is already here, whatever the repository's configuration says; see [what repository configuration can run](./docs/cli-codesignal.md#what-repository-configuration-can-run).
 - **Advisory:** a completed analysis exits `0` even when it found signals. Coach does not gate merges.
 - **Absence is not a clean bill of health.** An empty signal set means no matched rule for the inputs that were analyzed. The `forbidden_imports` check reaches only imports between code inside declared layers; with `--project-config`, the report says how many project files under the configured roots sit outside every declared layer. It leaves that count out when no layers are declared, when the inputs are incomplete (for example, a project model cut short by its input budget), when a configured root holds no analyzed file, or when a TypeScript root's analyzed-file count does not match its path list.
@@ -63,6 +63,24 @@ Signals are ranked, with `severity` and `rule_id` printed on each: lifecycle gro
 
 Default `--scope` is `production`. `--build-target <pattern>` further limits Go production reachability; it is a no-op under `--scope all`.
 
+### Uncommitted work (`--worktree`)
+
+`--worktree` analyzes edits you have not committed, so it fits a pre-commit check or an agent hook.
+
+```sh
+coach codesignal --worktree                  # working tree against HEAD
+coach codesignal --worktree --base main      # working tree against the merge base with main
+coach codesignal --worktree --baseline       # every tracked and new Go/TS/TSX file, as it is on disk
+```
+
+- With `--worktree` alone, Coach compares the working tree with `HEAD`. `--base <ref>` or `--baseline` composes with it and selects the comparison.
+- Supported-language source and project configuration files are read from the working tree, new and untracked files included. A deleted file is absent. A symbolic link is not followed and is named.
+- Run it from the repository root. Elsewhere it exits `2` and prints the command to run.
+- `scope.worktree` reports the revision, the modified, added, deleted and untracked counts, and the configuration files read from disk.
+- When part of the tree is unread (a sparse checkout, a skip-worktree or assume-unchanged entry, a directory git could not open, or a file Coach could not read), the verdict says so instead of reading as clean. With `--fail-on-incomplete-coverage` it exits `3`.
+
+It is a local check, not a pull-request check. See [`--worktree` in the CLI contract](./docs/cli-codesignal.md#uncommitted-work---worktree).
+
 ### Exit codes
 
 | Code | Meaning |
@@ -70,7 +88,7 @@ Default `--scope` is `production`. `--build-target <pattern>` further limits Go 
 | `0` | Analysis completed (signals or none). Not a quality gate. |
 | `1` | Operational failure (not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O; also `--check-project` when git cannot answer a question about an explicit `--project-config`: empty stdout, stderr names the question); and, in a partial clone, an object the clone lacks (Coach never fetches; this includes the merge base's version of a file a `--base` diff compares, and with a git older than 2.44 it is refused before anything runs). |
 | `2` | Usage or invalid `--project-config`, or a TypeScript scan that cannot resolve a supported compiler or host Node (empty stdout except the policy-candidate document on the guided-authoring path; one or more stderr lines). |
-| `3` | Required project coverage incomplete and `--fail-on-incomplete-coverage` was supplied (report still written to stdout); or `--prepare-compiler` operational failure resolving the revision or computing readiness. |
+| `3` | Required project coverage incomplete, or under `--worktree` part of the working tree unread, and `--fail-on-incomplete-coverage` was supplied (report still written to stdout); or `--prepare-compiler` operational failure resolving the revision or computing readiness. |
 
 ### What you should see
 
