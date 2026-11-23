@@ -122,8 +122,10 @@ var _ = Describe("coach codesignal --prepare-compiler with a policy that cannot 
 
 			Expect(run.exitCode).To(Equal(2), "transcript:\n%s", run.transcript)
 			Expect(run.transcript).NotTo(ContainSubstring("author_policy"), "authoring refuses a path that exists; transcript:\n%s", run.transcript)
-			Expect(run.transcript).To(ContainSubstring("a new policy cannot fix it"), "transcript:\n%s", run.transcript)
 			Expect(run.transcript).To(ContainSubstring("a project policy that passes --check-project "+refusalWords+" (policy_invalid)"), "transcript:\n%s", run.transcript)
+			Expect(strings.Count(run.transcript, unusablePolicyStep)).To(Equal(1), "transcript:\n%s", run.transcript)
+			Expect(run.transcript).NotTo(ContainSubstring("a new policy cannot fix it"), "transcript:\n%s", run.transcript)
+			Expect(run.transcript).NotTo(ContainSubstring("resolve the policy path first"), "transcript:\n%s", run.transcript)
 			Expect(run.transcript).NotTo(ContainSubstring("guided policy authoring"), "transcript:\n%s", run.transcript)
 			Expect(run.transcript).NotTo(ContainSubstring("move it aside"), "transcript:\n%s", run.transcript)
 			Expect(run.transcript).NotTo(MatchRegexp(droppedPolicyCauseWords), "transcript:\n%s", run.transcript)
@@ -137,6 +139,14 @@ var _ = Describe("coach codesignal --prepare-compiler with a policy that cannot 
 		Entry("an invalid fix on disk over a valid committed policy", func(repo string) {
 			commitFile(repo, policy, singleRootPolicyJSON)
 			writeWorktreeFile(repo, policy, invalidPolicy)
+		}),
+		Entry("a file over the size budget over a valid committed policy", func(repo string) {
+			commitFile(repo, policy, singleRootPolicyJSON)
+			writeWorktreeFile(repo, policy, strings.Repeat("x", (1<<20)+1))
+		}),
+		Entry("conflict markers over a valid committed policy", func(repo string) {
+			commitFile(repo, policy, singleRootPolicyJSON)
+			writeWorktreeFile(repo, policy, conflictedMarkers)
 		}),
 	)
 
