@@ -513,12 +513,12 @@ The hook's exit-code handling:
 
 | Exit | What the hook does |
 | --- | --- |
-| `0` | The review ran. It is clean unless `scope.policy.matches_head` is `false`. |
+| `0` | The review ran. It is clean unless `scope.policy.matches_head` is `false`. If the report carries no `scope.policy` and no policy is absent (`"policy":null`), the hook blocks, because the policy check could not run. |
 | `1`, `2`, `127` | The review did not run: an operational failure (`1`), a usage error such as running outside the repository root (`2`), or `coach` not on `PATH` (`127`). The hook says so and blocks. |
 | `3` | Required coverage is incomplete: a project-level gap, or part of the in-scope working tree was not read. Not clean. |
 | any other | Not clean. |
 
-`matches_head: false` counts as not clean. The policy file is read from disk, so an agent that loosens `.lousy-agents/coach.json` could otherwise review its own change and come back clean. `scope.policy.cause` says why the policy differs: `differs_from_head` or `not_committed` ([Policy disclosure](#policy-disclosure-scopepolicy)).
+`matches_head: false` counts as not clean. The hook needs a coach build that reports `scope.policy`: the v0.12.0 release does not, so on that release the hook blocks with a message instead of passing without the check. The policy file is read from disk, so an agent that loosens `.lousy-agents/coach.json` could otherwise review its own change and come back clean. `scope.policy.cause` says why the policy differs: `differs_from_head` or `not_committed` ([Policy disclosure](#policy-disclosure-scopepolicy)).
 
 Clean does not mean no findings. The hook does not block on findings, which stay advisory.
 

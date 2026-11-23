@@ -45,7 +45,7 @@ If no rule matches, the report says `No active CodeSignal findings.` That means 
 coach codesignal --worktree --no-interactive --fail-on-incomplete-coverage --format json
 ```
 
-This flag is experimental until [#720](https://github.com/lousy-agents/coach/pull/720) merges. The PRD change that brings this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730). Coach ships the CLI behaviour and this example hook. It does not run a hosted hook service.
+The hook needs a coach build that reports `scope.policy`. v0.12.0 does not, so there the hook blocks and says so. This flag is experimental until [#720](https://github.com/lousy-agents/coach/pull/720) merges. The PRD change that brings this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730). Coach ships the CLI behaviour and this example hook. It does not run a hosted hook service.
 
 To run the review when Claude Code finishes a response, add this to `.claude/settings.json`:
 
@@ -74,11 +74,16 @@ and save this as `.claude/hooks/coach-self-review.sh`:
 # "Clean" means the review ran, no in-scope file went unread, and the project policy on disk is the committed one.
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 2
 block=2
-case "$(cat)" in *'"stop_hook_active": true'*|*'"stop_hook_active":true'*) block=0 ;; esac
+case "$(cat | tr -d ' \n')" in *'"stop_hook_active":true'*) block=0 ;; esac
 report=$(coach codesignal --worktree --no-interactive --fail-on-incomplete-coverage --format json); rc=$?
+flat=$(printf '%s' "$report" | tr -d ' \n')
 problem=""
 case $rc in
-  0) printf '%s' "$report" | tr -d ' \n' | grep -q '"matches_head":false' && problem="the project policy on disk differs from HEAD" ;;
+  0) case $flat in
+       *'"policy":null'*|*'"matches_head":true'*) ;;
+       *'"matches_head":false'*) problem="the project policy on disk differs from HEAD" ;;
+       *) problem="coach did not report scope.policy, so the policy check cannot run" ;;
+     esac ;;
   1|2|127) problem="the review did not run (exit $rc)" ;;
   *) problem="the review is incomplete: a project or working-tree input was not analyzed (exit $rc)" ;;
 esac
