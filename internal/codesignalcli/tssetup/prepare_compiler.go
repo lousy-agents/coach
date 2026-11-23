@@ -40,6 +40,9 @@ type PrepareCompilerMiseResult struct {
 	// scan prints for it, while PolicyRequired is true and the remedy names none.
 	CauseText string
 
+	// PolicyCause is the same reason as a stable word.
+	PolicyCause projectreadiness.PolicyCause
+
 	// NoChoicesOffered is true when the prepare_compiler next action was
 	// absent, not executable, or named no mise installation choice at all --
 	// there was nothing to set up. This is not a failure and not a
@@ -137,7 +140,7 @@ func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision string, poli
 // through it as well, so a test hands in a locator that finds the compiler where its stand-in for mise put it.
 func runPrepareCompilerMiseSetupWith(locate tstoolchain.MiseLocator, ctx context.Context, dir, revision string, policy policyref.Ref, readiness *projectreadiness.Result, in io.Reader, out io.Writer) PrepareCompilerMiseResult {
 	if readiness != nil && readiness.Checks.Policy.State != projectreadiness.Pass {
-		return PrepareCompilerMiseResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy, CauseText: readiness.Checks.Policy.CauseText}
+		return PrepareCompilerMiseResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy, CauseText: readiness.Checks.Policy.CauseText, PolicyCause: readiness.Checks.Policy.PolicyCause}
 	}
 	if code, blocking := readinessHasBlockingRuntimeGap(readiness); blocking {
 		return PrepareCompilerMiseResult{RuntimeGapCode: code}

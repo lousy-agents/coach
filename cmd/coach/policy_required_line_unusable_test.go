@@ -10,7 +10,7 @@ import (
 // A policy whose committed copy is invalid and that is gone from disk is authored again, and the line names the one step that
 // the scan names too. Nothing in it says that a policy must be committed to be used.
 func TestPolicyRequiredLineForAnInvalidCommittedPolicyGoneFromDiskNamesTheStepAndNoCommit(t *testing.T) {
-	line := policyRequiredLine("coach codesignal", projectreadiness.GapPolicyInvalid, projectreadiness.RemedyAuthor, "abc123", "pol.json")
+	line := policyRequiredLine("coach codesignal", projectreadiness.GapPolicyInvalid, projectreadiness.RemedyAuthor, "", "abc123", "pol.json")
 
 	if want := "coach codesignal: a project policy that passes --check-project is required before compiler setup (policy_invalid); "; !strings.HasPrefix(line, want) {
 		t.Errorf("line %q; want it to start with %q", line, want)
@@ -23,19 +23,40 @@ func TestPolicyRequiredLineForAnInvalidCommittedPolicyGoneFromDiskNamesTheStepAn
 	}
 }
 
-// A document on disk that is not valid has no remedy: a new policy would replace the file. The refusal says that, and not that the policy is to be moved aside; the order of its arms decides it.
-func TestPolicyRequiredLineForAnInvalidPolicyThatNoNewPolicyFixesSaysSo(t *testing.T) {
-	for _, path := range []string{"pol.json", ".lousy-agents/coach.json"} {
-		t.Run(path, func(t *testing.T) { requireTheNoRemedyLine(t, path) })
+// A regular file on disk that cannot be used has no remedy: a new policy would replace the file. The refusal says to fix the
+// file, the sentence the scan prints, and not that the policy is to be moved aside.
+func TestPolicyRequiredLineForAFileOnDiskThatCannotBeUsedSaysToFixTheFile(t *testing.T) {
+	for _, cause := range []projectreadiness.PolicyCause{"", projectreadiness.CauseUndetermined, projectreadiness.CauseUnreadableOnDisk} {
+		t.Run(string(cause), func(t *testing.T) {
+			line := policyRequiredLine("coach codesignal", projectreadiness.GapPolicyInvalid, projectreadiness.RemedyNone, cause, "abc123", "pol.json")
+
+			const want = "(policy_invalid); " + unusablePolicyStep + "."
+			if !strings.HasSuffix(line, want) || strings.Contains(line, "move it aside") || strings.Contains(line, "resolve the policy path first") {
+				t.Errorf("line %q; want it to end with %q and not to send the user to the policy path", line, want)
+			}
+		})
 	}
 }
 
-func requireTheNoRemedyLine(t *testing.T, path string) {
-	t.Helper()
-	line := policyRequiredLine("coach codesignal", projectreadiness.GapPolicyInvalid, projectreadiness.RemedyNone, "abc123", path)
+// A policy path that holds a directory or a link is resolved at the path: fixing a file does not apply.
+func TestPolicyRequiredLineForAPathThatHoldsNoFileSaysToResolveThePathFirst(t *testing.T) {
+	for _, cause := range []projectreadiness.PolicyCause{projectreadiness.CauseNotARegularFile, projectreadiness.CauseSymbolicLink, projectreadiness.CauseParentNotDirectory, projectreadiness.CauseDirectory} {
+		t.Run(string(cause), func(t *testing.T) {
+			line := policyRequiredLine("coach codesignal", projectreadiness.GapPolicyInvalid, projectreadiness.RemedyNone, cause, "abc123", "pol.json")
 
-	const want = "(policy_invalid); a new policy cannot fix it, so resolve the policy path first."
-	if !strings.HasSuffix(line, want) || strings.Contains(line, "move it aside") || strings.Contains(line, "()") {
-		t.Errorf("line %q; want it to end with %q, and not to send the user to move the policy aside", line, want)
+			const want = "(policy_invalid); a new policy cannot fix it, so resolve the policy path first."
+			if !strings.HasSuffix(line, want) || strings.Contains(line, unusablePolicyStep) {
+				t.Errorf("line %q; want it to end with %q", line, want)
+			}
+		})
+	}
+}
+
+// A gap that is not policy_invalid keeps the path advice whatever its cause word is.
+func TestPolicyRequiredLineForAMissingPolicyNoRemedyFixesSaysToResolveThePathFirst(t *testing.T) {
+	line := policyRequiredLine("coach codesignal", "policy_missing", projectreadiness.RemedyNone, projectreadiness.CauseUndetermined, "abc123", "pol.json")
+
+	if want := "(policy_missing); a new policy cannot fix it, so resolve the policy path first."; !strings.HasSuffix(line, want) {
+		t.Errorf("line %q; want it to end with %q", line, want)
 	}
 }

@@ -38,6 +38,8 @@ type CompilerSetupOfferResult struct {
 	PolicyRemedy projectreadiness.PolicyRemedy
 	// CauseText is why no remedy fixes the policy, as on PrepareCompilerMiseResult.
 	CauseText string
+	// PolicyCause is the same reason as a stable word.
+	PolicyCause projectreadiness.PolicyCause
 
 	// NoChoicesOffered is true either when gapCode's own next action is not
 	// the executable prepare-compiler kind (a runtime-boundary gap such as
@@ -139,7 +141,7 @@ func RunCompilerSetupOffer(ctx context.Context, dir, revision string, policy pol
 // caller: the install verifies the compiler through it, and so does the readiness recheck after it.
 func runCompilerSetupOfferWith(locate tstoolchain.MiseLocator, ctx context.Context, dir, revision string, policy policyref.Ref, gapCode string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) CompilerSetupOfferResult {
 	if readiness != nil && readiness.Checks.Policy.State != projectreadiness.Pass {
-		return CompilerSetupOfferResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy, CauseText: readiness.Checks.Policy.CauseText}
+		return CompilerSetupOfferResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy, CauseText: readiness.Checks.Policy.CauseText, PolicyCause: readiness.Checks.Policy.PolicyCause}
 	}
 	if code, blocking := readinessHasBlockingRuntimeGap(readiness); blocking {
 		return CompilerSetupOfferResult{RuntimeGapCode: code}

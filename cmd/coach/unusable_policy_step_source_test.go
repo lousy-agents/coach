@@ -61,7 +61,7 @@ func TestTheScanAndThePrepareCompilerRefusalSayTheSameSentence(t *testing.T) {
 	invalid := configError(projectconfig.KindInvalid, projectreadiness.RemedyAuthor)
 
 	scan := authoringRemediation(invalid, policyref.Named("pol.json"), "typescript", false, "")
-	refusal := policyRequiredLine("coach codesignal", projectreadiness.GapPolicyInvalid, projectreadiness.RemedyAuthor, "abc123", "pol.json")
+	refusal := policyRequiredLine("coach codesignal", projectreadiness.GapPolicyInvalid, projectreadiness.RemedyAuthor, "", "abc123", "pol.json")
 
 	if !strings.Contains(scan, unusablePolicyStep) || !strings.Contains(refusal, unusablePolicyStep) {
 		t.Errorf("scan line %q and refusal %q; want both to carry %q", scan, refusal, unusablePolicyStep)
