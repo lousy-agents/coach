@@ -173,9 +173,13 @@ Nine independent leaf jobs plus a `status` aggregator:
 - `wasm-build` — `mise run wasm-build`.
 - `distro-git` — the Go tests (`./...`) through `cmd/acceptance-ci-env`, in an
   `ubuntu:24.04` container with that release's own git 2.43, the oldest git
-  `docs/cli-codesignal.md` names. The job sets `COACH_CI_GIT_VERSION=2.43.0`, so
-  the program refuses any other git, and, run as root in the container, runs
-  the tests as `nobody` with an empty HOME. Every other leaf runs the runner
+  `docs/cli-codesignal.md` names. The specs that need git 2.44 or later skip
+  there, and so do the `ts-project-backend` specs, because the job does not
+  install `js/semantics/node_modules`; `verify` and the `ts-project-backend`
+  and `ts-project-backend-node26` legs run them, under the runner image's git.
+  The job sets `COACH_CI_GIT_VERSION=2.43.0`, so the program refuses any other
+  git, and, run as root in the container, runs the tests as `nobody` with an
+  empty HOME. Every other leaf runs the runner
   image's git, which floats. Allow 60 minutes.
 - `vulncheck` — `mise run vulncheck`. Symbol-level source scan, text output, so a reachable vulnerable symbol exits 3 and fails the job. `install_args` names Go and the pinned `govulncheck`; the Go module cache matches the other Go jobs. The vulnerability database is not cached. SARIF is not uploaded: that format exits 0 when findings exist, and an upload would need code-scanning write on a workflow whose grant is `contents: read`.
 - `platform-smoke` — `platform-up` / `platform-smoke` / `platform-down` as three
