@@ -1,0 +1,89 @@
+package acceptancecienv
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+const repoRoot = "../.."
+
+const probePackage = "./internal/acceptancecienv/testdata/probe"
+
+type probeRecord struct {
+	UID               int      `json:"uid"`
+	Home              string   `json:"home"`
+	HomeEntries       []string `json:"home_entries"`
+	GlobalConfig      string   `json:"global_config"`
+	GlobalConfigError bool     `json:"global_config_error"`
+	GitVersion        string   `json:"git_version"`
+	GoOnPath          bool     `json:"go_on_path"`
+}
+
+type taskRun struct {
+	stdout, stderr string
+	exitCode       int
+	probe          *probeRecord
+}
+
+var gitVersionPattern = regexp.MustCompile(`git version (\d+\.\d+\.\d+)`)
+
+// hostGitVersion is the version of the git this spec process finds on PATH.
+func hostGitVersion() string {
+	out, err := exec.Command("git", "version").Output()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	match := gitVersionPattern.FindStringSubmatch(string(out))
+	ExpectWithOffset(1, match).NotTo(BeNil(), "git version printed %q", out)
+	return match[1]
+}
+
+// runTask runs the acceptance-ci-env program from the repository root over the
+// probe package, with the pin and any extra environment given, and returns what
+// the probe recorded, if it ran.
+func runTask(pin string, extraEnv ...string) taskRun {
+	outDir, err := os.MkdirTemp("", "acceptance-ci-env-probe-*")
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	DeferCleanup(os.RemoveAll, outDir)
+	ExpectWithOffset(1, os.Chmod(outDir, 0o777)).To(Succeed())
+	probeOut := filepath.Join(outDir, "probe.json")
+
+	command := exec.Command("go", "run", "./cmd/acceptance-ci-env", probePackage)
+	command.Dir = repoRoot
+	command.Env = append(os.Environ(), "COACH_CI_GIT_VERSION="+pin, "COACH_CI_ENV_PROBE_OUT="+probeOut)
+	command.Env = append(command.Env, extraEnv...)
+	var stdout, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &stdout, &stderr
+	err = command.Run()
+	run := taskRun{stdout: stdout.String(), stderr: stderr.String()}
+	var exitErr *exec.ExitError
+	switch {
+	case err == nil:
+	case errors.As(err, &exitErr):
+		run.exitCode = exitErr.ExitCode()
+	default:
+		Fail("running the task: " + err.Error())
+	}
+	if data, readErr := os.ReadFile(probeOut); readErr == nil {
+		run.probe = &probeRecord{}
+		ExpectWithOffset(1, json.Unmarshal(data, run.probe)).To(Succeed(), "probe record: %s", data)
+	}
+	return run
+}
+
+func (r taskRun) output() string { return r.stdout + r.stderr }
+
+func readRepoFile(name string) string {
+	data, err := os.ReadFile(filepath.Join(repoRoot, name))
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	return string(data)
+}
+
+func lines(text string) []string { return strings.Split(text, "\n") }

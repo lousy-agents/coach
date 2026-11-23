@@ -51,6 +51,7 @@
       "name": "tooling",
       "prefixes": [
         "internal/acceptanceharness",
+        "internal/acceptancecienv",
         "internal/acceptancestyle",
         "internal/agentworkflows",
         "internal/claudehooks",
