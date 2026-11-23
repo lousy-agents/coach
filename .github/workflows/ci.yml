@@ -276,12 +276,7 @@ jobs:
   # copy of verify (#737).
   distro-git:
     runs-on: ubuntu-latest
-    # Owner-approved (#742): unconfined seccomp and AppArmor only let the non-root
-    # test user create the user namespace the network-isolation specs need; the
-    # ephemeral runner VM already grants passwordless sudo, so nothing else is new.
-    container:
-      image: ubuntu:24.04
-      options: --security-opt seccomp=unconfined --security-opt apparmor=unconfined
+    container: ubuntu:24.04
     timeout-minutes: 60
     env:
       COACH_CI_GIT_VERSION: "2.43.0"
@@ -305,18 +300,6 @@ jobs:
           version: "2026.11.12"
           install_args: go pnpm bun
           experimental: true
-
-      - name: report whether a non-root user can create a user namespace
-        continue-on-error: true
-        run: |
-          for f in /proc/sys/kernel/apparmor_restrict_unprivileged_userns /proc/sys/kernel/unprivileged_userns_clone /proc/sys/user/max_user_namespaces; do
-            echo "$f: $(cat "$f" 2>&1)"
-          done
-          grep -E '^(Cap(Eff|Bnd)|Seccomp):' /proc/self/status
-          cat /proc/self/attr/current 2>&1 || true
-          setpriv --reuid=65534 --regid=65534 --clear-groups -- unshare -rn -- true && echo "nobody: unshare -rn ok"
-          unshare -rn -- true && echo "root: unshare -rn ok"
-          unshare -n -- true && echo "root: unshare -n ok"
 
       - name: Go tests under git 2.43, as a non-root user
         run: mise exec -- go run ./cmd/acceptance-ci-env ./...
