@@ -51,7 +51,7 @@ var _ = Describe("coach codesignal --worktree for a policy-named file beside the
 		}, "project.json"),
 		Entry("a committed deprecated policy beside the selected canonical one, renamed away", func(repo string) {
 			runGitInRepo(repo, "mv", "project.json", "moved.json")
-		}, "moved.json"),
+		}, "moved.json, project.json"),
 	)
 
 	DescribeTable("reads a canonical policy that is not committed from disk in preference to the committed deprecated one, and discloses it as not committed",

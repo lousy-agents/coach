@@ -49,6 +49,12 @@ func TestAPolicyFileTheSelectionDidNotPickIsDisclosedAsUnreadWhateverItsStatusCo
 		{"the selected policy edited", []string{" M project.json"}, "project.json", ""},
 		{"the selected policy untracked", []string{"?? .lousy-agents/coach.json"}, ".lousy-agents/coach.json", ""},
 		{"a policy-named file in a subdirectory is not a policy file but is disclosed like any other", []string{"A  sub/project.json"}, ".lousy-agents/coach.json", "sub/project.json"},
+		{"renamed away from beside the selected canonical policy", []string{"R  moved.json\x00project.json"}, ".lousy-agents/coach.json", "moved.json, project.json"},
+		{"renamed away from the selected policy", []string{"R  moved.json\x00project.json"}, "project.json", "moved.json"},
+		{"renamed onto the selected policy from beside it", []string{"R  .lousy-agents/coach.json\x00project.json"}, ".lousy-agents/coach.json", "project.json"},
+		{"renamed onto the selected policy from a file that is not a policy", []string{"R  project.json\x00draft.json"}, "project.json", ""},
+		{"renamed away from a file that is not a policy", []string{"R  moved.json\x00old.json"}, ".lousy-agents/coach.json", "moved.json"},
+		{"renamed away from a policy another entry also lists", []string{" M project.json", "R  moved.json\x00project.json"}, ".lousy-agents/coach.json", "moved.json, project.json"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -70,7 +76,7 @@ func assertUnreadDisclosure(t *testing.T, porcelain []string, policyPath, want s
 		}
 	}
 
-	diagnostics := perPathDisclosure(collectWorktreePaths(unread), uniqueSorted(inputs.config))
+	diagnostics := perPathDisclosure(collectWorktreePaths(unread), uniqueSorted(inputs.named))
 
 	if want == "" {
 		if len(diagnostics) != 0 {

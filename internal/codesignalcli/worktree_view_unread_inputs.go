@@ -11,17 +11,21 @@ import (
 
 // unreadInputs are the dirty files that set up the analysis and that the scan
 // did not read from disk: the project configuration files the analysis never
-// opened. A dirty file of any kind is named whatever else the scan discloses.
+// opened, and the source of a rename that leaves a policy file the scan did not
+// select. A dirty file of any kind is named whatever else the scan discloses.
 type unreadInputs struct {
 	policy string
-	config []string
+	named  []string
 }
 
 func (v *WorktreeView) unreadInputs(entries []gitrepo.WorktreeEntry, policyPath string) unreadInputs {
 	inputs := unreadInputs{policy: policyPath}
 	for _, entry := range entries {
 		if !isProjectPolicyFile(entry.Path) && v.unreadConfig(entry.Path) {
-			inputs.config = append(inputs.config, entry.Path)
+			inputs.named = append(inputs.named, entry.Path)
+		}
+		if source, ok := inputs.unselectedPolicySource(entry); ok {
+			inputs.named = append(inputs.named, source)
 		}
 	}
 	return inputs
