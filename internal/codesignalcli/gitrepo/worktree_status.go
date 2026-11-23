@@ -86,7 +86,17 @@ func mayBeAPartialClone(run Runner, dir string, canBeToldNotToFetch bool) bool {
 		return false
 	}
 	_, found, err := promisorRemote(run, dir)
-	return found || err != nil
+	return found || err != nil || hasPartialCloneFilter(run, dir)
+}
+
+// hasPartialCloneFilter is whether a remote has a partial clone filter, which makes git fetch missing objects
+// from it even with its promisor setting unset. A configuration git cannot be asked about is taken to have one.
+func hasPartialCloneFilter(run Runner, dir string) bool {
+	output, err := run(dir, "config", "--get-regexp", `^remote\..*\.partialclonefilter$`)
+	if err != nil {
+		return !ConfigHasNoValue(err)
+	}
+	return len(output) > 0
 }
 
 // readWorktreeStatusBy is ReadWorktreeStatus with the git that answers, and the version it is, given by the caller,

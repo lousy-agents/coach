@@ -24,9 +24,10 @@ func promisorRemote(run Runner, dir string) (remote string, found bool, err erro
 
 // promisorByRemoteSetting asks git to read each promisor setting as a boolean, so Coach agrees with git on
 // what is true: a key with no value at all is true to git, and so is any non-zero number, and neither is
-// the text "true".
+// the text "true". It says --bool, not --type=bool, which came in git 2.18: every git Coach supports is
+// asked this question, and a git that does not know the option fails it (#737).
 func promisorByRemoteSetting(run Runner, dir string) (string, bool, error) {
-	output, err := run(dir, "config", "--type=bool", "--get-regexp", promisorRemoteSettings)
+	output, err := run(dir, "config", "--bool", "--get-regexp", promisorRemoteSettings)
 	if err != nil {
 		return "", false, noMatchIsNo(err)
 	}
