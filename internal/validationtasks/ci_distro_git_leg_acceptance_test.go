@@ -24,6 +24,8 @@ var _ = Describe("the CI leg on Ubuntu 24.04's own git (#737)", func() {
 		Expect(body).To(MatchRegexp(`COACH_CI_GIT_VERSION:\s*"?2\.43\.0"?`), "the job pins the git it must run under")
 		Expect(body).To(ContainSubstring("./cmd/acceptance-ci-env"), "the tests run as a non-root user with an empty HOME")
 		Expect(body).NotTo(ContainSubstring("COACH_CI_GIT_ALLOW_MISMATCH"), "the job exists to cover the git-version leg")
+		Expect(body).To(MatchRegexp(`safe\.directory`), "the container runs as root over a workspace the runner's user owns, which git refuses without it")
+		Expect(body).To(MatchRegexp(`install_args:\s*"?go pnpm bun"?`), "./... carries the real-execution proofs that fail without pnpm and bun, as in verify")
 	})
 
 	It("#737: states git 2.43 as the version to use, and documents the leg", func() {
