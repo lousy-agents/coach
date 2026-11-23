@@ -12,7 +12,7 @@ import (
 var _ = Describe("coach codesignal --worktree for an untracked directory git cannot open", func() {
 	unreadableDirectoryRepo := func() string {
 		if os.Geteuid() == 0 {
-			Skip("root opens a directory whatever its mode")
+			Skip("root opens a directory whatever its mode; `mise run acceptance-ci-env` runs it as non-root")
 		}
 		repo := goOverlayRepo()
 		overwriteOnDiskCreatingParents(repo, "pkg/y/y.go", handlersImportingDB)
@@ -40,7 +40,7 @@ var _ = Describe("coach codesignal --worktree for an untracked directory git can
 	DescribeTable("never drops a directory whose name git quotes oddly, and never prints it raw (#168 item 22)",
 		func(name, root, shown string) {
 			if os.Geteuid() == 0 {
-				Skip("root opens a directory whatever its mode")
+				Skip("root opens a directory whatever its mode; `mise run acceptance-ci-env` runs it as non-root")
 			}
 			repo := goOverlayRepo()
 			overwriteOnDiskCreatingParents(repo, filepath.Join("pkg", name, "y.go"), handlersImportingDB)

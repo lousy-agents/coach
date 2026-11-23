@@ -57,7 +57,7 @@ func runTask(pin string, extraEnv ...string) taskRun {
 
 	command := exec.Command("go", "run", "./cmd/acceptance-ci-env", probePackage)
 	command.Dir = repoRoot
-	command.Env = append(os.Environ(), "COACH_CI_GIT_VERSION="+pin, "COACH_CI_ENV_PROBE_OUT="+probeOut)
+	command.Env = append(environWithout("COACH_CI_GIT", "COACH_CI_GIT_ALLOW_MISMATCH", "COACH_CI_GIT_VERSION"), "COACH_CI_GIT_VERSION="+pin, "COACH_CI_ENV_PROBE_OUT="+probeOut)
 	command.Env = append(command.Env, extraEnv...)
 	var stdout, stderr bytes.Buffer
 	command.Stdout, command.Stderr = &stdout, &stderr
@@ -76,6 +76,23 @@ func runTask(pin string, extraEnv ...string) taskRun {
 		ExpectWithOffset(1, json.Unmarshal(data, run.probe)).To(Succeed(), "probe record: %s", data)
 	}
 	return run
+}
+
+// environWithout is this process's environment less the named variables, so a
+// spec run inside the task does not inherit the outer run's git choices.
+func environWithout(names ...string) []string {
+	var kept []string
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		drop := false
+		for _, unwanted := range names {
+			drop = drop || name == unwanted
+		}
+		if !drop {
+			kept = append(kept, entry)
+		}
+	}
+	return kept
 }
 
 func (r taskRun) output() string { return r.stdout + r.stderr }

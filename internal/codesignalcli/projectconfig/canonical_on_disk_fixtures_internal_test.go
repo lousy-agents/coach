@@ -42,7 +42,7 @@ func fileInPlaceOfTheDirectory(t *testing.T, repo string) {
 func unsearchableParent(t *testing.T, repo string) {
 	t.Helper()
 	if os.Geteuid() == 0 {
-		t.Skip("root can search any directory")
+		t.Skip("root can search any directory; `mise run acceptance-ci-env` runs it as non-root")
 	}
 	writeCanonical(t, repo)
 	parent := filepath.Join(repo, ".lousy-agents")

@@ -62,7 +62,7 @@ func putAFileInPlaceOfTheDirectory(repo string) {
 
 func makeTheParentUnsearchable(repo string) {
 	if os.Geteuid() == 0 {
-		Skip("root can search any directory, so this state cannot be built")
+		Skip("root can search any directory, so this state cannot be built; `mise run acceptance-ci-env` runs it as non-root")
 	}
 	writeTheCanonicalFile(repo)
 	parent := filepath.Join(repo, ".lousy-agents")

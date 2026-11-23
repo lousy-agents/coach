@@ -195,7 +195,7 @@ var _ = Describe("coach codesignal: an explicit --project-config entry of anothe
 
 	It("refuses a path whose parent directory cannot be searched", func() {
 		if os.Geteuid() == 0 {
-			Skip("root can search any directory")
+			Skip("root can search any directory; `mise run acceptance-ci-env` runs it as non-root")
 		}
 		repo := commitExplicitPolicyRepo()
 		parent := filepath.Join(repo, "policies")

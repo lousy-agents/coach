@@ -50,6 +50,44 @@ measured ~239s, of which roughly 180s is deliberate blocking on
 paid twice across the project-backend and no-findings-verdict acceptance specs.
 Read `ci-fast` as "narrower than CI", not as "quick".
 
+## Running tests under CI's conditions
+
+A spec can pass in an agent sandbox and fail in CI because the two differ (#733):
+
+| Input | CI (`ubuntu-latest`) | Agent sandbox |
+| --- | --- | --- |
+| User | `runner`, not root | root |
+| HOME and user-level git config | a fresh HOME with no git identity | the user's global config, with an identity and commit signing |
+| git | floats with the runner image: 2.55.0, then 2.56.0, then 2.56.1 | 2.43.0 |
+
+`mise run acceptance-ci-env` runs Go tests under CI's conditions. Pass packages
+after `--`; the default is `./...`:
+
+```sh
+mise run acceptance-ci-env -- ./cmd/coach/...
+```
+
+It runs the tests as a non-root user. Run as root, it runs them as `nobody`, over
+copies of the repository and of the toolchains on PATH that `nobody` can read,
+cached under `$COACH_CI_ENV_CACHE` (default `$TMPDIR/coach-ci-env`). It gives
+them an empty HOME and an empty `GIT_CONFIG_GLOBAL`, leaves the system git
+config as it is, and keeps CI's PATH: the mise toolchain.
+
+CI's git floats, and the task is pinned. `COACH_CI_GIT_VERSION` in the task's
+`env` in `mise.toml` is the one place the expected git version is stated; bump
+it when CI's git moves. The task prints the git it used. It takes that git from
+`COACH_CI_GIT`, or from PATH. When that git is not the pinned version, it exits
+non-zero and names both versions, and runs no test.
+`COACH_CI_GIT_ALLOW_MISMATCH=1` runs the user and HOME legs anyway, and prints
+`WARNING: the git-version leg was NOT covered`. The git-version leg has not been
+run in an agent sandbox, which cannot build CI's git, so a sandbox run uses
+`COACH_CI_GIT_ALLOW_MISMATCH=1`.
+
+A spec that cannot build its state as root, such as a mode 000 file, skips
+under root and says that `mise run acceptance-ci-env` runs it as non-root. A test
+that needs a newer git than the one running skips, naming the version it
+needs.
+
 ## Cross-language acceptance gates
 
 A gate whose acceptance criteria assert on the rendered CLI report across both

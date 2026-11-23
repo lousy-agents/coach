@@ -15,6 +15,7 @@ func transportRan(marker string) bool {
 // commit that only the remote has is fetched by the question that asks for the merge base. This runs the real git
 // as that git runs it, with a transport that leaves a marker, and asks what the guard does about such a base.
 func TestOnAnOldGitABaseCommitOnlyTheRemoteHasIsRefusedWithoutRunningTheTransport(t *testing.T) {
+	skipUnlessTheRunningGitCanBeToldNotToFetch(t)
 	clone, bare := filteredCloneAndItsBare(t, twoCommitSource(t), true)
 	base := commitOnlyTheRemoteHas(t, bare)
 	asGitBefore244(t)
