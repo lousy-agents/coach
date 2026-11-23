@@ -152,7 +152,7 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring guard is
 	})
 
 	When("a --baseline scan's --project-config names a file that exists uncommitted in the worktree, and a controlling terminal is available", func() {
-		It("prints the pre-existing uncommitted-in-worktree diagnostic unchanged and never enters guided authoring", func() {
+		It("reads that file from disk, reports the compiler gap, and never enters guided authoring", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 			commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
@@ -165,7 +165,8 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring guard is
 
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "an uncommitted-in-worktree gap must never enter guided authoring or emit a second candidate; stdout: %s", stdout)
-			Expect(string(stderr)).To(ContainSubstring("exists in the worktree but is not committed"), "the pre-existing uncommitted-in-worktree message must be preserved unchanged; stderr: %s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("typescript_compiler_missing"), "the policy is read from disk, so the scan goes on to the gap it has; stderr: %s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("not committed"), "the policy on disk is the policy; stderr: %s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("Discovered TypeScript roots"), "a file that already exists uncommitted must never open a guided authoring session; the fix is `git add`, not authoring a second candidate; stderr: %s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("review it, commit it"), "no candidate can have been created for this gap; stderr: %s", stderr)
 		})

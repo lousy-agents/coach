@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -15,12 +14,11 @@ import (
 )
 
 var _ = Describe("coach codesignal (TypeScript, controlling terminal): compiler setup for a scan whose policy was discovered, not named", func() {
-	It("continues the same scan after a successful install, judging the discovered policy from the analyzed revision as it always has", func() {
+	It("continues the same scan after a successful install, judging the discovered policy that is on disk and committed", func() {
 		repo := newTempGitRepo()
 		commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 		commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
 		commitFile(repo, coachConfigPath, singleRootPolicyJSON)
-		Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
 		writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
 		miseDir := writeStatefulStubMiseScript(tstoolchain.SupportedTypescriptVersions[0])
 		path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()

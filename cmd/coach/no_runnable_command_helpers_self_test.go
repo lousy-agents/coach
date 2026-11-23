@@ -37,7 +37,7 @@ func TestTheHelperLeavesTheWordsOfTheAdviceAlone(t *testing.T) {
 		`accept the deletion by recording "cfg/p.json" as deleted and committing`,
 		`move the file that blocks the path, then keep the version of "cfg/p.json" that the side being merged into holds by bringing it back, mark it resolved, and commit`,
 		`coach codesignal --baseline --suggest-project-config --output cfg/p.candidate.json -- writes a candidate to "cfg/p.candidate.json" beside the policy, because authoring refuses a path that exists; compare it with "cfg/p.json", replace the policy with it, commit, and rerun`,
-		`coach codesignal: the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one.`,
+		`coach codesignal: the policy on disk cannot be used: fix the file.`,
 		`install the Go version the go.mod names, or put it first on PATH; Coach does not download it`,
 		`the index also holds a staged edit to it, which clearing the mark leaves alone, and the next run then offers to keep it or to drop it`,
 		`git --git-dir names the repository to look at and git --work-tree the tree to compare it with, and neither is a step to carry out`,

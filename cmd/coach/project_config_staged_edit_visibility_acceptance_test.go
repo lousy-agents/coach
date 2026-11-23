@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("coach codesignal: a staged edit to a committed explicit policy stays disclosed while the working tree cannot supply the file", func() {
+var _ = Describe("coach codesignal: a staged edit to a committed explicit policy leaves dirty_worktree, because the check looked for the file on disk", func() {
 	const (
 		nested       = "cfg/p.json"
 		stagedPolicy = `{"schema_version":"1","roots":["staged"]}`
@@ -29,11 +29,11 @@ var _ = Describe("coach codesignal: a staged edit to a committed explicit policy
 			Expect(os.WriteFile(filepath.Join(repo, "cfg"), []byte("notes"), 0o644)).To(Succeed())
 		})
 
-		It("keeps the policy path in dirty_worktree, because nothing read the staged edit", func() {
+		It("leaves the policy path out of dirty_worktree, because the check looked for the file on disk", func() {
 			doc := expectCheckProject(repo, "--project-config", nested)
 
 			Expect(doc.Checks.Policy.Code).To(Equal("policy_missing"))
-			Expect(doc.DirtyWorktree.Paths).To(ContainElement(nested))
+			Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(nested))
 		})
 
 		It("names the staged edit and does not say to restore the policy from git", func() {
@@ -59,16 +59,16 @@ var _ = Describe("coach codesignal: a staged edit to a committed explicit policy
 			Expect(os.Symlink("real.json", full)).To(Succeed())
 		})
 
-		It("keeps the policy path in dirty_worktree, because nothing read the staged edit", func() {
+		It("leaves the policy path out of dirty_worktree, because the check looked for the file on disk", func() {
 			doc := expectCheckProject(repo, "--project-config", nested)
 
 			Expect(doc.Checks.Policy.Code).To(Equal("policy_invalid"))
-			Expect(doc.DirtyWorktree.Paths).To(ContainElement(nested))
+			Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(nested))
 		})
 	})
 })
 
-var _ = Describe("coach codesignal --check-project: a staged policy that was never committed stays disclosed while the working tree cannot supply the file", func() {
+var _ = Describe("coach codesignal --check-project: a staged policy that was never committed leaves dirty_worktree, because the check looked for the file on disk", func() {
 	const (
 		nested       = "cfg/p.json"
 		stagedPolicy = `{"schema_version":"1","roots":["staged"]}`
@@ -82,26 +82,26 @@ var _ = Describe("coach codesignal --check-project: a staged policy that was nev
 		gitIn(repo, "add", nested)
 	})
 
-	It("keeps the path in dirty_worktree when the file was removed from the working tree", func() {
+	It("leaves the path out of dirty_worktree when the file was removed from the working tree", func() {
 		Expect(os.Remove(filepath.Join(repo, nested))).To(Succeed())
 
 		doc := expectCheckProject(repo, "--project-config", nested)
 
 		Expect(doc.Checks.Policy.Code).To(Equal("policy_missing"))
-		Expect(doc.DirtyWorktree.Paths).To(ContainElement(nested))
+		Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(nested))
 	})
 
-	It("keeps the path in dirty_worktree when a file stands where the parent directory was", func() {
+	It("leaves the path out of dirty_worktree when a file stands where the parent directory was", func() {
 		Expect(os.RemoveAll(filepath.Join(repo, "cfg"))).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(repo, "cfg"), []byte("notes"), 0o644)).To(Succeed())
 
 		doc := expectCheckProject(repo, "--project-config", nested)
 
 		Expect(doc.Checks.Policy.Code).To(Equal("policy_missing"))
-		Expect(doc.DirtyWorktree.Paths).To(ContainElement(nested))
+		Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(nested))
 	})
 
-	It("keeps the path in dirty_worktree when a symbolic link stands at the path", func() {
+	It("leaves the path out of dirty_worktree when a symbolic link stands at the path", func() {
 		full := filepath.Join(repo, nested)
 		Expect(os.Remove(full)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(repo, "cfg", "real.json"), []byte(singleRootPolicyJSON), 0o644)).To(Succeed())
@@ -110,14 +110,14 @@ var _ = Describe("coach codesignal --check-project: a staged policy that was nev
 		doc := expectCheckProject(repo, "--project-config", nested)
 
 		Expect(doc.Checks.Policy.Code).To(Equal("policy_invalid"))
-		Expect(doc.DirtyWorktree.Paths).To(ContainElement(nested))
+		Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(nested))
 	})
 })
 
-var _ = Describe("coach codesignal --check-project: a regular file staged over a policy committed as a symbolic link stays disclosed", func() {
+var _ = Describe("coach codesignal --check-project: a regular file staged over a policy committed as a symbolic link leaves dirty_worktree", func() {
 	const linked = "cfg/linked.json"
 
-	It("keeps the path in dirty_worktree when the staged file was removed from the working tree", func() {
+	It("leaves the path out of dirty_worktree when the staged file was removed from the working tree", func() {
 		repo := commitScannableGoRepo()
 		Expect(os.MkdirAll(filepath.Join(repo, "cfg"), 0o755)).To(Succeed())
 		full := filepath.Join(repo, linked)
@@ -136,6 +136,6 @@ var _ = Describe("coach codesignal --check-project: a regular file staged over a
 		doc := expectCheckProject(repo, "--project-config", linked)
 
 		Expect(doc.Checks.Policy.Code).To(Equal("policy_missing"))
-		Expect(doc.DirtyWorktree.Paths).To(ContainElement(linked))
+		Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(linked))
 	})
 })

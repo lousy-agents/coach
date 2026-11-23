@@ -54,10 +54,6 @@ type Check struct {
 	RootFindings      []RootFinding `json:"root_findings,omitempty"`
 	Origin            string        `json:"origin,omitempty"`
 	Detail            string        `json:"detail,omitempty"`
-	// DecidedOnDisk is set when the working tree, not the analyzed revision,
-	// produced this result. A change to the file it was decided from is then not
-	// one the result ignored.
-	DecidedOnDisk bool `json:"-"`
 	// Remedy is the way out of a policy gap this check found. It is the zero
 	// value, RemedyNone, for every check that is not a policy gap.
 	Remedy PolicyRemedy `json:"-"`

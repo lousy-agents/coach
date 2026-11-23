@@ -38,6 +38,8 @@ type CompilerSetupOfferResult struct {
 	PolicyRemedy projectreadiness.PolicyRemedy
 	// CauseText is why no remedy fixes the policy, as on PrepareCompilerMiseResult.
 	CauseText string
+	// PolicyCause is the same reason as a stable word.
+	PolicyCause projectreadiness.PolicyCause
 
 	// NoChoicesOffered is true either when gapCode's own next action is not
 	// the executable prepare-compiler kind (a runtime-boundary gap such as
@@ -129,8 +131,8 @@ type CompilerSetupOfferResult struct {
 // trigger one either.
 //
 // readiness.Checks.Policy must already be projectreadiness.Pass, mirroring
-// RunPrepareCompilerMiseSetup's own precondition: a reviewed, committed
-// policy is required before compiler setup is ever offered (AC-SET-13).
+// RunPrepareCompilerMiseSetup's own precondition: a policy that passes
+// --check-project is required before compiler setup is ever offered (AC-SET-13).
 func RunCompilerSetupOffer(ctx context.Context, dir, revision string, policy policyref.Ref, gapCode string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) CompilerSetupOfferResult {
 	return runCompilerSetupOfferWith(tstoolchain.LocateMiseTypescriptInstall, ctx, dir, revision, policy, gapCode, readiness, in, out)
 }
@@ -139,7 +141,7 @@ func RunCompilerSetupOffer(ctx context.Context, dir, revision string, policy pol
 // caller: the install verifies the compiler through it, and so does the readiness recheck after it.
 func runCompilerSetupOfferWith(locate tstoolchain.MiseLocator, ctx context.Context, dir, revision string, policy policyref.Ref, gapCode string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) CompilerSetupOfferResult {
 	if readiness != nil && readiness.Checks.Policy.State != projectreadiness.Pass {
-		return CompilerSetupOfferResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy, CauseText: readiness.Checks.Policy.CauseText}
+		return CompilerSetupOfferResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy, CauseText: readiness.Checks.Policy.CauseText, PolicyCause: readiness.Checks.Policy.PolicyCause}
 	}
 	if code, blocking := readinessHasBlockingRuntimeGap(readiness); blocking {
 		return CompilerSetupOfferResult{RuntimeGapCode: code}
@@ -172,6 +174,8 @@ func runCompilerSetupOfferWith(locate tstoolchain.MiseLocator, ctx context.Conte
 	// stale advice the moment the install succeeds and the scan resumes.
 	fmt.Fprintf(out, "TypeScript compiler setup: this scan cannot resolve a supported TypeScript compiler (%s).\n", gapCode)
 	fmt.Fprintln(out, "TypeScript compiler setup: if you confirm a choice below and it succeeds, Coach rechecks readiness and resumes this same scan only if that recheck reports no gap; otherwise no report is produced.")
+
+	printPolicyDisclosure(out, readiness)
 
 	reader := bufio.NewReader(in)
 	choice, cancelled := promptForCompilerSetupChoice(out, reader, menu.Choices)

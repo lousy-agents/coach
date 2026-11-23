@@ -9,6 +9,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 )
 
 // When git cannot answer a question about a named policy, the check fails with an
@@ -16,7 +17,7 @@ import (
 // reports it can tell a bound that tripped from a repository that is damaged, and the
 // cause is git's text without Coach's wrapper around it. This is the policy gone from disk; a policy that is still
 // on disk is covered by TestAPolicyOnDiskWhoseCommittedBlobCannotBeReadIsAnOperationalFailure.
-func TestCheckExplicitPolicyOfAFileGoneFromDiskKeepsGitsOwnErrorWhenGitCannotReadTheCommittedPolicy(t *testing.T) {
+func TestJudgePolicyOfAFileGoneFromDiskKeepsGitsOwnErrorWhenGitCannotReadTheCommittedPolicy(t *testing.T) {
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
 	removeCommittedBlob(t, repo, "cfg/p.json")
@@ -24,7 +25,7 @@ func TestCheckExplicitPolicyOfAFileGoneFromDiskKeepsGitsOwnErrorWhenGitCannotRea
 		t.Fatal(err)
 	}
 
-	_, _, err := checkExplicitPolicy(readinessGit(), repo, "HEAD", "cfg/p.json")
+	_, err := judgePolicy(readinessGit(), repo, "HEAD", policyref.Named("cfg/p.json"))
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) {

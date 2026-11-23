@@ -16,6 +16,11 @@ func renderReadinessWarningLine(b *strings.Builder, warning projectreadiness.War
 		b.WriteString(")\n")
 		return
 	}
+	fmt.Fprintf(b, "  %s", terminalText(warning.Code))
+	if warning.Root != "" {
+		fmt.Fprintf(b, " (root=%s)", terminalText(warning.Root))
+	}
+	b.WriteString("\n")
 }
 
 func renderReadinessNextActions(b *strings.Builder, actions []projectreadiness.NextAction) {

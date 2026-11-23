@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// A policy the analyzed revision holds is judged from the revision. What the working tree has at its path is
-// the scan's to read, not this check's: a link on disk where a valid policy is committed does not make it a gap.
-func TestACommittedDiscoveredPolicyIsJudgedFromTheRevisionWhateverIsOnDisk(t *testing.T) {
+// What the working tree has at a policy's path decides, not the revision: a link on disk where a valid policy is
+// committed is a policy that cannot be used, and the committed copy does not stand in for it.
+func TestALinkOnDiskWhereAValidDiscoveredPolicyIsCommittedIsAGapWhateverTheRevisionHolds(t *testing.T) {
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, projectconfig.CanonicalPath, validPolicy)
 	onDisk := filepath.Join(repo, projectconfig.CanonicalPath)
@@ -23,10 +24,10 @@ func TestACommittedDiscoveredPolicyIsJudgedFromTheRevisionWhateverIsOnDisk(t *te
 		t.Fatalf("symlink: %v", err)
 	}
 
-	check, _, err := checkDiscoveredPolicy(readinessGit(), repo, "HEAD", projectconfig.CanonicalPath)
+	judgment, err := judgePolicy(readinessGit(), repo, "HEAD", policyref.Discovered(""))
 
-	if err != nil || check.State != projectreadiness.Pass {
-		t.Errorf("checkDiscoveredPolicy = %+v, %v; want the committed policy to pass", check, err)
+	if err != nil || judgment.check.Code != projectreadiness.GapPolicyInvalid || judgment.check.PolicyCause != projectreadiness.CauseSymbolicLink {
+		t.Errorf("judgePolicy = %+v, %v; want policy_invalid with the cause %q", judgment.check, err, projectreadiness.CauseSymbolicLink)
 	}
 }
 
@@ -44,7 +45,7 @@ func TestAPolicyWhoseIndexCannotBeReadStopsTheCheck(t *testing.T) {
 		t.Fatalf("corrupt the index: %v", err)
 	}
 
-	check, _, err := checkExplicitPolicy(readinessGit(), repo, "HEAD", "cfg/p.json")
+	judgment, err := judgePolicy(readinessGit(), repo, "HEAD", policyref.Named("cfg/p.json"))
 
-	requireOperationalError(t, check, err)
+	requireOperationalError(t, judgment.check, err)
 }

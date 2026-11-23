@@ -98,7 +98,7 @@ func requireOneCauseInBothModes(s canonicalState) {
 
 var _ = Describe("coach codesignal: a discovered policy on disk that is not committed, in the scan and in --check-project", func() {
 	DescribeTable("names one cause in both", requireOneCauseInBothModes,
-		Entry("a regular file, not committed", canonicalState{writeTheCanonicalFile, "not_committed", ""}),
+		Entry("a regular file, not committed: the check passes and has no policy gap", canonicalState{writeTheCanonicalFile, "no policy gap", ""}),
 		Entry("a directory", canonicalState{makeTheCanonicalDirectory, "not_a_regular_file", "project_config_unusable"}),
 		Entry("a symbolic link", canonicalState{linkTheCanonicalPath, "symbolic_link", "project_config_unusable"}),
 		Entry("a file where the directory should be", canonicalState{putAFileInPlaceOfTheDirectory, "parent_not_directory", "project_config_unusable"}),

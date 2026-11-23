@@ -77,19 +77,16 @@ func WrapCompilerUnresolvedErrorWithReadiness(err error, dir, revision string, p
 	return &CompilerUnresolvedErrorWithReadiness{CompilerUnresolvedError: unresolved, Readiness: readiness, Revision: revision}
 }
 
-// WrapProjectConfigErrorWithReadiness computes readiness for
-// dir/revision/policy, taking the working tree's verdict from err instead of
-// reading the working tree again, and wraps err with it, for AC-SET-13's
-// report-all-gaps requirement. It returns err unchanged when err is not a
-// *projectconfig.ConfigError, or when readiness itself cannot be computed: a masked
-// compiler gap is a strictly smaller problem than losing the original
-// diagnostic entirely.
+// WrapProjectConfigErrorWithReadiness computes readiness for dir/revision/policy and wraps err with it, for
+// AC-SET-13's report-all-gaps requirement. It returns err unchanged when err is not a *projectconfig.ConfigError, or
+// when readiness itself cannot be computed: a masked compiler gap is a strictly smaller problem than losing the
+// original diagnostic entirely.
 func WrapProjectConfigErrorWithReadiness(err error, dir, revision string, policy policyref.Ref) error {
 	var configErr *projectconfig.ConfigError
 	if !errors.As(err, &configErr) {
 		return err
 	}
-	readiness, readinessErr := projectcheck.RunAfterPolicyError(dir, revision, policy, configErr)
+	readiness, readinessErr := projectcheck.Run(dir, revision, policy)
 	if readinessErr != nil {
 		return err
 	}

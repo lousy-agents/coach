@@ -1,6 +1,9 @@
 package projectcheck
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 )
@@ -16,4 +19,11 @@ func onDiskStatus(run gitrepo.Runner, dir, revision, policyPath string) (*projec
 		return nil, unansweredQuestion(policyPath, status.GitFailure)
 	}
 	return status, nil
+}
+
+// unansweredQuestion is a question about the policy that git could not answer, as readiness reports it:
+// an operational error that keeps git's own error as its cause, whichever state the policy was in, so a
+// failure of git never reads as a verdict about the policy.
+func unansweredQuestion(policyPath string, failure error) error {
+	return &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: --project-config %q: %s", policyPath, failure), Cause: errors.Unwrap(failure)}
 }

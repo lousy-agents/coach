@@ -51,13 +51,17 @@ var _ = Describe("coach codesignal: a committed explicit policy that is gone fro
 			Expect(gitIn(repo, "show", ":"+policy)).To(Equal(stagedPolicy), "the staged edit is untouched")
 		})
 
-		It("names neither restore_policy nor author_policy and keeps the path in dirty_worktree", func() {
+		It("names neither restore_policy nor author_policy, names the cause undetermined, and leaves the path out of dirty_worktree", func() {
 			doc := expectCheckProject(repo, "--project-config", policy)
 
 			Expect(doc.Checks.Policy.Code).To(Equal("policy_missing"))
+			Expect(causeOfGap(doc, "policy_missing")).To(Equal("undetermined"))
 			Expect(nextActionKinds(doc)).NotTo(ContainElement("restore_policy"))
 			Expect(nextActionKinds(doc)).NotTo(ContainElement("author_policy"))
-			Expect(doc.DirtyWorktree.Paths).To(ContainElement(policy), "the staged edit was not read, so it is disclosed")
+			Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(policy), "the check looked for the file on disk")
+			for _, detail := range nextActionDetails(doc) {
+				Expect(detail).NotTo(ContainSubstring("--source="), "the restore from HEAD would discard the staged edit")
+			}
 		})
 	})
 
@@ -83,10 +87,11 @@ var _ = Describe("coach codesignal: a committed explicit policy that is gone fro
 			Expect(string(stderr)).To(ContainSubstring("symbolic link"), "stderr:\n%s", stderr)
 		})
 
-		It("names neither restore_policy nor author_policy in --check-project", func() {
+		It("names neither restore_policy nor author_policy in --check-project, and the cause undetermined", func() {
 			doc := expectCheckProject(repo, "--project-config", linked)
 
 			Expect(doc.Checks.Policy.Code).To(Equal("policy_missing"))
+			Expect(causeOfGap(doc, "policy_missing")).To(Equal("undetermined"))
 			Expect(nextActionKinds(doc)).NotTo(ContainElement("restore_policy"))
 			Expect(nextActionKinds(doc)).NotTo(ContainElement("author_policy"))
 		})
