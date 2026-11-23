@@ -20,7 +20,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: a policy 
 			report, jsonOut := diskPolicyJSONScan(mode, repo, base)
 
 			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the untracked policy must be used")
-			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, false))))
+			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, diskCauseNotCommitted))))
 			Expect(diagnosticsOfKind(report.Diagnostics, "project_config_uncommitted")).To(BeEmpty())
 			text := diskPolicyTextScan(mode, repo, base)
 			expectDiskPolicyDisclosure(mode, text, diskPolicyLine(coachConfigPath, goLayerPolicyConfigJSON, "not committed at HEAD."), diskPolicyNotCommittedWarning(coachConfigPath))
@@ -34,7 +34,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: a policy 
 			report, jsonOut := diskPolicyJSONScan(mode, repo, base, "--project-config", customPolicyPath)
 
 			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the untracked policy must be used")
-			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(customPolicyPath, goLayerPolicyConfigJSON, false))))
+			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(customPolicyPath, goLayerPolicyConfigJSON, diskCauseNotCommitted))))
 			Expect(diagnosticsOfKind(report.Diagnostics, "project_config_uncommitted")).To(BeEmpty())
 			text := diskPolicyTextScan(mode, repo, base, "--project-config", customPolicyPath)
 			expectDiskPolicyDisclosure(mode, text, diskPolicyLine(customPolicyPath, goLayerPolicyConfigJSON, "not committed at HEAD."), diskPolicyNotCommittedWarning(customPolicyPath))
@@ -48,7 +48,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: a policy 
 			report, jsonOut := diskPolicyJSONScan(mode, repo, base)
 
 			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the canonical file on disk wins over the committed project.json")
-			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, false))))
+			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, diskCauseNotCommitted))))
 			text := diskPolicyTextScan(mode, repo, base)
 			expectDiskPolicyDisclosure(mode, text, diskPolicyLine(coachConfigPath, goLayerPolicyConfigJSON, "not committed at HEAD."), diskPolicyNotCommittedWarning(coachConfigPath))
 		})
@@ -61,7 +61,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: a policy 
 			report, jsonOut := diskPolicyJSONScan(mode, repo, base)
 
 			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the committed copy must be used")
-			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, false))))
+			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, diskCauseMissingOnDisk))))
 			text := diskPolicyTextScan(mode, repo, base)
 			expectDiskPolicyDisclosure(mode, text, diskPolicyLine(coachConfigPath, goLayerPolicyConfigJSON, "differs from HEAD."), diskPolicyMissingOnDiskWarning(coachConfigPath))
 			Expect(string(text)).NotTo(ContainSubstring(diskPolicyDiffersWarning))

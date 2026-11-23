@@ -65,7 +65,7 @@ var _ = Describe("coach codesignal: a policy that is not committed and that the 
 
 			stdout := scanExplicitPolicyAccepted(repo, policy)
 
-			Expect(scopePolicyScopeOf([]byte(stdout))).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policy, string(onDisk), false))))
+			Expect(scopePolicyScopeOf([]byte(stdout))).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policy, string(onDisk), diskCauseNotCommitted))))
 		},
 		Entry("a staged copy, the file on disk", stagedNeverCommitted),
 		Entry("a conflict one side deleted, the file on disk", deletedByUs),

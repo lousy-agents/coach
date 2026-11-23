@@ -47,8 +47,22 @@ func diskPolicyDigest(body string) string {
 	return "pcfg_" + hex.EncodeToString(sum[:])
 }
 
-func diskPolicyScope(path, body string, matchesHead bool) map[string]any {
-	return map[string]any{"path": path, "digest": diskPolicyDigest(body), "matches_head": matchesHead}
+// The closed set of scope.policy.cause values.
+const (
+	diskCauseSameAsHead      = "same_as_head"
+	diskCauseDiffersFromHead = "differs_from_head"
+	diskCauseNotCommitted    = "not_committed"
+	diskCauseMissingOnDisk   = "missing_on_disk"
+	diskCauseUnusableOnDisk  = "unusable_on_disk"
+)
+
+func diskPolicyScope(path, body, cause string) map[string]any {
+	return map[string]any{
+		"path":         path,
+		"digest":       diskPolicyDigest(body),
+		"matches_head": cause == diskCauseSameAsHead,
+		"cause":        cause,
+	}
 }
 
 func diskPolicyLine(path, body, suffix string) string {

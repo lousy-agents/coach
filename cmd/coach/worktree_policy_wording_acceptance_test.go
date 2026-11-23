@@ -66,7 +66,7 @@ var _ = Describe("coach codesignal --worktree for a policy-named file beside the
 			report := decodeCoachReport(stdout)
 			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty())
 			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_not_clean")).To(BeEmpty())
-			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(".lousy-agents/coach.json", permissivePolicyJSON, false))))
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(".lousy-agents/coach.json", permissivePolicyJSON, diskCauseNotCommitted))))
 			Expect(string(text)).To(ContainSubstring(diskPolicyLine(".lousy-agents/coach.json", permissivePolicyJSON, "not committed at HEAD.")))
 			Expect(string(text)).To(ContainSubstring(diskPolicyNotCommittedWarning(".lousy-agents/coach.json")))
 		},

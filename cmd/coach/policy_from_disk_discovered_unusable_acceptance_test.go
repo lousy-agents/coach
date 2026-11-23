@@ -49,7 +49,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: a discove
 				report, jsonOut := diskPolicyJSONScan(mode, repo, base)
 
 				Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the committed copy must be used")
-				Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, false))))
+				Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, diskCauseUnusableOnDisk))))
 				text := diskPolicyTextScan(mode, repo, base)
 				expectDiskPolicyDisclosure(mode, text,
 					diskPolicyLine(coachConfigPath, goLayerPolicyConfigJSON, "differs from HEAD."),
@@ -91,7 +91,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: a discove
 			report, jsonOut := diskPolicyJSONScan(mode, repo, base)
 
 			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the committed canonical copy must be used")
-			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, false))))
+			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, diskCauseUnusableOnDisk))))
 		})
 	}
 })

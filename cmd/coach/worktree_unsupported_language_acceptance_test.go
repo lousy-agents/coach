@@ -117,7 +117,7 @@ var _ = Describe("coach codesignal --base --worktree names a changed file in a l
 			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty())
 			Expect(notCleanMessages(stdout)).NotTo(ContainElement(ContainSubstring(policyPath)),
 				"the policy was read, so the list of unread changes does not name it")
-			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policyPath, goLayerPolicyConfigJSON+"\n\n", false))))
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policyPath, goLayerPolicyConfigJSON+"\n\n", diskCauseDiffersFromHead))))
 		},
 		Entry("the canonical policy file", ".lousy-agents/coach.json"),
 		Entry("the deprecated root policy file", "project.json"),

@@ -20,7 +20,7 @@ var _ = Describe("coach codesignal: an explicit policy that is on disk but not c
 		stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", uncommittedPolicy, "--format=json")
 
 		Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
-		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(uncommittedPolicy, singleRootPolicyJSON, false))))
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(uncommittedPolicy, singleRootPolicyJSON, diskCauseNotCommitted))))
 		Expect(string(stderr)).NotTo(ContainSubstring(suggestCommand), "stderr:\n%s", stderr)
 		text, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", uncommittedPolicy)
 		Expect(exitCode).To(Equal(0), "stderr: %s", stderr)

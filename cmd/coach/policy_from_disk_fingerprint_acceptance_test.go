@@ -44,7 +44,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: finding f
 			violations := diskPolicyLayerViolations(report)
 			Expect(violations).To(HaveLen(1))
 			Expect(violations[0].Fingerprint).To(Equal(beforeCommit))
-			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, true))))
+			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, diskCauseSameAsHead))))
 			text := diskPolicyTextScan(mode, repo, base)
 			expectDiskPolicyDisclosure(mode, text, diskPolicyLine(coachConfigPath, goLayerPolicyConfigJSON, "same as HEAD."), "")
 		})

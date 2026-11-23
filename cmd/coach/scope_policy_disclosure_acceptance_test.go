@@ -44,6 +44,7 @@ var _ = Describe("coach codesignal discloses the policy a scan used in scope.pol
 				"path":         coachConfigPath,
 				"digest":       digestOf(singleRootPolicyJSON),
 				"matches_head": true,
+				"cause":        diskCauseSameAsHead,
 			})))
 
 			text, stderr, exitCode := mode.run(repo, base)
@@ -61,6 +62,7 @@ var _ = Describe("coach codesignal discloses the policy a scan used in scope.pol
 		// usedBody is the policy bytes the scan used, whose digest scope.policy.digest carries.
 		usedBody     string
 		wantMatching bool
+		wantCause    string
 		wantLine     string
 		wantWarning  string
 	}
@@ -70,14 +72,14 @@ var _ = Describe("coach codesignal discloses the policy a scan used in scope.pol
 			description: "a file rewritten with the same bytes (guard: only the content decides, not that the file was touched)",
 			policies:    []scopePolicyFile{{coachConfigPath, singleRootPolicyJSON}},
 			arrange:     func(repo string) { scopePolicyRewrite(repo, coachConfigPath, singleRootPolicyJSON) },
-			wantPath:    coachConfigPath, usedBody: singleRootPolicyJSON, wantMatching: true,
+			wantPath:    coachConfigPath, usedBody: singleRootPolicyJSON, wantMatching: true, wantCause: diskCauseSameAsHead,
 			wantLine: diskPolicyLine(coachConfigPath, singleRootPolicyJSON, "same as HEAD."),
 		},
 		{
 			description: "a file edited on disk (guard: the digest alone differs, the path is the same)",
 			policies:    []scopePolicyFile{{coachConfigPath, singleRootPolicyJSON}},
 			arrange:     func(repo string) { scopePolicyRewrite(repo, coachConfigPath, reordered) },
-			wantPath:    coachConfigPath, usedBody: reordered, wantMatching: false,
+			wantPath:    coachConfigPath, usedBody: reordered, wantMatching: false, wantCause: diskCauseDiffersFromHead,
 			wantLine:    diskPolicyLine(coachConfigPath, reordered, "differs from HEAD."),
 			wantWarning: diskPolicyDiffersWarning,
 		},
@@ -85,7 +87,7 @@ var _ = Describe("coach codesignal discloses the policy a scan used in scope.pol
 			description: "a file deleted on disk with no other policy",
 			policies:    []scopePolicyFile{{coachConfigPath, singleRootPolicyJSON}},
 			arrange:     func(repo string) { Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed()) },
-			wantPath:    coachConfigPath, usedBody: singleRootPolicyJSON, wantMatching: false,
+			wantPath:    coachConfigPath, usedBody: singleRootPolicyJSON, wantMatching: false, wantCause: diskCauseMissingOnDisk,
 			wantLine:    diskPolicyLine(coachConfigPath, singleRootPolicyJSON, "differs from HEAD."),
 			wantWarning: diskPolicyMissingOnDiskWarning(coachConfigPath),
 		},
@@ -93,7 +95,7 @@ var _ = Describe("coach codesignal discloses the policy a scan used in scope.pol
 			description: "the canonical file deleted on disk while a root project.json with the same bytes is committed (guard: the digest is equal, only the selected path differs)",
 			policies:    []scopePolicyFile{{coachConfigPath, singleRootPolicyJSON}, {legacyConfigPath, singleRootPolicyJSON}},
 			arrange:     func(repo string) { Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed()) },
-			wantPath:    coachConfigPath, usedBody: singleRootPolicyJSON, wantMatching: false,
+			wantPath:    coachConfigPath, usedBody: singleRootPolicyJSON, wantMatching: false, wantCause: diskCauseMissingOnDisk,
 			wantLine:    diskPolicyLine(coachConfigPath, singleRootPolicyJSON, "differs from HEAD."),
 			wantWarning: diskPolicyMissingOnDiskWarning(coachConfigPath),
 		},
@@ -102,7 +104,7 @@ var _ = Describe("coach codesignal discloses the policy a scan used in scope.pol
 			policies:    []scopePolicyFile{{customPolicyPath, singleRootPolicyJSON}},
 			arrange:     func(string) {},
 			extraArgs:   []string{"--project-config", customPolicyPath},
-			wantPath:    customPolicyPath, usedBody: singleRootPolicyJSON, wantMatching: true,
+			wantPath:    customPolicyPath, usedBody: singleRootPolicyJSON, wantMatching: true, wantCause: diskCauseSameAsHead,
 			wantLine: diskPolicyLine(customPolicyPath, singleRootPolicyJSON, "same as HEAD."),
 		},
 		{
@@ -110,7 +112,7 @@ var _ = Describe("coach codesignal discloses the policy a scan used in scope.pol
 			policies:    []scopePolicyFile{{customPolicyPath, singleRootPolicyJSON}},
 			arrange:     func(repo string) { scopePolicyRewrite(repo, customPolicyPath, reordered) },
 			extraArgs:   []string{"--project-config", customPolicyPath},
-			wantPath:    customPolicyPath, usedBody: reordered, wantMatching: false,
+			wantPath:    customPolicyPath, usedBody: reordered, wantMatching: false, wantCause: diskCauseDiffersFromHead,
 			wantLine:    diskPolicyLine(customPolicyPath, reordered, "differs from HEAD."),
 			wantWarning: diskPolicyDiffersWarning,
 		},
@@ -128,6 +130,7 @@ var _ = Describe("coach codesignal discloses the policy a scan used in scope.pol
 					"path":         scenario.wantPath,
 					"digest":       digestOf(scenario.usedBody),
 					"matches_head": scenario.wantMatching,
+					"cause":        scenario.wantCause,
 				})))
 
 				text, stderr, exitCode := mode.run(repo, base, scenario.extraArgs...)
