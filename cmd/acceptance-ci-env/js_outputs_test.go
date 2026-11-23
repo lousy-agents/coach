@@ -17,10 +17,13 @@ func TestWantsTSProjectBackendReadsOnlyALabelFilterThatSelectsIt(t *testing.T) {
 		{"the label named outside a label filter", []string{"-ginkgo.focus=ts-project-backend"}, false},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := wantsTSProjectBackend(tc.args); got != tc.want {
-				t.Errorf("wantsTSProjectBackend(%q) = %v, want %v", tc.args, got, tc.want)
-			}
-		})
+		t.Run(tc.name, func(t *testing.T) { expectWants(t, tc.args, tc.want) })
+	}
+}
+
+func expectWants(t *testing.T, args []string, want bool) {
+	t.Helper()
+	if got := wantsTSProjectBackend(args); got != want {
+		t.Errorf("wantsTSProjectBackend(%q) = %v, want %v", args, got, want)
 	}
 }
