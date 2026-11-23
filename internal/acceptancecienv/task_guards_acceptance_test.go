@@ -117,3 +117,20 @@ func otherUsersDirectory() string {
 	Expect(os.Chown(dir, 65534, 65534)).To(Succeed())
 	return dir
 }
+
+var _ = Describe("acceptance-ci-env when it cannot prepare the run (#737)", func() {
+	It("#737: exits 2 naming what failed, without a panic, when as root it cannot copy the repository for the non-root user", func() {
+		if os.Geteuid() != 0 {
+			Skip("only a root run copies the repository for the non-root user")
+		}
+		repo := repositoryCopy()
+		Expect(os.RemoveAll(filepath.Join(repo, ".git"))).To(Succeed())
+
+		run := runTaskIn(repo, hostGitVersion(), []string{probePackage})
+
+		Expect(run.output()).NotTo(ContainSubstring("panic:"), "output:\n%s", run.output())
+		Expect(run.exitCode).To(Equal(2), "output:\n%s", run.output())
+		Expect(run.output()).To(ContainSubstring("not a git repository"))
+		Expect(run.probe).To(BeNil())
+	})
+})
