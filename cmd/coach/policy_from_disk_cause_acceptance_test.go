@@ -42,12 +42,6 @@ var _ = Describe("coach codesignal discloses why the policy used is the one it i
 			},
 			wantCause: "not_committed",
 		},
-		{
-			description: "a committed policy deleted on disk (interim until A3)",
-			policies:    []scopePolicyFile{{coachConfigPath, goLayerPolicyConfigJSON}},
-			arrange:     func(repo string) { Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed()) },
-			wantCause:   "missing_on_disk",
-		},
 	}
 
 	refusedScenarios := []causeScenario{
