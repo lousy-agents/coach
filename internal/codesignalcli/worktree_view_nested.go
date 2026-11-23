@@ -1,6 +1,7 @@
 package codesignalcli
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
@@ -41,16 +42,45 @@ func gitVersionReason(version string) hiddenReason {
 // repository's files, so each root is judged by its own path alone. A root that
 // is a source path the scope keeps is the one case that qualifies the verdict.
 func (v *WorktreeView) nestedDiagnostics(dir string) ([]codesignal.Diagnostic, error) {
-	gitlinks, err := v.gitlinks(dir)
+	nested, err := v.nestedRepositories(dir)
 	if err != nil {
 		return nil, err
 	}
-	submodules, reason := dirtySubmodules(v.status.Entries, pathSet(gitlinks)), submoduleReason
-	if skippedBy := v.status.SubmodulesSkippedBy; skippedBy != "" {
-		submodules, reason = gitlinks, gitVersionReason(skippedBy)
+	diagnostics := v.anotherRepository(nested.submoduleReason, nested.submodules)
+	return append(diagnostics, v.anotherRepository(nestedRepositoryReason, nested.untracked)...), nil
+}
+
+// nestedRepositories are the roots nestedDiagnostics reports, kept apart from
+// the diagnostics so that the disclosure of unread paths names exactly the roots
+// that have an entry.
+type nestedRepositories struct {
+	submodules      []string
+	submoduleReason hiddenReason
+	untracked       []string
+}
+
+func (v *WorktreeView) nestedRepositories(dir string) (nestedRepositories, error) {
+	gitlinks, err := v.gitlinks(dir)
+	if err != nil {
+		return nestedRepositories{}, err
 	}
-	diagnostics := v.anotherRepository(reason, submodules)
-	return append(diagnostics, v.anotherRepository(nestedRepositoryReason, untrackedRepositories(v.status.Entries))...), nil
+	nested := nestedRepositories{
+		submodules:      dirtySubmodules(v.status.Entries, pathSet(gitlinks)),
+		submoduleReason: submoduleReason,
+		untracked:       untrackedRepositories(v.status.Entries),
+	}
+	if skippedBy := v.status.SubmodulesSkippedBy; skippedBy != "" {
+		nested.submodules, nested.submoduleReason = gitlinks, gitVersionReason(skippedBy)
+	}
+	return nested, nil
+}
+
+// ownsEntry is true for a status entry that is the root of a nested repository
+// or of a submodule with its own entry; git lists an untracked repository with a
+// trailing slash its root does not carry.
+func (n nestedRepositories) ownsEntry(entry gitrepo.WorktreeEntry) bool {
+	root := strings.TrimSuffix(entry.Path, "/")
+	return slices.Contains(n.submodules, root) || slices.Contains(n.untracked, root)
 }
 
 func (v *WorktreeView) anotherRepository(reason hiddenReason, roots []string) []codesignal.Diagnostic {

@@ -18,7 +18,8 @@ func (v *WorktreeView) ReadFromDisk(name string) bool {
 // Disclosure reports what a worktree scan owes after the project backend has
 // run: the run-level causes for Git state it cannot read, and a diagnostic for
 // each dirty path that nothing accounted for. A path is accounted for when the
-// overlay removed it or named it in its own diagnostic, file-local analysis
+// overlay removed it or named it in its own diagnostic (a nested repository or
+// submodule root has its own worktree_scan_incomplete entry), file-local analysis
 // read it, the scope filter excluded it, an unsupported_language diagnostic
 // names it, or the analysis read it as project configuration; new files are
 // analyzed, so they are not left in. An uncommitted edit to policyPath is
@@ -51,8 +52,11 @@ func (v *WorktreeView) unreadDisclosure(dir, revision, policyPath string) []code
 	}
 	entries := v.status.Entries
 	inputs := v.unreadInputs(entries, policyPath)
+	// sparseGuard reports a failed read, so here an unread nested state only
+	// leaves more paths named.
+	nested, _ := v.nestedRepositories(dir)
 	unread := slices.DeleteFunc(slices.Clone(entries), func(entry gitrepo.WorktreeEntry) bool {
-		return v.accountedFor(entry) || inputs.hasOwnDiagnostic(entry.Path)
+		return v.accountedFor(entry) || inputs.hasOwnDiagnostic(entry.Path) || nested.ownsEntry(entry)
 	})
 	return append(inputs.policyDiagnostics(revision), perPathDisclosure(collectWorktreePaths(unread), uniqueSorted(inputs.config))...)
 }
