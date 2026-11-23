@@ -1,0 +1,4 @@
+Repository Baseline for revision {head} with working-tree changes (not a diff comparison)
+worktree: no uncommitted changes on revision {head12}.
+files discovered (tracked and new): 2, analyzed: 2, unsupported: 0, excluded: 0, unanalyzable: 0, active signals: 0, diagnostics: 0
+No active CodeSignal findings.

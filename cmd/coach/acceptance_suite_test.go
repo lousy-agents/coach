@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var commitEnv = append(os.Environ(),
+var commitEnv = environmentNamingNoRepository(
 	"GIT_AUTHOR_NAME=coach-acceptance",
 	"GIT_AUTHOR_EMAIL=coach-acceptance@example.com",
 	"GIT_COMMITTER_NAME=coach-acceptance",
@@ -72,6 +72,7 @@ func newTempGitRepo() string {
 
 	initCmd := exec.Command("git", "init")
 	initCmd.Dir = directory
+	initCmd.Env = commitEnv
 	output, err := initCmd.CombinedOutput()
 	Expect(err).NotTo(HaveOccurred(), "git init: %s", output)
 
@@ -87,6 +88,7 @@ func commitFile(repo, name, contents string) string {
 
 	addCmd := exec.Command("git", "--literal-pathspecs", "add", "--", name)
 	addCmd.Dir = repo
+	addCmd.Env = commitEnv
 	output, err := addCmd.CombinedOutput()
 	Expect(err).NotTo(HaveOccurred(), "git add: %s", output)
 

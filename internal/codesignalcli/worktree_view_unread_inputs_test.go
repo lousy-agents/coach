@@ -1,102 +1,93 @@
 package codesignalcli
 
 import (
-	"reflect"
 	"strings"
 	"testing"
-	"testing/fstest"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-func TestUnreadInputsNamesAPolicyFileWhateverItsStatusCode(t *testing.T) {
-	tests := []struct {
-		name       string
-		porcelain  []string
-		policyPath string
-		want       []string
-	}{
-		{"untracked", []string{"?? project.json"}, "", []string{"project.json: new"}},
-		{"staged new", []string{"A  project.json"}, "", []string{"project.json: new"}},
-		{"intent-to-add", []string{" A project.json"}, "", []string{"project.json: new"}},
-		{"renamed in", []string{"R  project.json\x00draft.json"}, "", []string{"project.json: new"}},
-		{"canonical staged beside a selected deprecated policy", []string{"A  .lousy-agents/coach.json"}, "project.json", []string{".lousy-agents/coach.json: new"}},
-		{"a committed policy the selection did not pick, edited", []string{" M project.json"}, "", []string{"project.json: changed"}},
-		{"a policy the selection did not pick, renamed away: the old name is a change, not a new file", []string{"R  moved.json\x00project.json"}, "", []string{"project.json: changed"}},
-		{"the selected policy edited", []string{" M project.json"}, "project.json", []string{"project.json: selected"}},
-		{"the selected policy renamed away", []string{"R  moved.json\x00project.json"}, "project.json", []string{"project.json: selected"}},
-		{"the selected policy renamed to the canonical path", []string{"R  .lousy-agents/coach.json\x00project.json"}, "project.json", []string{"project.json: selected", ".lousy-agents/coach.json: new"}},
-		{"a policy-named file in a subdirectory is not a policy", []string{"A  sub/project.json"}, "", nil},
-		{"another file is not a policy", []string{"A  draft.json"}, "", nil},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assertPolicyDiagnostics(t, tt.porcelain, tt.policyPath, tt.want)
-		})
-	}
-}
+func TestHasOwnDiagnosticIsTrueOnlyForTheSelectedPolicy(t *testing.T) {
+	inputs := unreadInputs{policy: "config/policy.json"}
 
-// assertPolicyDiagnostics states each diagnostic as its path and which message
-// it carries: the selected policy's, a file HEAD does not hold, or an uncommitted
-// change to one it holds.
-func assertPolicyDiagnostics(t *testing.T, porcelain []string, policyPath string, want []string) {
-	t.Helper()
-	view := newWorktreeViewForTest(t, worktreeViewDeps{
-		status:    statusFromPorcelain(porcelainZ(porcelain...), nil),
-		committed: fstest.MapFS{},
-		disk:      absentDisk{},
-	})
-
-	inputs := view.unreadInputs(view.status.Entries, policyPath)
-
-	var got []string
-	for _, diagnostic := range inputs.policyDiagnostics("rev") {
-		got = append(got, diagnostic.Path+": "+policyMessageKind(diagnostic.Message))
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("policy diagnostics %v, want %v", got, want)
-	}
-}
-
-func policyMessageKind(message string) string {
-	switch {
-	case strings.Contains(message, "is not committed"):
-		return "new"
-	case strings.Contains(message, "has uncommitted changes"):
-		return "changed"
-	}
-	return "selected"
-}
-
-func TestHasOwnDiagnosticCoversTheSelectedPolicyAndEveryOtherPolicyFileNamed(t *testing.T) {
-	inputs := unreadInputs{policy: "a.json", others: []policyChange{{path: "b.json"}}}
-
-	for name, want := range map[string]bool{"a.json": true, "b.json": true, "c.json": false} {
+	for name, want := range map[string]bool{
+		"config/policy.json":       true,
+		"project.json":             false,
+		".lousy-agents/coach.json": false,
+		"pkg/main.go":              false,
+	} {
 		if got := inputs.hasOwnDiagnostic(name); got != want {
-			t.Errorf("hasOwnDiagnostic(%q) = %v, want %v", name, got, want)
+			t.Errorf("hasOwnDiagnostic(%q) = %v, want %v: only the policy the scan selected is read from disk", name, got, want)
 		}
 	}
 }
 
-func TestPolicyChangeSaysWhetherTheFileIsNotCommittedOrHasUncommittedChanges(t *testing.T) {
+func TestHasOwnDiagnosticTreatsAnNFCVariantSpellingOfTheSelectedPolicyAsTheSameFile(t *testing.T) {
+	inputs := unreadInputs{policy: "caf\u00e9/policy.json"}
+
+	if !inputs.hasOwnDiagnostic("cafe\u0301/policy.json") {
+		t.Error("an NFD spelling of the selected policy path was not recognised as the selected policy")
+	}
+}
+
+func TestAPolicyFileTheSelectionDidNotPickIsDisclosedAsUnreadWhateverItsStatusCode(t *testing.T) {
 	tests := []struct {
-		name   string
-		change policyChange
-		want   string
+		name       string
+		porcelain  []string
+		policyPath string
+		want       string
 	}{
-		{"a file HEAD does not hold", policyChange{path: "project.json", new: true},
-			"the project policy at project.json is not committed; --worktree reads the policy from the commit at rev and does not read an uncommitted policy yet"},
-		{"a file HEAD holds", policyChange{path: ".lousy-agents/coach.json"},
-			"the project policy file at .lousy-agents/coach.json has uncommitted changes; --worktree reads the policy from the commit at rev and does not read an uncommitted policy yet"},
+		{"untracked", []string{"?? project.json"}, ".lousy-agents/coach.json", "project.json"},
+		{"staged new", []string{"A  project.json"}, ".lousy-agents/coach.json", "project.json"},
+		{"intent-to-add", []string{" A project.json"}, ".lousy-agents/coach.json", "project.json"},
+		{"renamed in", []string{"R  project.json\x00draft.json"}, ".lousy-agents/coach.json", "project.json"},
+		{"edited beside the selected canonical policy", []string{" M project.json"}, ".lousy-agents/coach.json", "project.json"},
+		{"canonical edited beside the selected deprecated policy", []string{" M .lousy-agents/coach.json"}, "project.json", ".lousy-agents/coach.json"},
+		{"canonical staged beside the selected deprecated policy", []string{"A  .lousy-agents/coach.json"}, "project.json", ".lousy-agents/coach.json"},
+		{"edited beside a policy named with --project-config", []string{" M project.json"}, "config/policy.json", "project.json"},
+		{"the selected policy edited", []string{" M project.json"}, "project.json", ""},
+		{"the selected policy untracked", []string{"?? .lousy-agents/coach.json"}, ".lousy-agents/coach.json", ""},
+		{"a policy-named file in a subdirectory is not a policy file but is disclosed like any other", []string{"A  sub/project.json"}, ".lousy-agents/coach.json", "sub/project.json"},
+		{"renamed away from beside the selected canonical policy", []string{"R  moved.json\x00project.json"}, ".lousy-agents/coach.json", "moved.json, project.json"},
+		{"renamed away from the selected policy", []string{"R  moved.json\x00project.json"}, "project.json", "moved.json"},
+		{"renamed onto the selected policy from beside it", []string{"R  .lousy-agents/coach.json\x00project.json"}, ".lousy-agents/coach.json", "project.json"},
+		{"renamed onto the selected policy from a file that is not a policy", []string{"R  project.json\x00draft.json"}, "project.json", ""},
+		{"renamed away from a file that is not a policy", []string{"R  moved.json\x00old.json"}, ".lousy-agents/coach.json", "moved.json"},
+		{"renamed away from a policy another entry also lists", []string{" M project.json", "R  moved.json\x00project.json"}, ".lousy-agents/coach.json", "moved.json, project.json"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertPolicyChangeMessage(t, tt.change, tt.want)
+			assertUnreadDisclosure(t, tt.porcelain, tt.policyPath, tt.want)
 		})
 	}
 }
 
-func assertPolicyChangeMessage(t *testing.T, change policyChange, want string) {
+// assertUnreadDisclosure states the disclosure as the single informational line
+// that lists the unread paths, or as no disclosure at all.
+func assertUnreadDisclosure(t *testing.T, porcelain []string, policyPath, want string) {
 	t.Helper()
-	if got := change.message("rev"); got != want {
-		t.Errorf("message = %q, want %q", got, want)
+	entries := statusFromPorcelain(porcelainZ(porcelain...), nil).Entries
+	inputs := (&WorktreeView{}).unreadInputs(entries, policyPath)
+	var unread []gitrepo.WorktreeEntry
+	for _, entry := range entries {
+		if !inputs.hasOwnDiagnostic(entry.Path) {
+			unread = append(unread, entry)
+		}
+	}
+
+	diagnostics := perPathDisclosure(collectWorktreePaths(unread), uniqueSorted(inputs.named))
+
+	if want == "" {
+		if len(diagnostics) != 0 {
+			t.Fatalf("disclosed %v, want nothing", diagnostics)
+		}
+		return
+	}
+	if len(diagnostics) != 1 || diagnostics[0].Kind != codesignal.DiagKindWorktreeNotClean {
+		t.Fatalf("disclosed %v, want one %s line", diagnostics, codesignal.DiagKindWorktreeNotClean)
+	}
+	if got := diagnostics[0].Message; !strings.HasSuffix(got, ": "+want) || strings.Contains(got, "commit") {
+		t.Errorf("message %q, want it to list %s as unread without a claim about the commit", got, want)
 	}
 }

@@ -71,6 +71,10 @@ func runCodesignal(args []string, stdout, stderr *os.File, ports scanPorts) int 
 		return runCheckProject(dir, parsed, stdout, stderr)
 	}
 
+	if exitCode, refused := refuseForeignGitDirectory(dir, stderr); refused {
+		return exitCode
+	}
+
 	if rejectWorktreeOutsideRepositoryRoot(dir, args, parsed, stderr) {
 		return 2
 	}

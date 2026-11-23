@@ -19,6 +19,8 @@ type scanPorts struct {
 	discover       func(dir, revision string) (projectconfig.Selection, error)
 	loadExplicit   func(dir, revision, repoPath string) (json.RawMessage, error)
 	loadDiscovered func(dir, revision, repoPath string) (json.RawMessage, error)
+	// An empty namedPath selects by discovery.
+	selectOnDisk   func(dir, namedPath string) (projectconfig.DiskSelection, error)
 	resolveBackend func(language string) error
 	lookupBackend  func(language string) codesignalcli.ProjectBackend
 	// optionalPreparation runs after a successful scan and before its report is
@@ -35,6 +37,7 @@ func defaultScanPorts() scanPorts {
 		discover:            projectconfig.Discover,
 		loadExplicit:        projectconfig.LoadExplicit,
 		loadDiscovered:      projectconfig.Load,
+		selectOnDisk:        projectconfig.SelectOnDisk,
 		resolveBackend:      codesignalcli.ResolveProjectBackend,
 		lookupBackend:       lookupRegisteredBackend,
 		optionalPreparation: noOptionalPreparation,

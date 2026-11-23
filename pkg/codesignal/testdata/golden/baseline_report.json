@@ -2,7 +2,8 @@
   "schema_version": "1",
   "scope": {
     "revision": "abc123",
-    "baseline": true
+    "baseline": true,
+    "policy": null
   },
   "summary": {
     "files_analyzed": 1,

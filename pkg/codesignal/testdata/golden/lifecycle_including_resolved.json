@@ -3,7 +3,8 @@
   "scope": {
     "repository": "example/repo",
     "revision": "def456",
-    "base": "main"
+    "base": "main",
+    "policy": null
   },
   "summary": {
     "files_analyzed": 1,

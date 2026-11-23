@@ -30,6 +30,9 @@ func appendProjectWorktreeDiagnostic(diagnostics []codesignal.Diagnostic, status
 
 func hasRelevantDirtyWorktree(entries []gitrepo.WorktreeEntry, roots []string, policyPath string) bool {
 	for _, entry := range entries {
+		if gitrepo.SamePath(entry.Path, policyPath) {
+			continue
+		}
 		if projectcheck.IsRelevantDirtyPath(entry.Path, roots, policyPath) {
 			return true
 		}
