@@ -22,7 +22,7 @@ func diagnosticsListingPath(report *codesignal.Report, kind, path string) []code
 }
 
 // expectNoUnreadListingOfDeletedPolicy covers the overlay scans only: the committed scans' own working-tree notice
-// lists every dirty path, as it did before the policy was read from disk alone.
+// lists every dirty path.
 func expectNoUnreadListingOfDeletedPolicy(mode scopePolicyMode, report *codesignal.Report) {
 	GinkgoHelper()
 	if len(mode.args) == 0 {
@@ -60,6 +60,23 @@ var _ = Describe("a deleted discovered policy is disclosed once, by project_poli
 			expectNoUnreadListingOfDeletedPolicy(mode, report)
 		})
 
+		It("#168 item 3: under "+mode.name+", with no policy committed or on disk, no absent-policy diagnostic is reported", func() {
+			repo, base := diskPolicyRepo()
+
+			report, _ := diskPolicyJSONScan(mode, repo, base)
+
+			expectNoDiagnosticKind(report, "project_policy_absent_on_disk")
+		})
+
+		It("#168 item 2: under "+mode.name+", a root project.json named with --project-config is no deprecated fallback", func() {
+			repo, base := diskPolicyRepo(scopePolicyFile{legacyConfigPath, goLayerPolicyConfigJSON})
+
+			report, _ := diskPolicyJSONScan(mode, repo, base, "--project-config", legacyConfigPath)
+
+			expectNoDiagnosticKind(report, "project_config_deprecated")
+			expectNoDiagnosticKind(report, "project_policy_absent_on_disk")
+		})
+
 		It("#168 item 3: under "+mode.name+", a committed root project.json deleted on disk is file-local with no deprecation and no migration offer", func() {
 			repo, base := diskPolicyRepo(scopePolicyFile{legacyConfigPath, goLayerPolicyConfigJSON})
 			Expect(os.Remove(filepath.Join(repo, legacyConfigPath))).To(Succeed())
@@ -85,7 +102,7 @@ var _ = Describe("a deleted discovered policy is disclosed once, by project_poli
 		expectNoDiagnosticKind(decodeCoachReport(stdout), "project_config_deprecated")
 	})
 
-	It("#168 item 3: a deleted committed canonical policy leaves only the working-tree notice and the absent-policy diagnostic, as the committed scan reported only the notice", func() {
+	It("#168 item 3: a deleted committed canonical policy leaves exactly the working-tree notice and the absent-policy diagnostic", func() {
 		repo := commitScannableGoRepo()
 		commitFile(repo, coachConfigPath, singleRootPolicyJSON)
 		Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())

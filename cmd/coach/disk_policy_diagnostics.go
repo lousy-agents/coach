@@ -6,11 +6,9 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-// withDiskSelectionDiagnostics adds what the policy on disk says that discovery, which reads the revision, did not: a
-// root project.json on disk is the deprecated fallback even where the revision selects the canonical policy, and the
-// policy the revision selects is reported where nothing is on disk at it. The canonical path is tried first, so it is
-// absent whenever the working tree selects the root project.json or none; the root project.json is absent only when
-// the working tree selects none.
+// withDiskSelectionDiagnostics reports what discovery, which reads the revision, cannot know. The canonical path is
+// tried first on disk, so the revision's canonical policy is absent whenever disk selects project.json or nothing, and
+// its project.json only when disk selects nothing.
 func withDiskSelectionDiagnostics(diags []codesignal.Diagnostic, source policyref.Ref, disk projectconfig.DiskSelection) []codesignal.Diagnostic {
 	if _, deprecated := codesignal.DiagnosticOfKind(diags, "project_config_deprecated"); !source.Explicit && disk.Path == projectconfig.DefaultPath && !deprecated {
 		diags = appendDiagnostic(diags, codesignal.Diagnostic{

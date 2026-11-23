@@ -26,8 +26,7 @@ func loadPreparedProject(dir, revision string, source policyref.Ref, language st
 }
 
 // gatherPolicyEvidence reads what the revision holds at the path of a policy that is usable on disk, for comparison only,
-// so it refuses nothing. Where the working tree selects none, the policy the revision selects is not used, and is read
-// only to keep the refusal of a missing or unusable one.
+// so it refuses nothing. Where the working tree selects none, the scan uses none; only a named policy is refused.
 func gatherPolicyEvidence(dir, revision string, source policyref.Ref, disk projectconfig.DiskSelection, ports scanPorts) (policyEvidence, error) {
 	evidence := policyEvidence{
 		headPath:         source.Path,
@@ -35,7 +34,7 @@ func gatherPolicyEvidence(dir, revision string, source policyref.Ref, disk proje
 		holdsConvertedAt: func(path string) bool { return projectconfig.HoldsCommittedPolicyConverted(dir, revision, path) },
 	}
 	if disk.Path == "" {
-		return evidence, refuseUnusableCommittedPolicy(dir, revision, source, ports)
+		return evidence, refuseExplicitPolicyMissingOnDisk(dir, revision, source, ports)
 	}
 	var err error
 	evidence.head, err = readHeadCopy(dir, revision, source, disk.Path, ports)

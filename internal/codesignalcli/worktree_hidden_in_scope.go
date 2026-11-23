@@ -46,7 +46,7 @@ func (v *WorktreeView) hidesInScope(hiddenByRoot map[string][]string, policyPath
 // directly from the source files whose scope is still to be decided.
 func classifyHidden(hidden []string, policyPaths ...string) (configHidden bool, sources []gitrepo.SelectedFile) {
 	for _, name := range hidden {
-		if slices.Contains(policyPaths, name) || (!withinNodeModules(name) && projectmodel.IsConfigInput(name)) {
+		if slices.ContainsFunc(policyPaths, func(policy string) bool { return gitrepo.SamePath(name, policy) }) || (!withinNodeModules(name) && projectmodel.IsConfigInput(name)) {
 			return true, nil
 		}
 		if language, ok := semantics.LanguageForExtension(filepath.Ext(name)); ok && !withinNodeModules(name) {

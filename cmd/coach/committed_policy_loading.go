@@ -6,12 +6,11 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// refuseUnusableCommittedPolicy refuses the policy the analyzed revision holds for source when it is not usable. A
-// discovered source names a path discovery found committed, and an empty one means nothing is. The policy is never the
-// one the scan uses where the working tree selects none, so only a missing or unusable file, a path that cannot name a
-// policy, and a file inside a submodule checkout keep the refusal they always had.
-func refuseUnusableCommittedPolicy(dir, revision string, source policyref.Ref, ports scanPorts) error {
-	if source.Path == "" {
+// refuseExplicitPolicyMissingOnDisk refuses a named policy the working tree does not hold: the loader judges the path on
+// disk, so a missing file, a path that cannot name a policy, and a file inside a submodule checkout are refused. A
+// discovered policy deleted on disk is never read from the commit, so it has no refusal here.
+func refuseExplicitPolicyMissingOnDisk(dir, revision string, source policyref.Ref, ports scanPorts) error {
+	if !source.Explicit || source.Path == "" {
 		return nil
 	}
 	_, err := ports.loader(source.JudgedOnDisk())(dir, revision, source.Path)
