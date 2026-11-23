@@ -26,7 +26,7 @@ func reachableByOthers(dir string) bool {
 // the cache, and drops the rest, as CI's PATH has none of them. The git
 // directory goes first, so the git that was checked is the git that runs.
 func reachablePath(base, path, gitDir string, gid int) (string, error) {
-	entries := append(filepath.SplitList(path), gitDir)
+	entries := append([]string{gitDir}, filepath.SplitList(path)...)
 	var kept []string
 	for _, entry := range entries {
 		copied, keep, err := reachableEntry(base, entry, gitDir, gid)
