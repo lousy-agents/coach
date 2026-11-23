@@ -9,22 +9,24 @@ import (
 )
 
 // These specs pin behavior that already holds on v0.12.0 and must keep holding when scope.policy is added, so
-// adding the field cannot change the text output or the flag surface. The one deliberate text change is the policy
-// line a committed policy now adds directly after the summary line, which its goldens carry. The specs for the scope.policy field itself are
-// in scope_policy_disclosure_acceptance_test.go.
+// adding the field cannot change the text output or the flag surface. The no_policy goldens in testdata/v0_12_0_text
+// are v0.12.0's output byte for byte. The committed_policy goldens in testdata/committed_policy_text are not: they
+// carry the policy line a committed policy now adds directly after the summary line. The specs for the scope.policy
+// field itself are in scope_policy_disclosure_acceptance_test.go.
 var _ = Describe("coach codesignal keeps its v0.12.0 text and flag surface when scope.policy is added (#168 A1)", func() {
 	policyFixtures := []struct {
-		label    string
-		policies []scopePolicyFile
+		label     string
+		goldenDir string
+		policies  []scopePolicyFile
 	}{
-		{label: "no_policy"},
-		{label: "committed_policy", policies: []scopePolicyFile{{coachConfigPath, singleRootPolicyJSON}}},
+		{label: "no_policy", goldenDir: "v0_12_0_text"},
+		{label: "committed_policy", goldenDir: "committed_policy_text", policies: []scopePolicyFile{{coachConfigPath, singleRootPolicyJSON}}},
 	}
 	for _, mode := range scopePolicyModes {
 		for _, fixture := range policyFixtures {
-			It("#168 item 10: the text of a clean "+fixture.label+" run with "+mode.name+" is byte-identical to its golden, which is v0.12.0's plus the policy line when a policy is committed", func() {
+			It("#168 item 10: the text of a clean "+fixture.label+" run with "+mode.name+" is byte-identical to its golden, which is v0.12.0's output when no policy is committed and the current output with its policy line when one is", func() {
 				repo, base := scopePolicyRepo(fixture.policies...)
-				golden, err := os.ReadFile(filepath.Join("testdata", "v0_12_0_text", fixture.label+"_"+mode.golden+".txt"))
+				golden, err := os.ReadFile(filepath.Join("testdata", fixture.goldenDir, fixture.label+"_"+mode.golden+".txt"))
 				Expect(err).NotTo(HaveOccurred())
 
 				stdout, stderr, exitCode := mode.run(repo, base)

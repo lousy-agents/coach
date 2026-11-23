@@ -112,12 +112,12 @@ var _ = Describe("coach codesignal --base --worktree names a changed file in a l
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 			report := decodeCoachReport(stdout)
 			Expect(unsupportedPaths(stdout)).NotTo(ContainElement(policyPath))
-			Expect(report.Summary.FilesUnanalyzed).To(Equal(1),
-				"the edited policy is counted once, by its worktree_changes_not_analyzed diagnostic, not as source in an unsupported language")
-			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(ConsistOf(HaveField("Path", policyPath)),
-				"nothing read the edited policy, so the dirty file is disclosed under its own diagnostic")
+			Expect(report.Summary.FilesUnanalyzed).To(Equal(0),
+				"the edited policy is read from disk, so it is neither unanalyzed nor source in an unsupported language")
+			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty())
 			Expect(notCleanMessages(stdout)).NotTo(ContainElement(ContainSubstring(policyPath)),
-				"the list of unread changes does not repeat a path that has its own diagnostic")
+				"the policy was read, so the list of unread changes does not name it")
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policyPath, goLayerPolicyConfigJSON+"\n\n", false))))
 		},
 		Entry("the canonical policy file", ".lousy-agents/coach.json"),
 		Entry("the deprecated root policy file", "project.json"),

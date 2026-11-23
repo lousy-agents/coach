@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -11,13 +9,7 @@ import (
 
 const permissivePolicyJSON = `{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}]}`
 
-var _ = Describe("coach codesignal --worktree for a policy file the scan did not select", func() {
-	notCommitted := func(path, head string) string {
-		return fmt.Sprintf("the project policy at %s is not committed; --worktree reads the policy from the commit at %s and does not read an uncommitted policy yet", path, head)
-	}
-	hasChanges := func(path, head string) string {
-		return fmt.Sprintf("the project policy file at %s has uncommitted changes; --worktree reads the policy from the commit at %s and does not read an uncommitted policy yet", path, head)
-	}
+var _ = Describe("coach codesignal --worktree for a policy-named file beside the selected policy", func() {
 	repoCommitting := func(policies ...string) (repo, head string) {
 		repo = newTempGitRepo()
 		commitFile(repo, "go.mod", goModuleFile)
@@ -33,56 +25,51 @@ var _ = Describe("coach codesignal --worktree for a policy file the scan did not
 		return decodeCoachReport(stdout), string(stderrBytes), exitCode
 	}
 
-	// The selected policy is the canonical file when both are committed, so the
-	// deprecated one is the policy the scan did not select.
-	entries := []TableEntry{
-		Entry("a committed deprecated policy beside the selected canonical one, edited",
-			[]string{".lousy-agents/coach.json", "project.json"}, func(repo string) {
-				overwriteOnDisk(repo, "project.json", goLayerPolicyConfigJSON)
-			}, "project.json", hasChanges),
-		Entry("a committed deprecated policy beside the selected canonical one, renamed away",
-			[]string{".lousy-agents/coach.json", "project.json"}, func(repo string) {
-				runGitInRepo(repo, "mv", "project.json", "moved.json")
-			}, "project.json", hasChanges),
-		Entry("a canonical policy staged beside the selected deprecated one",
-			[]string{"project.json"}, func(repo string) {
-				overwriteOnDiskCreatingParents(repo, ".lousy-agents/coach.json", permissivePolicyJSON)
-				runGitInRepo(repo, "add", ".lousy-agents/coach.json")
-			}, ".lousy-agents/coach.json", notCommitted),
-		Entry("a canonical policy untracked beside the selected deprecated one",
-			[]string{"project.json"}, func(repo string) {
-				overwriteOnDiskCreatingParents(repo, ".lousy-agents/coach.json", permissivePolicyJSON)
-			}, ".lousy-agents/coach.json", notCommitted),
-	}
-
-	DescribeTable("words the diagnostic by whether the commit holds the file",
-		func(committed []string, change func(repo string), policyPath string, wording func(path, head string) string) {
-			repo, head := repoCommitting(committed...)
+	DescribeTable("names it once, as a change the scan did not read, without a claim that the policy comes from the commit",
+		func(change func(repo string), wantUnread string) {
+			repo, _ := repoCommitting(".lousy-agents/coach.json", "project.json")
 			change(repo)
 
 			report, stderr, exitCode := scan(repo)
 
-			Expect(exitCode).To(Equal(3), "stderr: %s", stderr)
-			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(ConsistOf(And(
-				HaveField("Path", policyPath),
-				HaveField("Message", wording(policyPath, head)),
-			)))
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty())
+			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_not_clean")).To(ConsistOf(
+				HaveField("Message", "working-tree changes this scan did not read: "+wantUnread)))
+			for _, diagnostic := range report.Diagnostics {
+				Expect(diagnostic.Message).NotTo(ContainSubstring("from the commit"))
+			}
 		},
-		entries,
+		Entry("a committed deprecated policy beside the selected canonical one, edited", func(repo string) {
+			overwriteOnDisk(repo, "project.json", goLayerPolicyConfigJSON)
+		}, "project.json"),
+		Entry("a committed deprecated policy beside the selected canonical one, renamed away", func(repo string) {
+			runGitInRepo(repo, "mv", "project.json", "moved.json")
+		}, "moved.json, project.json"),
 	)
 
-	DescribeTable("names it once, and does not also list it as a change the scan did not read",
-		func(committed []string, change func(repo string), policyPath string, _ func(path, head string) string) {
-			repo, _ := repoCommitting(committed...)
+	DescribeTable("reads a canonical policy that is not committed from disk in preference to the committed deprecated one, and discloses it as not committed",
+		func(change func(repo string)) {
+			repo, _ := repoCommitting("project.json")
 			change(repo)
 
-			report, stderr, exitCode := scan(repo)
+			stdout, stderrBytes, exitCode := runCoachCodesignalBaselineRaw(repo, "--worktree", "--fail-on-incomplete-coverage", "--format=json")
+			text, _, _ := runCoachCodesignalBaselineRaw(repo, "--worktree", "--fail-on-incomplete-coverage")
 
-			Expect(exitCode).To(Equal(3), "stderr: %s", stderr)
-			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(ConsistOf(HaveField("Path", policyPath)))
-			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_not_clean")).NotTo(ContainElement(HaveField("Message", ContainSubstring(policyPath))),
-				"the policy already has its own diagnostic, so listing it again would count it twice")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderrBytes)
+			report := decodeCoachReport(stdout)
+			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty())
+			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_not_clean")).To(BeEmpty())
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(".lousy-agents/coach.json", permissivePolicyJSON, false))))
+			Expect(string(text)).To(ContainSubstring(diskPolicyLine(".lousy-agents/coach.json", permissivePolicyJSON, "not committed at HEAD.")))
+			Expect(string(text)).To(ContainSubstring(diskPolicyNotCommittedWarning(".lousy-agents/coach.json")))
 		},
-		entries,
+		Entry("staged", func(repo string) {
+			overwriteOnDiskCreatingParents(repo, ".lousy-agents/coach.json", permissivePolicyJSON)
+			runGitInRepo(repo, "add", ".lousy-agents/coach.json")
+		}),
+		Entry("untracked", func(repo string) {
+			overwriteOnDiskCreatingParents(repo, ".lousy-agents/coach.json", permissivePolicyJSON)
+		}),
 	)
 })

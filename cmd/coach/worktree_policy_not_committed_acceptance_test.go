@@ -34,17 +34,22 @@ var _ = Describe("coach codesignal --worktree for a project policy that is not c
 		Entry("the deprecated root policy file", "project.json"),
 	)
 
-	DescribeTable("names a policy file at every status, not only untracked, and exits 3",
+	DescribeTable("reads a policy file staged in any way from disk, discloses it as not committed, and exits 0",
 		func(stage func(repo string), policyPath string) {
 			repo, _ := repoWithoutPolicy()
 			commitFile(repo, "draft.json", goLayerPolicyConfigJSON)
 			stage(repo)
 
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--worktree", "--fail-on-incomplete-coverage", "--format=json")
+			text, stderr, exitCode := worktreeBaseline.run(repo, "", "--fail-on-incomplete-coverage")
+			jsonOut, _, _ := worktreeBaseline.run(repo, "", "--fail-on-incomplete-coverage", "--format=json")
 
-			Expect(exitCode).To(Equal(3), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(diagnosticsOfKind(decodeCoachReport(stdout).Diagnostics, "worktree_changes_not_analyzed")).To(ContainElement(HaveField("Path", policyPath)),
-				"a policy the scan did not read must qualify the verdict whatever its status code")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, text)
+			report := decodeCoachReport(jsonOut)
+			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the staged policy is applied")
+			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty(),
+				"a policy the scan read from disk went unread under no status code")
+			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policyPath, goLayerPolicyConfigJSON, false))))
+			expectDiskPolicyDisclosure(worktreeBaseline, text, diskPolicyLine(policyPath, goLayerPolicyConfigJSON, "not committed at HEAD."), diskPolicyNotCommittedWarning(policyPath))
 		},
 		Entry("a staged new policy file", func(repo string) {
 			overwriteOnDisk(repo, "project.json", goLayerPolicyConfigJSON)
@@ -66,12 +71,22 @@ var _ = Describe("coach codesignal --worktree for a project policy that is not c
 			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
 			overwriteOnDiskCreatingParents(repo, ".lousy-agents/.keep", "")
 			runGitInRepo(repo, "mv", "project.json", ".lousy-agents/coach.json")
-		}, "project.json"),
-		Entry("the committed policy renamed to another name", func(repo string) {
-			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
-			runGitInRepo(repo, "mv", "project.json", "moved.json")
-		}, "project.json"),
+		}, ".lousy-agents/coach.json"),
 	)
+
+	It("uses the committed copy of a policy renamed to another name, because no policy file is on disk, and says so", func() {
+		repo, _ := repoWithoutPolicy()
+		commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+		runGitInRepo(repo, "mv", "project.json", "moved.json")
+
+		text, stderr, exitCode := worktreeBaseline.run(repo, "", "--fail-on-incomplete-coverage")
+		jsonOut, _, _ := worktreeBaseline.run(repo, "", "--fail-on-incomplete-coverage", "--format=json")
+
+		Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, text)
+		Expect(diagnosticsOfKind(decodeCoachReport(jsonOut).Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty())
+		Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope("project.json", goLayerPolicyConfigJSON, false))))
+		Expect(string(text)).To(ContainSubstring(diskPolicyMissingOnDiskWarning("project.json")))
+	})
 
 	It("reads the untracked canonical policy beside a committed deprecated one, and does not report it as unread", func() {
 		repo, _ := repoWithoutPolicy()

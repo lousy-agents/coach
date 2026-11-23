@@ -31,7 +31,7 @@ var _ = Describe("the policy the working tree selects", func() {
 			selected, err := SelectOnDisk(repo, "")
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(selected).To(Equal(DiskSelection{Path: DefaultPath, Digest: Digest([]byte(legacyBytes))}))
+			Expect(selected).To(Equal(DiskSelection{Path: DefaultPath, Digest: Digest([]byte(legacyBytes)), Content: []byte(legacyBytes)}))
 		})
 	})
 })

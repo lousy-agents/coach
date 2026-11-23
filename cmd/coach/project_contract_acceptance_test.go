@@ -164,34 +164,35 @@ var _ = Describe("coach project-analysis failure reports", func() {
 		Expect(string(stderr)).To(ContainSubstring("project.json"))
 	})
 
-	It("reads configuration from the selected revision instead of the uncommitted worktree, naming commit as the remedy", func() {
+	It("reads an uncommitted worktree configuration from disk and discloses it as not committed at HEAD", func() {
 		repo := newTempGitRepo()
 		initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
-		Expect(os.WriteFile(filepath.Join(repo, "project.json"), []byte(`{"schema_version":"1","roots":["."]}`), 0o644)).To(Succeed())
+		const uncommitted = `{"schema_version":"1","roots":["."]}`
+		Expect(os.WriteFile(filepath.Join(repo, "project.json"), []byte(uncommitted), 0o644)).To(Succeed())
 
 		stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--project-config", "project.json", "--format=json")
 
-		Expect(exitCode).To(Equal(2))
-		Expect(stdout).To(BeEmpty())
-		Expect(string(stderr)).To(ContainSubstring("project.json"))
-		Expect(string(stderr)).To(ContainSubstring(initialSHA))
-		Expect(string(stderr)).To(ContainSubstring("commit"), "an uncommitted worktree file must name commit as the remedy (AC-6)")
+		Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope("project.json", uncommitted, false))))
+
+		text, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--project-config", "project.json", "--format=text")
+		Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", text, stderr)
+		expectDiskPolicyDisclosure(scopePolicyModes[2], text, diskPolicyLine("project.json", uncommitted, "not committed at HEAD."), diskPolicyNotCommittedWarning("project.json"))
 	})
 
-	It("names committing as the remedy when a --suggest-project-config --output candidate is fed back without being committed", func() {
+	It("reads a --suggest-project-config --output candidate fed back without being committed from disk, disclosing it as not committed at HEAD", func() {
 		repo := newTempGitRepo()
 		headSHA := commitFile(repo, "go.mod", "module example.com/remedy\n\ngo 1.25\n")
 
 		_, suggestStderr, suggestExit := runCoachSuggest(repo, "--baseline", "--suggest-project-config", "--output", "project.json")
 		Expect(suggestExit).To(Equal(0), "stderr: %s", suggestStderr)
+		candidate, err := os.ReadFile(filepath.Join(repo, "project.json"))
+		Expect(err).NotTo(HaveOccurred())
 
 		stdout, stderr, exitCode := runCoachCodesignalRaw(repo, headSHA, "--project-config", "project.json", "--format=json")
 
-		Expect(exitCode).To(Equal(2))
-		Expect(stdout).To(BeEmpty(), "a --project-config load/validation failure must write NOTHING to stdout")
-		Expect(string(stderr)).To(ContainSubstring("project.json"))
-		Expect(string(stderr)).To(ContainSubstring(headSHA))
-		Expect(string(stderr)).To(ContainSubstring("commit"), "an uncommitted --suggest-project-config --output candidate must name commit as the remedy (AC-6)")
+		Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope("project.json", string(candidate), false))))
 	})
 
 	// Re-sorting after Build must match pkg/codesignal's path/kind/location/message

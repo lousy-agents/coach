@@ -1,12 +1,15 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-// A policy that nothing commits and that the index still holds an entry for is told the same whether or not the file is
-// on disk: the scan names what the index holds, and --check-project keeps the path in dirty_worktree, because nothing read
+// A policy that nothing commits and that the index still holds an entry for: a scan reads the file when it is on disk and
+// names what the index holds when it is not, and --check-project keeps the path in dirty_worktree, because nothing read
 // what the index holds. A file that is on disk decides the gap by its presence (the check read it), which is true of a
 // file the index knows nothing about, and false of one the index holds a staged copy or an unresolved conflict for.
 var _ = Describe("coach codesignal: a policy that is not committed and that the index holds, with the file on disk and with it deleted", func() {
@@ -50,11 +53,23 @@ var _ = Describe("coach codesignal: a policy that is not committed and that the 
 				Expect(string(stderr)).NotTo(ContainSubstring(unwanted), "stderr:\n%s", stderr)
 			}
 		},
-		Entry("a staged copy, the file on disk", stagedNeverCommitted, true, "exists in the worktree but is not committed", "merge conflict"),
 		Entry("a staged copy, the file deleted", stagedNeverCommitted, false, "staged copy", "merge conflict"),
-		Entry("a conflict one side deleted, the file on disk: committing it fails with unmerged files", deletedByUs, true, "merge conflict", "commit the file"),
 		Entry("a conflict one side deleted, the file deleted", deletedByUs, false, "merge conflict", "commit the file"),
-		Entry("an entry that holds no content (git add --intent-to-add), the file on disk", intentToAdd, true, "exists in the worktree but is not committed", "merge conflict"),
+	)
+
+	DescribeTable("a scan reads the file that is on disk, whatever the index holds for it, and discloses it as not committed at HEAD",
+		func(arrange func(repo string)) {
+			repo := arranged(commitScannableGoRepo(), arrange, true)
+			onDisk, err := os.ReadFile(filepath.Join(repo, policy))
+			Expect(err).NotTo(HaveOccurred())
+
+			stdout := scanExplicitPolicyAccepted(repo, policy)
+
+			Expect(scopePolicyScopeOf([]byte(stdout))).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policy, string(onDisk), false))))
+		},
+		Entry("a staged copy, the file on disk", stagedNeverCommitted),
+		Entry("a conflict one side deleted, the file on disk", deletedByUs),
+		Entry("an entry that holds no content (git add --intent-to-add), the file on disk", intentToAdd),
 	)
 
 	DescribeTable("--check-project names the same cause and keeps the path in dirty_worktree whenever the index holds work for it",

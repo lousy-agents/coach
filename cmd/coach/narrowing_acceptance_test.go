@@ -133,7 +133,8 @@ var _ = Describe("coach codesignal narrowing: the text line that says how to see
 
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 			Expect(string(stdout)).NotTo(ContainSubstring("coach codesignal"))
-			Expect(string(stdout)).NotTo(ContainSubstring("config.json"))
+			Expect(string(stdout)).NotTo(ContainSubstring("my\nconfig.json"), "the policy path is printed quoted, never with its raw line break")
+			Expect(string(stdout)).To(ContainSubstring(`policy: "my\nconfig.json" (pcfg_`))
 			Expect(withheldLine(string(stdout))).To(Equal("withheld: 1 signal below --min-severity medium" + withheldNote + seeAllWithoutFloor))
 		})
 	})
