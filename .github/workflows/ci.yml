@@ -281,8 +281,11 @@ jobs:
     env:
       COACH_CI_GIT_VERSION: "2.43.0"
     steps:
-      - name: install Ubuntu 24.04's git
-        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl xz-utils build-essential
+      # jq, python3 and strace are on the runner image every other leaf uses,
+      # and the hook, gitrepo and ts-project-backend specs fail rather than skip
+      # without them.
+      - name: install Ubuntu 24.04's git, and the tools the runner image has
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl xz-utils build-essential jq python3 strace
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
