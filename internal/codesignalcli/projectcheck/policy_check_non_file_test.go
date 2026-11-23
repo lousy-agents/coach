@@ -13,48 +13,68 @@ import (
 
 const nonFilePolicy = "cfg/p.json"
 
-// notAFileRow is a revision that commits the policy path as something else, and how readiness names it.
+// notAFileRow is a revision that commits the policy path as something else, how readiness names it when the policy at
+// the revision is read, and what it says of a regular file on disk at the same path.
 type notAFileRow struct {
 	commit func(t *testing.T, repo string)
 	cause  projectreadiness.PolicyCause
 	named  string
+	// warning is what the check says of a regular file on disk at the path, or gap is the gap it reports in its place.
+	warning string
+	gap     string
 }
 
 func notAFileRows() map[string]notAFileRow {
 	return map[string]notAFileRow{
-		"a symbolic link":   {func(t *testing.T, repo string) { gitfixture.CommitLink(t, repo, nonFilePolicy, "real.json") }, "committed_as_link", "symbolic link"},
-		"a directory":       {func(t *testing.T, repo string) { gitfixture.CommitFile(t, repo, nonFilePolicy+"/inner.json", "{}") }, "directory", "directory"},
-		"a submodule entry": {func(t *testing.T, repo string) { gitfixture.CommitGitlink(t, repo, nonFilePolicy) }, "in_submodule", "submodule"},
+		"a symbolic link":   {func(t *testing.T, repo string) { gitfixture.CommitLink(t, repo, nonFilePolicy, "real.json") }, "committed_as_link", "symbolic link", projectreadiness.WarnPolicyDiffersFromHead, ""},
+		"a directory":       {func(t *testing.T, repo string) { gitfixture.CommitFile(t, repo, nonFilePolicy+"/inner.json", "{}") }, "directory", "directory", projectreadiness.WarnPolicyNotCommitted, ""},
+		"a submodule entry": {func(t *testing.T, repo string) { gitfixture.CommitGitlink(t, repo, nonFilePolicy) }, "in_submodule", "submodule", "", projectreadiness.GapPolicyMissing},
 	}
 }
 
-// A policy the revision commits as a link, a directory or a submodule is not a policy to author over,
-// restore or call missing: readiness says what the entry is and offers nothing, for a discovered policy
-// and for one the user named whose working tree holds a regular file at the path.
-func TestReadinessNamesAPolicyCommittedAsSomethingOtherThanAFile(t *testing.T) {
+// The policy the revision commits as a link, a directory or a submodule is not a policy to author over, restore or call
+// missing: reading it at the revision says what the entry is and offers nothing.
+func TestTheCommittedCopyOfAPolicyCommittedAsSomethingOtherThanAFileIsNamedForWhatItIs(t *testing.T) {
 	for name, row := range notAFileRows() {
-		t.Run(name+", discovered", func(t *testing.T) { requireNamedAs(t, row, false) })
-		t.Run(name+", named, with a file on disk", func(t *testing.T) { requireNamedAs(t, row, true) })
+		t.Run(name, func(t *testing.T) {
+			repo := gitfixture.Init(t)
+			gitfixture.CommitFile(t, repo, "a.txt", "x")
+			row.commit(t, repo)
+
+			got, roots, err := checkPolicy(readinessGit(), repo, "HEAD", nonFilePolicy)
+
+			requireAVerdict(t, roots, err)
+			requireAPolicyInvalidGap(t, got, row)
+		})
 	}
 }
 
-func requireNamedAs(t *testing.T, row notAFileRow, named bool) {
-	t.Helper()
-	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, "a.txt", "x")
-	row.commit(t, repo)
-	check := func(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
-		return checkPolicy(readinessGit(), dir, revision, policyPath)
-	}
-	if named {
-		writeRegularFile(t, filepath.Join(repo, nonFilePolicy))
-		check = policyCheckerBy(readinessGit(), policyref.Named(nonFilePolicy))
-	}
+// A regular file on disk is the policy whatever the revision commits at its path, and the result says how the two
+// differ. A submodule is the exception: the superproject can never commit a file there.
+func TestARegularFileOnDiskWherePolicyIsCommittedAsSomethingOtherThanAFileIsThePolicy(t *testing.T) {
+	for name, row := range notAFileRows() {
+		t.Run(name, func(t *testing.T) {
+			repo := gitfixture.Init(t)
+			gitfixture.CommitFile(t, repo, "a.txt", "x")
+			row.commit(t, repo)
+			writeRegularFile(t, filepath.Join(repo, nonFilePolicy))
 
-	got, roots, err := check(repo, "HEAD", nonFilePolicy)
+			judgment, err := judgePolicy(readinessGit(), repo, "HEAD", policyref.Named(nonFilePolicy))
 
-	requireAVerdict(t, roots, err)
-	requireAPolicyInvalidGap(t, got, row)
+			if err != nil {
+				t.Fatalf("judgePolicy: %v", err)
+			}
+			if row.gap != "" {
+				if judgment.check.Code != row.gap || judgment.check.PolicyCause != row.cause {
+					t.Errorf("check = %+v; want %s with the cause %q", judgment.check, row.gap, row.cause)
+				}
+				return
+			}
+			if judgment.check.State != projectreadiness.Pass || len(judgment.warnings) != 1 || judgment.warnings[0].Code != row.warning {
+				t.Errorf("check = %+v, warnings %+v; want a pass that says %q", judgment.check, judgment.warnings, row.warning)
+			}
+		})
+	}
 }
 
 func requireAVerdict(t *testing.T, roots []string, err error) {

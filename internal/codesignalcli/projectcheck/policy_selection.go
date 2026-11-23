@@ -8,13 +8,6 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// ResolvePolicyPath is the policy document Run checks: the path of a policy the
-// user named, and otherwise the path Discover and policyFromSelection select.
-func ResolvePolicyPath(dir, revision string, policy policyref.Ref) (string, error) {
-	path, _, err := resolveCheckPolicy(dir, revision, policy)
-	return path, err
-}
-
 func resolveCheckPolicy(dir, revision string, policy policyref.Ref) (string, []projectreadiness.Warning, error) {
 	if policy.JudgedOnDisk() {
 		return policy.Path, nil, nil
@@ -31,7 +24,7 @@ func policyFromSelection(selection projectconfig.Selection) (string, []projectre
 	case selection.Fatal != nil && !canonicalRecheckedByReadiness(selection.Fatal):
 		return "", nil, selection.Fatal
 	case selection.Deprecated:
-		return selection.Path, []projectreadiness.Warning{{Code: "project_config_deprecated"}}, nil
+		return selection.Path, []projectreadiness.Warning{{Code: projectreadiness.WarnProjectConfigDeprecated}}, nil
 	case selection.Path != "":
 		return selection.Path, nil, nil
 	default:
@@ -56,4 +49,11 @@ func canonicalRecheckedByReadiness(err error) bool {
 	default:
 		return false
 	}
+}
+
+// PolicyRoots is the roots of the policy Run checks, read from the working tree as Run reads it, and none for a policy
+// that is not usable.
+func PolicyRoots(dir, revision string, policy policyref.Ref) ([]string, error) {
+	judgment, err := judgePolicy(readinessGit(), dir, revision, policy)
+	return judgment.roots, err
 }

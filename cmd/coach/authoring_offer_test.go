@@ -89,8 +89,7 @@ func namedPolicyFlags(path string) codesignalFlags {
 // Authoring creates files and refuses a target that exists. For a path with nothing at it the line is the authoring
 // command that works. For a TypeScript document that exists and cannot be used there is no command and no session, because
 // the only session it could name ends by saving a replacement over the user's file; the line says in words to fix the
-// policy, or to move it aside and commit the move and then run guided policy authoring. That sentence is the one
-// --prepare-compiler prints, from one source.
+// file. That sentence is the one --prepare-compiler prints, from one source.
 func TestTypeScriptSaysInWordsHowToGetPastADocumentThatExistsAndNamesTheAuthoringCommandForOneThatDoesNot(t *testing.T) {
 	invalid := configError(projectconfig.KindInvalid, projectreadiness.RemedyAuthor)
 	missing := configError(projectconfig.KindMissing, projectreadiness.RemedyAuthor)
@@ -100,7 +99,7 @@ func TestTypeScriptSaysInWordsHowToGetPastADocumentThatExistsAndNamesTheAuthorin
 	discovered := authoringRemediation(invalid, policyref.Ref{}, "typescript", false, "")
 	create := authoringRemediation(missing, policyref.Named("pol.json"), "typescript", false, "")
 
-	const want = "coach codesignal: the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one."
+	const want = "coach codesignal: the policy on disk cannot be used: fix the file."
 	for name, got := range map[string]string{"an invalid named policy": replace, "the same on a terminal": onATerminal, "an invalid discovered policy": discovered} {
 		if got != want {
 			t.Errorf("remediation for %s = %q; want %q", name, got, want)

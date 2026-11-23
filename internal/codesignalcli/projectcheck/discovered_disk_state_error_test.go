@@ -3,13 +3,13 @@ package projectcheck
 import (
 	"testing"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 )
 
-// The disk state of a discovered policy is asked of the repository root first. A policy whose root git cannot find
-// is not a policy with nothing on disk. This fake answers every other question as "nothing there", so dropping
-// the failure would end in a gap that offers a new policy, and only the failure itself can stop the check.
-func TestADiscoveredPolicyWhoseRepositoryRootCannotBeFoundStopsTheCheckAndIsNotCalledMissing(t *testing.T) {
+// The working tree of a policy is asked of the repository root first. A policy whose root git cannot find is not a
+// policy with nothing on disk. This fake answers every other question as "nothing there", so dropping the failure would
+// end in a gap that offers a new policy, and only the failure itself can stop the check.
+func TestAPolicyWhoseRepositoryRootCannotBeFoundStopsTheCheckAndIsNotCalledMissing(t *testing.T) {
 	run := func(_ string, args ...string) ([]byte, error) {
 		switch args[0] {
 		case "rev-parse":
@@ -19,11 +19,13 @@ func TestADiscoveredPolicyWhoseRepositoryRootCannotBeFoundStopsTheCheckAndIsNotC
 		}
 		return nil, nil
 	}
-	missing := projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing, Remedy: projectreadiness.RemedyAuthor}
+	for name, policy := range map[string]policyref.Ref{"discovered": policyref.Discovered(""), "named": policyref.Named("cfg/p.json")} {
+		t.Run(name, func(t *testing.T) {
+			judgment, err := judgePolicy(run, t.TempDir(), "HEAD", policy)
 
-	check, _, err := gapForDiscoveredPolicyOnDisk(run, t.TempDir(), "HEAD", ".lousy-agents/coach.json", missing)
-
-	if err == nil {
-		t.Errorf("gapForDiscoveredPolicyOnDisk = %+v, nil; want the failure to find the repository root", check)
+			if err == nil {
+				t.Errorf("judgePolicy = %+v, nil; want the failure to find the repository root", judgment.check)
+			}
+		})
 	}
 }

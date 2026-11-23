@@ -56,6 +56,10 @@ func runCodesignal(args []string, stdout, stderr *os.File, ports scanPorts) int 
 		return 1
 	}
 
+	if exitCode, refused := refuseForeignGitDirectory(dir, stderr); refused {
+		return exitCode
+	}
+
 	if parsed.suggestProjectConfig {
 		if parsed.projectLanguage == "typescript" {
 			return runAuthorProjectConfigTypeScript(dir, parsed, stdout, stderr, ports)
@@ -69,10 +73,6 @@ func runCodesignal(args []string, stdout, stderr *os.File, ports scanPorts) int 
 
 	if parsed.checkProject {
 		return runCheckProject(dir, parsed, stdout, stderr)
-	}
-
-	if exitCode, refused := refuseForeignGitDirectory(dir, stderr); refused {
-		return exitCode
 	}
 
 	if rejectWorktreeOutsideRepositoryRoot(dir, args, parsed, stderr) {

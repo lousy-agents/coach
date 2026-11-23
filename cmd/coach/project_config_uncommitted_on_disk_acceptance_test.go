@@ -35,10 +35,11 @@ var _ = Describe("coach codesignal: an explicit policy that is on disk but not c
 		Expect(string(stderr)).NotTo(ContainSubstring(suggestCommand), "stderr:\n%s", stderr)
 	})
 
-	It("names neither author_policy nor restore_policy as the next action of --check-project", func() {
+	It("passes --check-project with no policy gap and names neither author_policy nor restore_policy", func() {
 		doc := expectCheckProject(repo, "--project-config", uncommittedPolicy)
 
-		Expect(doc.Checks.Policy.Code).To(Equal("policy_missing"))
+		Expect(doc.Checks.Policy.State).To(Equal("pass"), "gaps: %+v", doc.Gaps)
+		Expect(policyDisclosureCodes(doc)).To(ConsistOf(notCommittedWarning))
 		Expect(nextActionKinds(doc)).NotTo(ContainElement("author_policy"))
 		Expect(nextActionKinds(doc)).NotTo(ContainElement("restore_policy"))
 	})

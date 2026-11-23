@@ -6,25 +6,25 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// A policy Coach would discover that is on disk and not committed is not a gap a new policy fixes: authoring
-// refuses a target that exists, and the scan says the file was not read because it is not committed. The check
-// says the same and names the same way out as for a policy named with --project-config: commit it.
-func TestADiscoveredPolicyOnDiskThatIsNotCommittedIsNotAGapANewPolicyFixes(t *testing.T) {
+// A policy Coach would discover that is on disk and not committed is the policy: the check passes it with the roots of
+// the file, and says that the revision holds nothing for it.
+func TestADiscoveredPolicyOnDiskThatIsNotCommittedPassesAndSaysSo(t *testing.T) {
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
-	writeWorktreeFile(t, repo, projectconfig.CanonicalPath, `{"mine":true}`)
+	writeWorktreeFile(t, repo, projectconfig.CanonicalPath, `{"schema_version":"1","roots":["src"]}`)
 
-	check, _, err := checkDiscoveredPolicy(readinessGit(), repo, "HEAD", projectconfig.CanonicalPath)
+	judgment, err := judgePolicy(readinessGit(), repo, "HEAD", policyref.Discovered(""))
 
-	if err != nil || check.Code != projectreadiness.GapPolicyMissing {
-		t.Fatalf("checkDiscoveredPolicy = %+v, %v; want a policy_missing gap", check, err)
+	if err != nil || judgment.check.State != projectreadiness.Pass || len(judgment.roots) != 1 || judgment.roots[0] != "src" {
+		t.Fatalf("judgePolicy = %+v, roots %v, %v; want a pass with the roots of the file on disk", judgment.check, judgment.roots, err)
 	}
-	if check.Remedy != projectreadiness.RemedyNone || check.PolicyCause != projectreadiness.CauseNotCommitted {
-		t.Errorf("remedy %d, cause %q; want no remedy and the cause %q", check.Remedy, check.PolicyCause, projectreadiness.CauseNotCommitted)
+	if len(judgment.warnings) != 1 || judgment.warnings[0].Code != projectreadiness.WarnPolicyNotCommitted {
+		t.Errorf("warnings = %+v; want %q", judgment.warnings, projectreadiness.WarnPolicyNotCommitted)
 	}
 }
 
@@ -32,10 +32,11 @@ func TestADiscoveredPolicyWithNothingOnDiskIsStillAGapANewPolicyFixes(t *testing
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
 
-	check, _, err := checkDiscoveredPolicy(readinessGit(), repo, "HEAD", projectconfig.CanonicalPath)
+	judgment, err := judgePolicy(readinessGit(), repo, "HEAD", policyref.Discovered(""))
 
+	check := judgment.check
 	if err != nil || check.Code != projectreadiness.GapPolicyMissing || check.Remedy != projectreadiness.RemedyAuthor || check.PolicyCause != "" {
-		t.Errorf("checkDiscoveredPolicy = %+v, %v; want a policy_missing gap that offers a new policy and names no cause", check, err)
+		t.Errorf("judgePolicy = %+v, %v; want a policy_missing gap that offers a new policy and names no cause", check, err)
 	}
 }
 
@@ -45,10 +46,11 @@ func TestADiscoveredPolicyUnderAFileOnDiskNamesTheFileInTheWay(t *testing.T) {
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
 	writeWorktreeFile(t, repo, ".lousy-agents", "a file in the way")
 
-	check, _, err := checkDiscoveredPolicy(readinessGit(), repo, "HEAD", projectconfig.CanonicalPath)
+	judgment, err := judgePolicy(readinessGit(), repo, "HEAD", policyref.Discovered(""))
 
+	check := judgment.check
 	if err != nil || check.Remedy != projectreadiness.RemedyNone || check.PolicyCause != projectreadiness.CauseParentNotDirectory {
-		t.Errorf("checkDiscoveredPolicy = %+v, %v; want no remedy and the cause %q", check, err, projectreadiness.CauseParentNotDirectory)
+		t.Errorf("judgePolicy = %+v, %v; want no remedy and the cause %q", check, err, projectreadiness.CauseParentNotDirectory)
 	}
 }
 
@@ -58,10 +60,10 @@ func TestADiscoveredPolicyWhoseDiskStateCannotBeReadStopsTheCheck(t *testing.T) 
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
 	run := questionsWhereOnly(t, theRepositoryRootLookup)
 
-	check, _, err := gapForDiscoveredPolicyOnDisk(run, repo, "HEAD", projectconfig.CanonicalPath, projectreadiness.Check{Code: projectreadiness.GapPolicyMissing})
+	judgment, err := judgePolicy(run, repo, "HEAD", policyref.Discovered(""))
 
 	if err == nil {
-		t.Errorf("gapForDiscoveredPolicyOnDisk = %+v, nil; want the failed question returned", check)
+		t.Errorf("judgePolicy = %+v, nil; want the failed question returned", judgment.check)
 	}
 }
 

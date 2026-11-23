@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 )
 
 var errListingUnreadable = errors.New("git cannot list the tree")
@@ -24,15 +26,16 @@ func holdsNoBlobAndCannotListTheTree(_ string, args ...string) ([]byte, error) {
 // another case. When git cannot say, that is an operational error that names the question, as it is for every
 // other question git could not answer, and not a gap that offers a new policy over a file that may be there.
 func TestADiscoveredPolicyIsNotCalledMissingWhenGitCannotSayWhetherTheRevisionHoldsItInAnotherCase(t *testing.T) {
-	run := holdsNoBlobAndCannotListTheTree
+	repo := gitfixture.Init(t)
+	gitfixture.CommitFile(t, repo, "a.txt", "x")
 
-	check, roots, err := checkDiscoveredPolicy(run, "repo", "HEAD", ".lousy-agents/coach.json")
+	judgment, err := judgeAbsentPolicy(holdsNoBlobAndCannotListTheTree, repo, "HEAD", policyref.Discovered(""))
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) || !errors.Is(operational.Cause, errListingUnreadable) {
-		t.Fatalf("checkDiscoveredPolicy = %+v, %v, %v; want an operational error that keeps git's own error", check, roots, err)
+		t.Fatalf("judgeAbsentPolicy = %+v, %v; want an operational error that keeps git's own error", judgment.check, err)
 	}
-	for _, want := range []string{"coach codesignal --check-project: ", ".lousy-agents/coach.json", "could not check whether the analyzed revision holds it in another case"} {
+	for _, want := range []string{"coach codesignal: ", ".lousy-agents/coach.json", "could not check whether the analyzed revision holds it in another case"} {
 		if !strings.Contains(operational.Message, want) {
 			t.Errorf("message %q; want it to contain %q", operational.Message, want)
 		}

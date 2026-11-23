@@ -12,26 +12,26 @@ import (
 
 // detectRelevantDirtyWorktree lists the uncommitted paths the report says it did
 // not read, via `git status`: path names only, never their content. See
-// IsRelevantDirtyPath for what counts as relevant. readFromDisk is a path the
-// checks did read from the working tree, so a change to it is never one of them.
-func detectRelevantDirtyWorktree(dir string, roots []string, policyPath, readFromDisk string) (projectreadiness.DirtyWorktree, error) {
+// IsRelevantDirtyPath for what counts as relevant. The policy's own path is never
+// one of them: the check read it from the working tree.
+func detectRelevantDirtyWorktree(dir string, roots []string, policyPath string) (projectreadiness.DirtyWorktree, error) {
 	entries, err := gitrepo.CommittedWorktreeStatus(dir)
 	if err != nil {
 		return projectreadiness.DirtyWorktree{}, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: git status failed: %s", err)}
 	}
 
-	relevant := relevantDirtyPaths(entries, roots, policyPath, readFromDisk)
+	relevant := relevantDirtyPaths(entries, roots, policyPath)
 
 	return projectreadiness.DirtyWorktree{RelevantChanges: len(relevant) > 0, Paths: relevant}, nil
 }
 
 // relevantDirtyPaths are the paths of entries the report did not read and that count as relevant, sorted.
-// A path is the policy's own when it names the same path as readFromDisk or policyPath, whichever Unicode
-// form git lists it in and the user typed it in.
-func relevantDirtyPaths(entries []gitrepo.WorktreeEntry, roots []string, policyPath, readFromDisk string) []string {
+// A path is the policy's own when it names the same path as policyPath, whichever Unicode form git lists it in and
+// the user typed it in.
+func relevantDirtyPaths(entries []gitrepo.WorktreeEntry, roots []string, policyPath string) []string {
 	relevant := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if readFromDisk != "" && gitrepo.SamePath(entry.Path, readFromDisk) {
+		if gitrepo.SamePath(entry.Path, policyPath) {
 			continue
 		}
 		if IsRelevantDirtyPath(entry.Path, roots, policyPath) {

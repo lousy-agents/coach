@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
@@ -18,11 +19,12 @@ func notARepository(t *testing.T) string {
 	return dir
 }
 
-// A named policy is judged on disk. When git cannot find the repository the
+// A policy is judged on disk. When git cannot find the repository the
 // working tree cannot be checked at all, so the check must fail instead of
-// passing the committed copy of a file nobody looked at.
-func TestCheckExplicitPolicyFailsClosedWhenGitCannotFindTheRepository(t *testing.T) {
-	check, roots, err := checkExplicitPolicy(readinessGit(), notARepository(t), "HEAD", "p.json")
+// passing a file nobody looked at.
+func TestJudgePolicyFailsClosedWhenGitCannotFindTheRepository(t *testing.T) {
+	judgment, err := judgePolicy(readinessGit(), notARepository(t), "HEAD", policyref.Named("p.json"))
+	check, roots := judgment.check, judgment.roots
 
 	if err == nil {
 		t.Fatalf("got no error and the check %+v; the policy would pass without the working tree ever being checked", check)

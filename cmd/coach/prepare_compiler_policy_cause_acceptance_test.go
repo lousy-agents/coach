@@ -35,13 +35,12 @@ var _ = Describe("coach codesignal --prepare-compiler refusing behind a policy t
 			stderr, err := os.ReadFile(stderrFile.Name())
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(stderr)).To(ContainSubstring(wantCause), "stderr:\n%s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("a reviewed, committed policy is required before compiler setup"), "stderr:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("a project policy that passes --check-project is required before compiler setup"), "stderr:\n%s", stderr)
 			Expect(string(stderr)).To(ContainSubstring("a new policy cannot fix it"), "stderr:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("move it aside"), "a policy with work in it is not moved aside:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("--staged --worktree"), "the committed copy would overwrite the index:\n%s", stderr)
+			Expect(string(stderr)).NotTo(MatchRegexp(droppedPolicyCauseWords), "stderr:\n%s", stderr)
 		},
-		Entry("the policy exists on disk but is not committed", func(repo string) {
-			writeWorktreeFile(repo, policy, singleRootPolicyJSON)
-		}, "commit the file so it is readable at the analyzed revision"),
 		Entry("the policy is committed, its skip-worktree bit was set by hand, and the file was removed", func(repo string) {
 			commitFile(repo, policy, singleRootPolicyJSON)
 			gitIn(repo, "update-index", "--skip-worktree", policy)
@@ -52,17 +51,6 @@ var _ = Describe("coach codesignal --prepare-compiler refusing behind a policy t
 			writeWorktreeFile(repo, policy, `{"schema_version":"1","roots":["other"]}`+"\n")
 			gitIn(repo, "add", policy)
 			Expect(os.Remove(filepath.Join(repo, policy))).To(Succeed())
-		}, "staged edit"),
-		// The refusal for a committed document that is not valid says to move it aside and write a new one, but only where a new policy
-		// fixes it. Where the file holds work, the remedy is none, and the refusal must say a new policy would not help.
-		Entry("the committed document is not valid and a fix is on disk, not committed", func(repo string) {
-			commitFile(repo, policy, invalidPolicy)
-			writeWorktreeFile(repo, policy, validPolicyWithLayers)
-		}, "differs from the committed"),
-		Entry("the committed document is not valid and a fix is staged", func(repo string) {
-			commitFile(repo, policy, invalidPolicy)
-			writeWorktreeFile(repo, policy, validPolicyWithLayers)
-			gitIn(repo, "add", policy)
 		}, "staged edit"),
 	)
 })

@@ -40,7 +40,7 @@ var _ = Describe("coach codesignal: a locked index, and a policy inside a submod
 		Expect(stderr).To(ContainSubstring("index is locked"))
 	})
 
-	It("names no restore_policy next action for --check-project while the index is locked", func() {
+	It("names no restore_policy next action and the cause undetermined for --check-project while the index is locked", func() {
 		repo := commitScannableGoRepo()
 		commitThenDelete(repo, explicitPolicyPath)
 		lockIndex(repo)
@@ -49,6 +49,7 @@ var _ = Describe("coach codesignal: a locked index, and a policy inside a submod
 
 		Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 		Expect(string(stdout)).NotTo(ContainSubstring(`"kind":"restore_policy"`))
+		Expect(string(stdout)).To(ContainSubstring(`"cause":"undetermined"`))
 	})
 
 	It("tells a policy that exists inside a submodule checkout that it is inside the submodule, not to commit it", func() {

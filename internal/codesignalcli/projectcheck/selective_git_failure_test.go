@@ -10,7 +10,6 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -129,10 +128,10 @@ func TestTheRevisionThatCannotBeVerifiedStopsTheDiscoveredPolicyCheck(t *testing
 func TestARepositoryRootThatCannotBeFoundStopsTheNamedPolicyCheck(t *testing.T) {
 	run := questionsWhereOnly(t, theRepositoryRootLookup)
 
-	check, _, err := checkExplicitPolicy(run, gitfixture.Init(t), "HEAD", "cfg/p.json")
+	judgment, err := judgePolicy(run, gitfixture.Init(t), "HEAD", policyref.Named("cfg/p.json"))
 
 	if !errors.Is(err, errNoAnswer) {
-		t.Errorf("check = %+v, error %v; want the failed root lookup returned as it is", check, err)
+		t.Errorf("check = %+v, error %v; want the failed root lookup returned as it is", judgment.check, err)
 	}
 }
 
@@ -150,11 +149,9 @@ func TestACommittedPolicyThatCannotBeLookedUpStopsTheRelevanceOfTheDirtyWorktree
 		"cat-file -e " + manifestBlob:                               {},
 		"ls-tree -z --full-tree HEAD -- :(top,literal)cfg/p.json":   {err: errNoAnswer},
 	})
-	refused := func(string, string, string) (projectreadiness.Check, []string, error) {
-		return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyInvalid}, nil, nil
-	}
+	refused := policyJudgment{path: "cfg/p.json", check: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyInvalid}}
 
-	result, err := evaluate(run, tstoolchain.LocateMiseTypescriptInstall, repo, "HEAD", policyref.Named("cfg/p.json"), refused)
+	result, err := evaluate(run, tstoolchain.LocateMiseTypescriptInstall, repo, "HEAD", refused)
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) {
@@ -172,21 +169,5 @@ func TestADiscoveredPolicyCannotBeSelectedOutsideARepository(t *testing.T) {
 
 	if err == nil {
 		t.Errorf("resolveCheckPolicy = %q, %v, nil; want the failed question returned", path, warnings)
-	}
-}
-
-// RunAfterPolicyError reports the verdict the caller holds for a named policy and reads the rest of the
-// project itself. A question about the rest that git cannot answer fails the report: a clean report with
-// nothing in it is not an answer. The policy check asks git nothing here, so the one question that fails is
-// the first one after it.
-func TestANamedPolicyReportFailsWhenAQuestionAfterThePolicyCheckCannotBeAnswered(t *testing.T) {
-	run := questionsWhereOnly(t, theRevisionCheck)
-	held := &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseParentNotDirectory, FromWorkingTree: true}
-
-	result, err := runAfterPolicyErrorBy(run, gitfixture.Init(t), "HEAD", policyref.Named("cfg/p.json"), held)
-
-	var operational *gitrepo.OperationalError
-	if !errors.As(err, &operational) || result.SchemaVersion != "" {
-		t.Errorf("runAfterPolicyErrorBy = %+v, %v; want no report and the operational error", result, err)
 	}
 }

@@ -31,7 +31,7 @@ var _ = Describe("the scan's compiler-setup offer when the policy blocks it", fu
 			transcript := readStderr()
 			Expect(exitCode).To(Equal(2), "stderr: %s", transcript)
 			Expect(readStdout()).To(BeEmpty())
-			Expect(transcript).To(ContainSubstring("a reviewed, committed policy is required before compiler setup (policy_missing)"))
+			Expect(transcript).To(ContainSubstring("a project policy that passes --check-project is required before compiler setup (policy_missing)"))
 			for _, text := range want {
 				Expect(transcript).To(ContainSubstring(text), "stderr: %s", transcript)
 			}
