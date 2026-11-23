@@ -34,7 +34,7 @@ Current tools do not close this gap for a private, local workflow.
 - Linters enforce style and local rules. They do not report change lifecycle.
 - Continuous integration gates pass or fail. They do not explain structural risk.
 
-The engineer needs a private report over recent committed work. The current product reports deterministic rule results only.
+The engineer needs a private report over recent committed work. A coding agent that works for the engineer needs a report of the same kind over its own uncommitted work before it commits: agent self-review. The current product reports deterministic rule results only.
 
 Behavioral test gaps remain a real problem. This era does not claim to detect them.
 
@@ -42,7 +42,7 @@ Behavioral test gaps remain a real problem. This era does not claim to detect th
 
 The user is the project owner or a small set of engineers who scan their own Git checkout.
 
-The user runs Coach on a repository they already have on disk. The default command path does not call GitHub. The default command path does not call a model.
+The user runs Coach on a repository they already have on disk, directly or through a harness hook in a coding agent the user runs. The default command path does not call GitHub. The default command path does not call a model.
 
 This era has no manager view. This era has no team rollout. This era has no anonymous audience.
 
@@ -76,15 +76,16 @@ In scope:
 - local `coach codesignal` on a Git checkout
 - Go, TypeScript, and TSX source: committed, or uncommitted when the user passes `--worktree`; and the project policy file as it is on disk
 - file-local structural signals
-- project policy that the user writes and commits; a policy file that is only in the working tree is reported or refused, not read; file-local analysis when none is selected
+- project policy that the user writes, read from disk as ESLint and Biome read their configuration, and disclosed when it differs from the policy at `HEAD` (section 9 records what has shipped); file-local analysis when none is selected
 - consented setup for a missing TypeScript compiler when a terminal is present
 - an honest report when analysis is incomplete
+- agent self-review before commit: a coding agent runs `coach codesignal --worktree` from a harness hook (Claude Code first) to review its own uncommitted work; Coach ships the CLI behaviour and documents an example hook, not a hosted hook service
 
 Out of scope in this era:
 
 - a hosted Coach service as the default product
 - a web user interface
-- harness hooks as a supported product
+- a Coach-maintained hook package or plugin for each harness (the hook stays user-owned, with an example in the docs)
 - AWS or other cloud deployment
 - new analysis languages
 - a review-readiness verdict
@@ -404,6 +405,7 @@ Known remaining risks from the evaluation and the epic:
 - A first-party severity spread is observed on issue [#272](https://github.com/lousy-agents/coach/issues/272)'s own corpus, this repository at `19b6628`: 237 findings across 264 analyzed files, `high` 10, `medium` 168, `low` 59, all 10 `high` being `complexity.cognitive_complexity` in first-party code (the largest is `cognitive_complexity=116`), as re-run in Pass 28 with a binary built at `e431621`. The same binary reports only 4 `medium` findings on today's tree, so the spread is not observed there and that tree is not representative; `learn-go-with-tests` at `4675d96` carries its 10 `high` findings in vendored code. Whether the order is worth reading first is unjudged, because no pilot engineer's reading or acting has been observed. That belongs to the pilot-corpus precision census ([#260](https://github.com/lousy-agents/coach/issues/260), whose acceptance criterion records whether an engineer acted on, deferred, or abandoned findings), and [#277](https://github.com/lousy-agents/coach/issues/277) keeps vendored noise. [#272](https://github.com/lousy-agents/coach/issues/272) closed as the mechanism.
 - A committed scan's result depends on the project policy file on disk, as with ESLint and Biome configuration. The report says whether that file matches the one selected at `HEAD`. A local edit can change a local run's result. CI enforces the policy committed in the change under test. A change that edits the policy is reviewed like an ESLint configuration change.
 - A worktree scan is a local, pre-commit check. It is not a pull-request check.
+- Agent self-review before commit (section 5) is a bet. `--worktree` is experimental until [#720](https://github.com/lousy-agents/coach/issues/720) merges, and no example hook is documented yet.
 - `--worktree` reads the project policy from the commit. An uncommitted policy file, whether edited or untracked, is disclosed and qualifies the verdict, but it is not applied until the policy-from-disk slice lands.
 - `project_provenance.package_manager` is read from `HEAD`, even when a listed `package.json` is read from disk. Threading the overlay through the package-manager read is a follow-up ([#608](https://github.com/lousy-agents/coach/issues/608)).
 - Under `--worktree`, the in-process line diff can mark a different line as changed than git does on repetitive text, about 7% on a repetitive corpus. `changed` is a field on each signal, and the diff may mark a neighbouring signal `changed` when a function is inserted between two others. It over-marks only, and never under-marks, apart from line-ending-only changes ([#611](https://github.com/lousy-agents/coach/issues/611)).
@@ -420,7 +422,7 @@ Parked on purpose:
 - Review-readiness digest with a readiness verdict. The verdict had no defensible decision rule.
 - Behavioral test-gap detection as a primary claim.
 - Model judgment, rubric scoring, and provenance split on a hosted path.
-- Harness hooks and a web user interface.
+- A web user interface.
 - Cycle detection between modules. Coach has no cycle rule. A cycle between two layers can be expressed as forbidden pairs in both directions, but a cycle inside one layer cannot. Revisit when the owner scopes a cycle rule.
 
 If a later path adds model judgments, each finding must stay tagged as deterministic or agent. Agent output must not hide a deterministic finding. A schema failure on the agent path must still return the deterministic report. That contract is not a requirement of the default CLI path.
@@ -442,7 +444,7 @@ Owner decision, 26 September 2026: the living evaluation's restamp against `HEAD
 
 Leave pilot only when all of these statements are true:
 
-- A new evaluation restamp against current `HEAD` agrees that a named audience can be told an honest job.
+- A new evaluation restamp against current `HEAD` agrees that a named audience can be told an honest job. The jobs it judges are a private report over recent committed work, and agent self-review before commit (section 5). Until the evaluation carries a claim for agent self-review, that job is not judged.
 - A first-time user can follow the published README and obtain either a report or a clear next action. The user does not receive a false all-clear.
 - A user who did not write Coach runs a second scan without a prompt from the owner.
 - Security-category claims have a recorded precision review on a named corpus. The review includes true positives, false positives, and known misses.
