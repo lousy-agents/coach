@@ -56,6 +56,10 @@ type ScanConfig struct {
 	// consume this budget (judgment uses a fresh loop).
 	JudgmentMaxWallTime time.Duration
 
+	// JudgmentClock, if set, is the clock the judgment wall budget is measured
+	// on; otherwise real time.
+	JudgmentClock agentloop.Clock
+
 	// MaxHiddenMutationJudgments caps how many hidden_input_mutation signals
 	// receive model judgment per baseline job.
 	// Zero means DefaultMaxHiddenMutationJudgments (16). Negative means unlimited.
