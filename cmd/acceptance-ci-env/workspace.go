@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 )
 
 // workspace is where and as whom the tests run. As a non-root user the tests
@@ -34,76 +34,52 @@ func prepareWorkspace(gitPath string) (space workspace, err error) {
 			space.cleanup()
 		}
 	}()
-	overrides, err := isolatedGitAndHome(runDir)
+	isolation, err := isolatedGitAndHome(runDir)
 	if err != nil {
 		return workspace{}, err
 	}
-	overrides["PATH"] = filepath.Dir(gitPath) + string(filepath.ListSeparator) + os.Getenv("PATH")
-	if space.uid == 0 {
-		err = space.dropToNobody(base, runDir, gitPath, overrides)
-	} else {
-		space.repo, err = os.Getwd()
-		if err == nil {
-			err = keepCallersGoCaches(overrides)
-		}
-	}
+	run, err := runAs(space.uid, base, runDir, gitPath)
 	if err != nil {
 		return workspace{}, err
 	}
+	space.repo, space.uid, space.wrap = run.repo, run.uid, run.wrap
+	overrides := maps.Clone(isolation)
+	maps.Copy(overrides, run.env)
 	space.env = withOverrides(withoutInheritedGitConfig(os.Environ()), overrides)
 	return space, nil
 }
 
-// isolatedGitAndHome makes the empty HOME, the empty user-level git config and
-// the temporary directory the tests run with, all inside runDir.
-func isolatedGitAndHome(runDir string) (map[string]string, error) {
-	dirs := map[string]string{"HOME": "home", "XDG_CONFIG_HOME": "xdg", "TMPDIR": "tmp"}
-	overrides := map[string]string{}
-	for name, dir := range dirs {
-		path := filepath.Join(runDir, dir)
-		if err := os.MkdirAll(path, 0o755); err != nil {
-			return nil, err
-		}
-		overrides[name] = path
+// runAs is the run of a non-root caller, in place, or of a root caller, as
+// nobody over copies.
+func runAs(uid int, base, runDir, gitPath string) (preparedRun, error) {
+	if uid == 0 {
+		return nobodysRun(base, runDir, gitPath)
 	}
-	emptyConfig := filepath.Join(runDir, "gitconfig")
-	if err := os.WriteFile(emptyConfig, nil, 0o644); err != nil {
-		return nil, err
-	}
-	overrides["GIT_CONFIG_GLOBAL"] = emptyConfig
-	return overrides, nil
+	return callersRun(gitPath)
 }
 
-// dropToNobody prepares a root run: the repository, the unreadable toolchain
-// directories on PATH and the module cache are copied where `nobody` can read
-// them, and the tests are wrapped in setpriv.
-func (w *workspace) dropToNobody(base, runDir, gitPath string, overrides map[string]string) error {
-	uid, gid, err := nobody()
+// preparedRun is what one kind of run contributes: where the tests run, as
+// whom, and the environment it sets.
+type preparedRun struct {
+	repo string
+	uid  int
+	wrap []string
+	env  map[string]string
+}
+
+// callersRun runs the tests in place as the caller, with the checked git
+// first on PATH and the caller's Go caches named outside the empty HOME.
+func callersRun(gitPath string) (preparedRun, error) {
+	repo, err := os.Getwd()
 	if err != nil {
-		return err
+		return preparedRun{}, err
 	}
-	setpriv, err := exec.LookPath("setpriv")
+	env, err := callersGoCaches()
 	if err != nil {
-		return fmt.Errorf("running as root needs setpriv to run the tests as nobody, and none is on PATH")
+		return preparedRun{}, err
 	}
-	w.repo = filepath.Join(runDir, "repo")
-	if err := copyRepository(w.repo); err != nil {
-		return err
-	}
-	path, err := reachablePath(base, os.Getenv("PATH"), filepath.Dir(gitPath), gid)
-	if err != nil {
-		return err
-	}
-	overrides["PATH"] = path
-	if err := useNobodysGoCaches(base, overrides, uid, gid); err != nil {
-		return err
-	}
-	if err := chownTree(runDir, uid, gid); err != nil {
-		return err
-	}
-	w.uid = uid
-	w.wrap = []string{setpriv, "--reuid=" + strconv.Itoa(uid), "--regid=" + strconv.Itoa(gid), "--clear-groups", "--"}
-	return nil
+	env["PATH"] = filepath.Dir(gitPath) + string(filepath.ListSeparator) + os.Getenv("PATH")
+	return preparedRun{repo: repo, uid: os.Geteuid(), env: env}, nil
 }
 
 func (w workspace) goTest(args []string, stdout, stderr io.Writer) int {
