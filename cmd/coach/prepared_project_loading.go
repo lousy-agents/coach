@@ -26,31 +26,22 @@ func loadPreparedProject(dir, revision string, source policyref.Ref, language st
 		disk:             disk(),
 		holdsConvertedAt: func(path string) bool { return projectconfig.HoldsCommittedPolicyConverted(dir, revision, path) },
 	})
-	if !committed.present() {
-		return prepareDiskOnlyProject(choice, source, language, diags, ports)
+	if choice.scope.Path == "" {
+		return preparedProject{diagnostics: append(diags, withoutPathsAlreadyUnusable(choice.diagnostics, diags)...)}, nil
 	}
-	backend, unavailable, err := selectProjectBackend(ports, language)
-	if err != nil {
-		return preparedProject{}, err
-	}
-	if backend == nil {
-		return preparedProject{diagnostics: appendDiagnostic(diags, backendUnavailableDiagnostic(committed.path, unavailable))}, nil
-	}
-	return analysisOf(choice, source, language, backend, diags), nil
+	return prepareAnalysis(choice, source, language, diags, ports)
 }
 
-// prepareDiskOnlyProject is the case where nothing is committed, so that no policy at all is a scan that never asks
-// for a backend.
-func prepareDiskOnlyProject(choice policyChoice, source policyref.Ref, language string, diags []codesignal.Diagnostic, ports scanPorts) (preparedProject, error) {
-	if choice.scope.Path == "" {
-		return preparedProject{diagnostics: append(diags, choice.diagnostics...)}, nil
-	}
+// prepareAnalysis is the scan of the policy the choice names; a scan with no backend for the language reports why, and
+// still discloses that policy.
+func prepareAnalysis(choice policyChoice, source policyref.Ref, language string, diags []codesignal.Diagnostic, ports scanPorts) (preparedProject, error) {
 	backend, unavailable, err := selectProjectBackend(ports, language)
 	if err != nil {
 		return preparedProject{}, err
 	}
 	if backend == nil {
-		return preparedProject{diagnostics: appendDiagnostic(diags, backendUnavailableDiagnostic(choice.scope.Path, unavailable))}, nil
+		kept := append(withoutOutdatedDeprecation(diags, choice.scope.Path), choice.diagnostics...)
+		return preparedProject{diagnostics: appendDiagnostic(kept, backendUnavailableDiagnostic(choice.scope.Path, unavailable))}, nil
 	}
 	return analysisOf(choice, source, language, backend, diags), nil
 }

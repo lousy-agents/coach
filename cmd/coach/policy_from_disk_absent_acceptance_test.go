@@ -67,7 +67,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: a policy 
 			Expect(string(text)).NotTo(ContainSubstring(diskPolicyDiffersWarning))
 		})
 
-		It("characterization (passes today), #168 item 11: a policy named with --project-config that is committed and deleted on disk still exits 2 under "+mode.name, func() {
+		It("#168 item 11: a policy named with --project-config that is committed and deleted on disk still exits 2 under "+mode.name, func() {
 			repo, base := diskPolicyRepo(scopePolicyFile{customPolicyPath, goLayerPolicyConfigJSON})
 			Expect(os.Remove(filepath.Join(repo, customPolicyPath))).To(Succeed())
 			expectGitStatusContains(repo, " D "+customPolicyPath)

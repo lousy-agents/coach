@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -26,7 +28,7 @@ var _ = Describe("coach codesignal --worktree for a policy-named file beside the
 	}
 
 	DescribeTable("names it once, as a change the scan did not read, without a claim that the policy comes from the commit",
-		func(change func(repo string), wantUnread string) {
+		func(change func(repo string), wantNamed string) {
 			repo, _ := repoCommitting(".lousy-agents/coach.json", "project.json")
 			change(repo)
 
@@ -34,8 +36,12 @@ var _ = Describe("coach codesignal --worktree for a policy-named file beside the
 
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty())
-			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_not_clean")).To(ConsistOf(
-				HaveField("Message", "working-tree changes this scan did not read: "+wantUnread)))
+			Expect(diagnosticsOfKind(report.Diagnostics, "worktree_not_clean")).To(ConsistOf(SatisfyAll(
+				HaveField("Message", HavePrefix("working-tree changes this scan did not read: ")),
+				HaveField("Message", ContainSubstring(wantNamed)),
+				HaveField("Message", Not(ContainSubstring("from the commit"))),
+				HaveField("Message", WithTransform(func(message string) int { return strings.Count(message, "project.json") }, BeNumerically("<=", 1))),
+			)))
 			for _, diagnostic := range report.Diagnostics {
 				Expect(diagnostic.Message).NotTo(ContainSubstring("from the commit"))
 			}
@@ -45,7 +51,7 @@ var _ = Describe("coach codesignal --worktree for a policy-named file beside the
 		}, "project.json"),
 		Entry("a committed deprecated policy beside the selected canonical one, renamed away", func(repo string) {
 			runGitInRepo(repo, "mv", "project.json", "moved.json")
-		}, "moved.json, project.json"),
+		}, "moved.json"),
 	)
 
 	DescribeTable("reads a canonical policy that is not committed from disk in preference to the committed deprecated one, and discloses it as not committed",

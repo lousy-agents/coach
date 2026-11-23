@@ -14,7 +14,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: finding f
 		return violations[0].Fingerprint
 	}
 
-	It("characterization (passes today), #168 item 5: a clean committed policy gives the layer violation the same fingerprint in all four modes", func() {
+	It("#168 item 5: a clean committed policy gives the layer violation the same fingerprint in all four modes", func() {
 		repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, goLayerPolicyConfigJSON})
 		want := layerViolationFingerprint(scopePolicyModes[0], repo, base)
 
@@ -24,7 +24,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: finding f
 	})
 
 	for _, mode := range scopePolicyModes {
-		It("characterization (passes today), #168 item 5: rewriting the committed policy with identical bytes leaves the layer violation's fingerprint unchanged under "+mode.name, func() {
+		It("#168 item 5: rewriting the committed policy with identical bytes leaves the layer violation's fingerprint unchanged under "+mode.name, func() {
 			repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, goLayerPolicyConfigJSON})
 			before := layerViolationFingerprint(mode, repo, base)
 

@@ -41,7 +41,7 @@ type policyChoice struct {
 	diagnostics []codesignal.Diagnostic
 }
 
-// choosePolicy applies ADR-009: the policy on disk is the one used. The committed bytes stand in for it where they
+// choosePolicy applies ADR-009 (#714): the policy on disk is the one used. The committed bytes stand in for it where they
 // are the same file, so a clean or line-ending-converted checkout keeps the digest CI computes. A committed policy
 // stands in for a policy on disk that is missing or unusable until the scan refuses those states. Discovery keeps its
 // order: a committed canonical policy that is missing on disk is not replaced by the root project.json that is there.

@@ -13,8 +13,10 @@ func readDiskPolicy(dir string, source policyref.Ref, ports scanPorts) diskPolic
 	if err != nil {
 		return diskPolicy{refusal: projectconfig.ClassifyDiskPolicyError(unreadablePolicyPath(dir, namedPath, ports), err)}
 	}
-	if refusal := committedEntryRefusal(dir, source); refusal != nil {
-		return diskPolicy{refusal: refusal}
+	if selection.Path == "" || selection.Path == source.Path {
+		if refusal := committedEntryRefusal(dir, source); refusal != nil {
+			return diskPolicy{refusal: refusal}
+		}
 	}
 	if selection.Path == "" {
 		return diskPolicy{}
