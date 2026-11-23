@@ -123,29 +123,31 @@ type PolicyScope struct {
 	// MatchesHead is true when the policy selected from disk has the same path
 	// and digest as the policy selected at HEAD.
 	MatchesHead bool `json:"matches_head"`
-	// Origin and Reason only select which text variant describes the policy; they are not part of the
-	// JSON contract, so a report decoded from JSON carries the zero Origin.
-	Origin PolicyOrigin `json:"-"`
-	// Reason says why the policy on disk could not be used; it accompanies PolicyOriginDiskUnusable.
+	// Cause says why the scan used this policy; its values are part of the JSON contract. A producer always
+	// sets it, and a report from an older version that lacks it decodes to PolicyCauseUnset.
+	Cause PolicyCause `json:"cause"`
+	// Reason says why the policy on disk could not be used; it accompanies PolicyCauseUnusableOnDisk and is
+	// text-only, not part of the JSON contract.
 	Reason string `json:"-"`
 }
 
-// PolicyOrigin says how the policy a scan used relates to the one committed at HEAD.
-type PolicyOrigin string
+// PolicyCause says how the policy a scan used relates to the one committed at HEAD. It is a closed enum
+// serialized as scope.policy.cause.
+type PolicyCause string
 
 const (
-	// PolicyOriginUnknown is the zero value: the text reads MatchesHead alone.
-	PolicyOriginUnknown PolicyOrigin = ""
-	// PolicyOriginMatchesHead means the policy on disk is the committed one.
-	PolicyOriginMatchesHead PolicyOrigin = "matches_head"
-	// PolicyOriginDiffersFromHead means the scan used a policy on disk that differs from the committed one.
-	PolicyOriginDiffersFromHead PolicyOrigin = "differs_from_head"
-	// PolicyOriginNotCommitted means the scan used a policy on disk with no committed copy at HEAD.
-	PolicyOriginNotCommitted PolicyOrigin = "not_committed"
-	// PolicyOriginMissingOnDisk means the policy is committed at HEAD and absent on disk, so the scan used the committed copy.
-	PolicyOriginMissingOnDisk PolicyOrigin = "missing_on_disk"
-	// PolicyOriginDiskUnusable means the policy on disk could not be used, so the scan used the committed copy.
-	PolicyOriginDiskUnusable PolicyOrigin = "disk_unusable"
+	// PolicyCauseUnset is the zero value of a report decoded without a cause: the text reads MatchesHead alone.
+	PolicyCauseUnset PolicyCause = ""
+	// PolicyCauseSameAsHead means the policy on disk is the committed one.
+	PolicyCauseSameAsHead PolicyCause = "same_as_head"
+	// PolicyCauseDiffersFromHead means the scan used a policy on disk that differs from the committed one.
+	PolicyCauseDiffersFromHead PolicyCause = "differs_from_head"
+	// PolicyCauseNotCommitted means the scan used a policy on disk with no committed copy at HEAD.
+	PolicyCauseNotCommitted PolicyCause = "not_committed"
+	// PolicyCauseMissingOnDisk means the policy is committed at HEAD and absent on disk, so the scan used the committed copy.
+	PolicyCauseMissingOnDisk PolicyCause = "missing_on_disk"
+	// PolicyCauseUnusableOnDisk means the policy on disk could not be used, so the scan used the committed copy.
+	PolicyCauseUnusableOnDisk PolicyCause = "unusable_on_disk"
 )
 
 // WorktreeScope says what a --worktree scan read from disk and what the working

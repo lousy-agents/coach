@@ -16,24 +16,24 @@ func renderPolicyDisclosure(b *strings.Builder, report *codesignal.Report) {
 	if policy == nil {
 		return
 	}
-	origin := effectivePolicyOrigin(policy)
-	fmt.Fprintf(b, "policy: %s (%s), %s\n", terminalText(policy.Path), shortPolicyDigest(policy.Digest), policyHeadRelation(origin))
-	if warning := policyWarning(policy, origin); warning != "" {
+	cause := effectivePolicyCause(policy)
+	fmt.Fprintf(b, "policy: %s (%s), %s\n", terminalText(policy.Path), shortPolicyDigest(policy.Digest), policyHeadRelation(cause))
+	if warning := policyWarning(policy, cause); warning != "" {
 		b.WriteString(warning + "\n")
 	}
 }
 
-// effectivePolicyOrigin lets MatchesHead decide the cases it can: a report decoded from JSON carries the zero
-// Origin, and a true MatchesHead always means the committed policy.
-func effectivePolicyOrigin(policy *codesignal.PolicyScope) codesignal.PolicyOrigin {
+// effectivePolicyCause lets MatchesHead decide the cases it can: a report decoded from JSON carries the zero
+// Cause, and a true MatchesHead always means the committed policy.
+func effectivePolicyCause(policy *codesignal.PolicyScope) codesignal.PolicyCause {
 	if policy.MatchesHead {
-		return codesignal.PolicyOriginMatchesHead
+		return codesignal.PolicyCauseSameAsHead
 	}
-	switch policy.Origin {
-	case codesignal.PolicyOriginNotCommitted, codesignal.PolicyOriginMissingOnDisk, codesignal.PolicyOriginDiskUnusable:
-		return policy.Origin
+	switch policy.Cause {
+	case codesignal.PolicyCauseNotCommitted, codesignal.PolicyCauseMissingOnDisk, codesignal.PolicyCauseUnusableOnDisk:
+		return policy.Cause
 	}
-	return codesignal.PolicyOriginDiffersFromHead
+	return codesignal.PolicyCauseDiffersFromHead
 }
 
 func shortPolicyDigest(digest string) string {
@@ -44,25 +44,25 @@ func shortPolicyDigest(digest string) string {
 	return digest
 }
 
-func policyHeadRelation(origin codesignal.PolicyOrigin) string {
-	switch origin {
-	case codesignal.PolicyOriginMatchesHead:
+func policyHeadRelation(cause codesignal.PolicyCause) string {
+	switch cause {
+	case codesignal.PolicyCauseSameAsHead:
 		return "same as HEAD."
-	case codesignal.PolicyOriginNotCommitted:
+	case codesignal.PolicyCauseNotCommitted:
 		return "not committed at HEAD."
 	}
 	return "differs from HEAD."
 }
 
-func policyWarning(policy *codesignal.PolicyScope, origin codesignal.PolicyOrigin) string {
-	switch origin {
-	case codesignal.PolicyOriginDiffersFromHead:
+func policyWarning(policy *codesignal.PolicyScope, cause codesignal.PolicyCause) string {
+	switch cause {
+	case codesignal.PolicyCauseDiffersFromHead:
 		return "WARNING: the project policy on disk differs from HEAD's; this scan used the policy on disk, so its result can differ from CI, which reads the committed policy."
-	case codesignal.PolicyOriginNotCommitted:
+	case codesignal.PolicyCauseNotCommitted:
 		return fmt.Sprintf("WARNING: the project policy %s is on disk and not committed at HEAD; this scan used it.", terminalText(policy.Path))
-	case codesignal.PolicyOriginMissingOnDisk:
+	case codesignal.PolicyCauseMissingOnDisk:
 		return fmt.Sprintf("WARNING: %s is committed at HEAD and missing on disk; this scan used the committed copy.", terminalText(policy.Path))
-	case codesignal.PolicyOriginDiskUnusable:
+	case codesignal.PolicyCauseUnusableOnDisk:
 		return fmt.Sprintf("WARNING: the project policy on disk cannot be used (%s); this scan used the committed copy.", policy.Reason)
 	}
 	return ""
@@ -75,12 +75,12 @@ func policyVerdictClause(report *codesignal.Report) string {
 	if policy == nil || policy.MatchesHead {
 		return ""
 	}
-	switch effectivePolicyOrigin(policy) {
-	case codesignal.PolicyOriginNotCommitted:
+	switch effectivePolicyCause(policy) {
+	case codesignal.PolicyCauseNotCommitted:
 		return "the project policy on disk is not committed at HEAD"
-	case codesignal.PolicyOriginMissingOnDisk:
+	case codesignal.PolicyCauseMissingOnDisk:
 		return "the project policy is missing on disk and the committed copy was used"
-	case codesignal.PolicyOriginDiskUnusable:
+	case codesignal.PolicyCauseUnusableOnDisk:
 		return "the project policy on disk cannot be used and the committed copy was used"
 	}
 	return "the project policy on disk differs from HEAD"

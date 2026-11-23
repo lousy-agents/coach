@@ -13,7 +13,7 @@ func readDiskPolicy(dir string, source policyref.Ref, ports scanPorts) diskPolic
 	if err != nil {
 		return diskPolicy{refusal: projectconfig.ClassifyDiskPolicyError(unreadablePolicyPath(dir, namedPath, ports), err)}
 	}
-	if selection.Path == "" || selection.Path == source.Path {
+	if selection.Path == "" || selection.Path == source.Path || discoveryFellBackFromCanonical(selection, source) {
 		if refusal := committedEntryRefusal(dir, source); refusal != nil {
 			return diskPolicy{refusal: refusal}
 		}
@@ -25,6 +25,12 @@ func readDiskPolicy(dir string, source policyref.Ref, ports scanPorts) diskPolic
 		return diskPolicy{refusal: projectconfig.ClassifyDiskPolicyError(selection.Path, err)}
 	}
 	return diskPolicy{selection: selection}
+}
+
+// discoveryFellBackFromCanonical is true when the committed canonical policy has no regular file on disk and discovery
+// reached the root project.json instead; the entry at the canonical path decides whether that policy is missing or unusable.
+func discoveryFellBackFromCanonical(selection projectconfig.DiskSelection, source policyref.Ref) bool {
+	return selection.Path == projectconfig.DefaultPath && source.Path == projectconfig.CanonicalPath
 }
 
 // unreadablePolicyPath names the file a failed selection stopped at. SelectOnDisk reports the error and not the path,

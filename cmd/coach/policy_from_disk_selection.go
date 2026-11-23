@@ -52,33 +52,33 @@ func choosePolicy(e policyEvidence) policyChoice {
 	chosen := e.disk.selection
 	if e.committed.path == chosen.Path {
 		if projectconfig.Digest(e.committed.content) == chosen.Digest || e.holdsConvertedAt(chosen.Path) {
-			return usedPolicy(e.committed.path, e.committed.content, codesignal.PolicyOriginMatchesHead, "")
+			return usedPolicy(e.committed.path, e.committed.content, codesignal.PolicyCauseSameAsHead, "")
 		}
-		return usedPolicy(chosen.Path, chosen.Content, codesignal.PolicyOriginDiffersFromHead, "")
+		return usedPolicy(chosen.Path, chosen.Content, codesignal.PolicyCauseDiffersFromHead, "")
 	}
-	return usedPolicy(chosen.Path, chosen.Content, codesignal.PolicyOriginNotCommitted, "")
+	return usedPolicy(chosen.Path, chosen.Content, codesignal.PolicyCauseNotCommitted, "")
 }
 
 func committedOrNone(committed committedPolicy, disk diskPolicy) policyChoice {
 	switch {
 	case committed.present() && disk.refusal != nil:
-		return usedPolicy(committed.path, committed.content, codesignal.PolicyOriginDiskUnusable, disk.refusal.Reason)
+		return usedPolicy(committed.path, committed.content, codesignal.PolicyCauseUnusableOnDisk, disk.refusal.Reason)
 	case committed.present():
-		return usedPolicy(committed.path, committed.content, codesignal.PolicyOriginMissingOnDisk, "")
+		return usedPolicy(committed.path, committed.content, codesignal.PolicyCauseMissingOnDisk, "")
 	case disk.refusal != nil:
 		return policyChoice{diagnostics: []codesignal.Diagnostic{unusableOnDiskDiagnostic(disk.refusal)}}
 	}
 	return policyChoice{}
 }
 
-func usedPolicy(path string, content json.RawMessage, origin codesignal.PolicyOrigin, reason string) policyChoice {
+func usedPolicy(path string, content json.RawMessage, cause codesignal.PolicyCause, reason string) policyChoice {
 	return policyChoice{
 		content: content,
 		scope: codesignal.PolicyScope{
 			Path:        path,
 			Digest:      projectconfig.Digest(content),
-			MatchesHead: origin == codesignal.PolicyOriginMatchesHead,
-			Origin:      origin,
+			MatchesHead: cause == codesignal.PolicyCauseSameAsHead,
+			Cause:       cause,
 			Reason:      reason,
 		},
 	}
