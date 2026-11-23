@@ -86,3 +86,15 @@ var _ = Describe("a guard question that did not answer in time (#737)", func() {
 			fakeRepository{version: currentGit, promisors: promisorOrigin, mergeBase: mergeBaseSHA, probes: map[string]probeAnswer{mergeBaseSHA: {err: timedOutAt}}}, func(run Runner) Runner { return run }),
 	)
 })
+
+var _ = Describe("a partial-clone question that did not answer in time, on a git before 2.44 (#737)", func() {
+	It("#737: ends the guard there, naming it, without asking git for the objects of any revision", func() {
+		repository := fakeRepository{version: oldGit, configErr: timedOutAt}
+
+		err := RefuseMissingObjects(repository.run, "repo", "")
+
+		Expect(refusalText(err)).To(ContainSubstring("could not tell whether this repository is a partial clone"))
+		Expect(refusalText(err)).To(ContainSubstring("timed out after"))
+		Expect(repository.probed).To(BeEmpty(), "a question that ran out of time is not followed by a probe that would wait again")
+	})
+})

@@ -29,10 +29,11 @@ func prepareWorkspace(gitPath string, withJS bool) (space workspace, err error) 
 	if err != nil {
 		return workspace{}, err
 	}
-	space = workspace{home: filepath.Join(runDir, "home"), uid: os.Geteuid(), cleanup: func() { _ = os.RemoveAll(runDir) }}
+	cleanup := func() { _ = os.RemoveAll(runDir) }
+	space = workspace{home: filepath.Join(runDir, "home"), uid: os.Geteuid(), cleanup: cleanup}
 	defer func() {
 		if err != nil {
-			space.cleanup()
+			cleanup()
 		}
 	}()
 	isolation, err := isolatedGitAndHome(runDir)

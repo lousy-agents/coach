@@ -58,7 +58,7 @@ A spec can pass in an agent sandbox and fail in CI because the two differ (#733)
 | --- | --- | --- |
 | User | `runner`, not root | root |
 | HOME and user-level git config | a fresh HOME with no git identity | the user's global config, with an identity and commit signing |
-| git | floats with the runner image: 2.55.0, then 2.56.0, then 2.56.1 | 2.43.0 |
+| git | floats with the runner image: 2.55.0, then 2.56.0, then 2.56.1; the `distro-git` leg runs Ubuntu 24.04's own 2.43.0 | 2.43.0 |
 
 `mise run acceptance-ci-env` runs Go tests under CI's conditions. Pass packages
 after `--`; the default is `./...`:
@@ -89,15 +89,23 @@ It gives the tests:
   `GIT_AUTHOR_*`, `GIT_COMMITTER_*`), which CI does not set;
 - CI's PATH, the mise toolchain, with the checked git first.
 
-CI's git floats, and the task is pinned. `COACH_CI_GIT_VERSION` in the task's
-`env` in `mise.toml` is the one place the expected git version is stated; bump
-it when CI's git moves. The task prints the git it used. It takes that git from
+The runner image's git floats, and the task is pinned. `COACH_CI_GIT_VERSION` in
+the task's `env` in `mise.toml` is the one place that git's version is stated;
+bump it when the runner image's git moves. The `distro-git` leg states its own,
+2.43.0, in its job's `env` in `ci.yml`, because it runs Ubuntu 24.04's git, which
+does not move. The task prints the git it used. It takes that git from
 `COACH_CI_GIT`, or from PATH. When that git is not the pinned version, it exits
 non-zero and names both versions, and runs no test.
 `COACH_CI_GIT_ALLOW_MISMATCH=1` runs the user and HOME legs anyway, and prints
-`WARNING: the git-version leg was NOT covered`. The git-version leg has not been
-run in an agent sandbox, which cannot build CI's git, so a sandbox run uses
-`COACH_CI_GIT_ALLOW_MISMATCH=1`.
+`WARNING: the git-version leg was NOT covered`. An agent sandbox cannot build the
+runner image's git, so a sandbox run of the task uses
+`COACH_CI_GIT_ALLOW_MISMATCH=1`. A sandbox whose git is 2.43.0 can run the
+`distro-git` leg's conditions in full, with the program the task runs, because
+the task's own pin wins over the caller's:
+
+```sh
+COACH_CI_GIT_VERSION=2.43.0 mise exec -- go run ./cmd/acceptance-ci-env ./...
+```
 
 The `ts-project-backend` specs need `js/semantics/node_modules`, which CI's job
 installs with `mise run js-install` before it runs them. To run them as that
@@ -139,7 +147,7 @@ GHA is a parallel scheduler of atomic `mise run <task>` steps. The local
 `ci` / `ci-fast` / `ci-all` composites are serial bundles of the same tasks; the
 workflow does not invoke those composites.
 
-Eight independent leaf jobs plus a `status` aggregator:
+Nine independent leaf jobs plus a `status` aggregator:
 
 - `verify` — `ci-go`: gofmt / go-vet / tidy-check / acceptance-style-check /
   source-layout-check / test / test-examples. `install_args` names Go, pnpm,
@@ -163,6 +171,12 @@ Eight independent leaf jobs plus a `status` aggregator:
   running, because a mise regression that declined the override would otherwise re-run the
   Node 24 leg and stay green, leaving the supported {24,26} set half-proven.
 - `wasm-build` — `mise run wasm-build`.
+- `distro-git` — the Go tests (`./...`) through `cmd/acceptance-ci-env`, in an
+  `ubuntu:24.04` container with that release's own git 2.43, the oldest git
+  `docs/cli-codesignal.md` names. The job sets `COACH_CI_GIT_VERSION=2.43.0`, so
+  the program refuses any other git, and, run as root in the container, runs
+  the tests as `nobody` with an empty HOME. Every other leaf runs the runner
+  image's git, which floats. Allow 60 minutes.
 - `vulncheck` — `mise run vulncheck`. Symbol-level source scan, text output, so a reachable vulnerable symbol exits 3 and fails the job. `install_args` names Go and the pinned `govulncheck`; the Go module cache matches the other Go jobs. The vulnerability database is not cached. SARIF is not uploaded: that format exits 0 when findings exist, and an upload would need code-scanning write on a workflow whose grant is `contents: read`.
 - `platform-smoke` — `platform-up` / `platform-smoke` / `platform-down` as three
   steps, so teardown still runs on failure.

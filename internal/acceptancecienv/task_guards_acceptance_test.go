@@ -117,3 +117,27 @@ func otherUsersDirectory() string {
 	Expect(os.Chown(dir, 65534, 65534)).To(Succeed())
 	return dir
 }
+
+var _ = Describe("acceptance-ci-env when it cannot prepare the run (#737)", func() {
+	It("#737: exits 2 naming what failed, without a panic, when as root it cannot copy the repository for the non-root user", func() {
+		if os.Geteuid() != 0 {
+			Skip("only a root run copies the repository for the non-root user")
+		}
+		repo := repositoryCopy()
+		Expect(os.RemoveAll(filepath.Join(repo, ".git"))).To(Succeed())
+		cache, err := os.MkdirTemp("", "acceptance-ci-env-cache-*")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(os.RemoveAll, cache)
+		Expect(os.Chmod(cache, 0o755)).To(Succeed())
+
+		run := runTaskIn(repo, hostGitVersion(), []string{probePackage}, "COACH_CI_ENV_CACHE="+cache)
+
+		Expect(run.output()).NotTo(ContainSubstring("panic:"), "output:\n%s", run.output())
+		Expect(run.exitCode).To(Equal(2), "output:\n%s", run.output())
+		Expect(run.output()).To(ContainSubstring("not a git repository"))
+		Expect(run.probe).To(BeNil())
+		runs, err := filepath.Glob(filepath.Join(cache, "run-*"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(runs).To(BeEmpty(), "a run that failed must remove the directory it made")
+	})
+})
