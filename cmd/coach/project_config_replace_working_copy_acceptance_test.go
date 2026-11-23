@@ -120,25 +120,52 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid, wit
 var _ = Describe("coach codesignal --check-project: a committed policy that is invalid, with work in the file", func() {
 	const policy = "cfg/p.json"
 
-	DescribeTable("names the cause and offers no new policy, as the scan does",
-		func(work usersWork) {
+	DescribeTable("passes the valid fix that is on disk, whatever the index holds for it",
+		func(arrange func(repo, policy string)) {
 			repo := commitGoRepoWithPolicy(policy, invalidPolicy)
-			work.arrange(repo, policy)
+			arrange(repo, policy)
 
 			doc := expectCheckProject(repo, "--project-config", policy)
 
-			Expect(causeOfGap(doc, "policy_invalid")).To(Equal(work.wantCause), "gaps: %+v", doc.Gaps)
-			Expect(nextActionKinds(doc)).NotTo(ContainElement("author_policy"), "a new policy would replace the work in the file")
+			Expect(doc.Checks.Policy.State).To(Equal("pass"), "gaps: %+v", doc.Gaps)
+			Expect(policyDisclosureCodes(doc)).To(ConsistOf(differsWarning))
+			Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(policy))
 		},
-		theUsersWorkEntries(),
+		Entry("a fix on disk that is not committed", func(repo, policy string) {
+			writeWorktreeFile(repo, policy, validPolicyWithLayers)
+		}),
+		Entry("a fix on disk that is staged", func(repo, policy string) {
+			writeWorktreeFile(repo, policy, validPolicyWithLayers)
+			gitIn(repo, "add", policy)
+		}),
+		Entry("a fix on disk under a skip-worktree mark", func(repo, policy string) {
+			gitIn(repo, "update-index", "--skip-worktree", policy)
+			writeWorktreeFile(repo, policy, validPolicyWithLayers)
+		}),
+		Entry("a fix on disk under an assume-unchanged mark", func(repo, policy string) {
+			gitIn(repo, "update-index", "--assume-unchanged", policy)
+			writeWorktreeFile(repo, policy, validPolicyWithLayers)
+		}),
 	)
 
-	It("still offers a new policy where the file is the committed copy", func() {
+	It("is policy_invalid with the cause undetermined and offers no new policy for conflict markers on disk", func() {
+		repo := commitGoRepoWithPolicy(policy, invalidPolicy)
+		stageConflicting(repo, policy, 2, 3)
+		writeWorktreeFile(repo, policy, conflictedMarkers)
+
+		doc := expectCheckProject(repo, "--project-config", policy)
+
+		Expect(causeOfGap(doc, "policy_invalid")).To(Equal("undetermined"), "gaps: %+v", doc.Gaps)
+		Expect(nextActionKinds(doc)).NotTo(ContainElement("author_policy"), "a new policy would replace the work in the file")
+	})
+
+	It("offers no new policy where the file is the committed copy, because the file on disk is what is judged", func() {
 		repo := commitGoRepoWithPolicy(policy, invalidPolicy)
 
 		doc := expectCheckProject(repo, "--project-config", policy)
 
-		Expect(nextActionKinds(doc)).To(ContainElement("author_policy"))
+		Expect(doc.Checks.Policy.Code).To(Equal("policy_invalid"))
+		Expect(nextActionKinds(doc)).NotTo(ContainElement("author_policy"))
 	})
 })
 

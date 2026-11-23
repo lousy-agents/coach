@@ -103,7 +103,7 @@ var _ = Describe("coach codesignal: a committed policy with a symbolic link or a
 		Expect(causeOfGap(doc, "policy_missing")).To(Equal("in_submodule"))
 	})
 
-	It("names the cause and keeps the path in dirty_worktree in --check-project", func() {
+	It("names the cause undetermined and leaves the path out of dirty_worktree in --check-project", func() {
 		repo := newTempGitRepo()
 		commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 		commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
@@ -112,9 +112,9 @@ var _ = Describe("coach codesignal: a committed policy with a symbolic link or a
 
 		doc := expectCheckProject(repo, "--project-config", policy)
 
-		Expect(causeOfGap(doc, "policy_missing")).To(Equal("staged_not_a_file"))
-		Expect(doc.DirtyWorktree.RelevantChanges).To(BeTrue(), "the check did not read what the index holds")
-		Expect(doc.DirtyWorktree.Paths).To(ContainElement(policy))
+		Expect(causeOfGap(doc, "policy_missing")).To(Equal("undetermined"))
+		Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(policy), "the check looked for the file on disk")
+		Expect(nextActionKinds(doc)).NotTo(ContainElement("restore_policy"))
 	})
 })
 

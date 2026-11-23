@@ -10,19 +10,19 @@ import (
 // same cause and offers no new policy, because authoring refuses a target that exists. The way out is to commit
 // the file, as it is for a policy named with --project-config.
 var _ = Describe("coach codesignal --check-project: a discovered policy on disk that is not committed", func() {
-	It("names not_committed and no new policy as the way out, in JSON and in text", func() {
+	It("passes with no policy gap and no next action for the policy, and discloses that HEAD holds none", func() {
 		repo := commitScannableGoRepo()
 		writeWorktreeFile(repo, ".lousy-agents/coach.json", singleRootPolicyJSON)
 
 		doc := expectCheckProject(repo)
 		stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, pathWithoutNode(), "--baseline", "--check-project", "--project-language", "typescript")
 
-		Expect(causeOfGap(doc, "policy_missing")).To(Equal("not_committed"), "gaps: %+v", doc.Gaps)
-		for _, action := range doc.NextActions {
-			Expect(action.Kind).NotTo(Equal("author_policy"), "authoring refuses a target that exists: %+v", doc.NextActions)
-		}
+		Expect(doc.Checks.Policy.State).To(Equal("pass"), "gaps: %+v", doc.Gaps)
+		Expect(gapCodes(doc)).NotTo(ContainElement("policy_missing"))
+		Expect(nextActionKinds(doc)).NotTo(ContainElement("author_policy"))
+		Expect(policyDisclosureCodes(doc)).To(ConsistOf(notCommittedWarning))
 		Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-		Expect(string(stdout)).To(ContainSubstring("  policy_missing cause=not_committed\n"), "the text prints the same field:\n%s", stdout)
+		Expect(string(stdout)).NotTo(ContainSubstring("policy_missing"), "text:\n%s", stdout)
 	})
 
 	It("still offers a new policy where nothing is on disk", func() {

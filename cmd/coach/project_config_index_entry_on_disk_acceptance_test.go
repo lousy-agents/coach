@@ -72,25 +72,34 @@ var _ = Describe("coach codesignal: a policy that is not committed and that the 
 		Entry("an entry that holds no content (git add --intent-to-add), the file on disk", intentToAdd),
 	)
 
-	DescribeTable("--check-project names the same cause and keeps the path in dirty_worktree whenever the index holds work for it",
-		func(arrange func(repo string), onDisk bool, wantCause string, wantDirty bool) {
-			repo := arranged(typescriptRepo(), arrange, onDisk)
+	DescribeTable("--check-project passes a policy file that is on disk whatever the index holds, and leaves its path out of dirty_worktree",
+		func(arrange func(repo string)) {
+			repo := arranged(typescriptRepo(), arrange, true)
 
 			doc := expectCheckProject(repo, "--project-config", policy)
 
-			Expect(causeOfGap(doc, "policy_missing")).To(Equal(wantCause))
-			if wantDirty {
-				Expect(doc.DirtyWorktree.RelevantChanges).To(BeTrue(), "nothing read what the index holds, so the path is a change the report did not read")
-				Expect(doc.DirtyWorktree.Paths).To(ContainElement(policy))
-			} else {
-				Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(policy), "the check read the file, and the index holds no work for it")
-			}
+			Expect(doc.Checks.Policy.State).To(Equal("pass"), "gaps: %+v", doc.Gaps)
+			Expect(gapCodes(doc)).NotTo(ContainElement("policy_missing"))
+			Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(policy), "the check read the file")
 		},
-		Entry("a staged copy, the file on disk", stagedNeverCommitted, true, "not_committed", true),
-		Entry("a staged copy, the file deleted", stagedNeverCommitted, false, "staged_copy", true),
-		Entry("a conflict one side deleted, the file on disk", deletedByUs, true, "merge_conflict", true),
-		Entry("a conflict one side deleted, the file deleted", deletedByUs, false, "merge_conflict", true),
-		Entry("an entry that holds no content (git add --intent-to-add), the file on disk: the check read the file and the index holds nothing", intentToAdd, true, "not_committed", false),
+		Entry("a staged copy, the file on disk", stagedNeverCommitted),
+		Entry("a conflict one side deleted, the file on disk", deletedByUs),
+		Entry("an entry that holds no content (git add --intent-to-add), the file on disk", intentToAdd),
+	)
+
+	DescribeTable("--check-project names no cause the index decided for a policy file that is deleted, and no restore from HEAD",
+		func(arrange func(repo string)) {
+			repo := arranged(typescriptRepo(), arrange, false)
+
+			doc := expectCheckProject(repo, "--project-config", policy)
+
+			Expect(causeOfGap(doc, "policy_missing")).To(Equal("undetermined"))
+			Expect(nextActionKinds(doc)).NotTo(ContainElement("restore_policy"))
+			Expect(nextActionKinds(doc)).NotTo(ContainElement("author_policy"))
+			Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(policy), "the check looked for the file on disk")
+		},
+		Entry("a staged copy, the file deleted", stagedNeverCommitted),
+		Entry("a conflict one side deleted, the file deleted", deletedByUs),
 	)
 })
 

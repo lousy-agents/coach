@@ -36,9 +36,9 @@ func recordAConflictForTheCanonicalPolicy(repo string) {
 
 func indexHeldEntries() []TableEntry {
 	return []TableEntry{
-		Entry("a copy staged and deleted from disk", indexHeld{stageTheCanonicalPolicyThenDeleteIt, "staged_copy"}),
-		Entry("a policy committed, removed, staged again and deleted from disk", indexHeld{commitRemoveAndStageTheCanonicalPolicyAgain, "staged_copy"}),
-		Entry("a conflict recorded for it", indexHeld{recordAConflictForTheCanonicalPolicy, "merge_conflict"}),
+		Entry("a copy staged and deleted from disk", indexHeld{stageTheCanonicalPolicyThenDeleteIt, "undetermined"}),
+		Entry("a policy committed, removed, staged again and deleted from disk", indexHeld{commitRemoveAndStageTheCanonicalPolicyAgain, "undetermined"}),
+		Entry("a conflict recorded for it", indexHeld{recordAConflictForTheCanonicalPolicy, "undetermined"}),
 	}
 }
 

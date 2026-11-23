@@ -85,10 +85,11 @@ var _ = Describe("coach codesignal: what the message says about a policy the ind
 			Expect(gitIn(repo, "status", "--porcelain", "--", staged)).To(HavePrefix("A"), "the staged add is untouched")
 		})
 
-		It("names neither author_policy nor restore_policy in --check-project", func() {
+		It("names neither author_policy nor restore_policy in --check-project, and the cause undetermined", func() {
 			doc := expectCheckProject(repo, "--project-config", staged)
 
 			Expect(doc.Checks.Policy.Code).To(Equal("policy_missing"))
+			Expect(causeOfGap(doc, "policy_missing")).To(Equal("undetermined"))
 			Expect(nextActionKinds(doc)).NotTo(ContainElement("author_policy"))
 		})
 	})

@@ -27,10 +27,11 @@ type causeRow struct {
 }
 
 // unreachableCauses are the declared words that no input can make the CLI print, and why.
-var unreachableCauses = map[string]string{
-	"git_unreadable": "a git question that cannot be answered is an operational error (exit 1, no readiness result), so no gap carries it; only a read that trips the time or stderr bound produces it, and that needs git to stall for 30 s. The mapping is covered by unit tests.",
-	"undetermined":   "the word for a verdict no offer knows; no state produces such a verdict, and the unit tests pin the default arm.",
-}
+var unreachableCauses = map[string]string{}
+
+// droppedPolicyCauses are the words the check no longer emits: the policy is judged from the file on disk, so what the
+// index and HEAD hold at its path is disclosed as a warning and decides no gap.
+var droppedPolicyCauses = []string{"not_committed", "staged_edit", "changed_on_disk", "staged_copy", "staged_not_a_file", "merge_conflict", "committed_as_link", "index_locked", "git_unreadable"}
 
 func removeTree(repo, name string) {
 	ExpectWithOffset(1, os.RemoveAll(filepath.Join(repo, name))).To(Succeed())
@@ -62,10 +63,7 @@ func commitThenRemove(repo, path string) {
 }
 
 var causeRows = []causeRow{
-	{"a file on disk that is not committed", "un.json", "policy_missing", "not_committed", func(repo string) {
-		writeWorktreeFile(repo, "un.json", singleRootPolicyJSON)
-	}},
-	{"a committed policy with a staged edit, then deleted", "cfg/p.json", "policy_missing", "staged_edit", func(repo string) {
+	{"a committed policy with a staged edit, then deleted", "cfg/p.json", "policy_missing", "undetermined", func(repo string) {
 		commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
 		writeWorktreeFile(repo, "cfg/p.json", `{"schema_version":"1","roots":["staged"]}`+"\n")
 		gitIn(repo, "add", "cfg/p.json")
@@ -99,22 +97,16 @@ var causeRows = []causeRow{
 			Skip("this file system tells cfg and CFG apart, so the name does not resolve")
 		}
 	}},
-	{"a policy committed as a symbolic link, then removed", "cfg/p.json", "policy_missing", "committed_as_link", func(repo string) {
+	{"a policy committed as a symbolic link, then removed", "cfg/p.json", "policy_missing", "undetermined", func(repo string) {
 		symlinkAt(repo, "cfg/p.json")
 		gitIn(repo, "add", "cfg/p.json")
 		gitInWithIdentity(repo, "commit", "-q", "-m", "a policy as a link")
 		removeTree(repo, "cfg")
 	}},
-	{"a policy committed as a symbolic link, with a regular file on disk", "cfg/p.json", "policy_invalid", "committed_as_link", func(repo string) {
-		commitLinkThenWriteFile(repo, "cfg/p.json")
-	}},
-	{"files committed under the name, with a regular file on disk", "cfg", "policy_invalid", "directory", func(repo string) {
-		commitDirectoryThenWriteFile(repo, "cfg")
-	}},
 	{"files committed under the name, with the directory still on disk", "cfg", "policy_invalid", "directory", func(repo string) {
 		commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
 	}},
-	{"a policy committed as a symbolic link, with the link still on disk", "cfg/p.json", "policy_invalid", "committed_as_link", func(repo string) {
+	{"a policy committed as a symbolic link, with the link still on disk", "cfg/p.json", "policy_invalid", "symbolic_link", func(repo string) {
 		symlinkAt(repo, "cfg/p.json")
 		gitIn(repo, "add", "cfg/p.json")
 		gitInWithIdentity(repo, "commit", "-q", "-m", "a policy as a link")
@@ -126,21 +118,17 @@ var causeRows = []causeRow{
 			Skip("this file system tells cfg/p.json and cfg/P.json apart, so the rename leaves nothing under the committed name")
 		}
 	}},
-	{"a committed policy that is invalid, with a different file on disk", "cfg/p.json", "policy_invalid", "changed_on_disk", func(repo string) {
-		commitFile(repo, "cfg/p.json", invalidPolicyText)
-		writeWorktreeFile(repo, "cfg/p.json", singleRootPolicyJSON)
-	}},
-	{"a policy staged and never committed, then deleted", "cfg/p.json", "policy_missing", "staged_copy", func(repo string) {
+	{"a policy staged and never committed, then deleted", "cfg/p.json", "policy_missing", "undetermined", func(repo string) {
 		writeWorktreeFile(repo, "cfg/p.json", singleRootPolicyJSON)
 		gitIn(repo, "add", "cfg/p.json")
 		removeTree(repo, "cfg")
 	}},
-	{"a symbolic link staged and never committed", "cfg/p.json", "policy_missing", "staged_not_a_file", func(repo string) {
+	{"a symbolic link staged and never committed", "cfg/p.json", "policy_missing", "undetermined", func(repo string) {
 		symlinkAt(repo, "cfg/p.json")
 		gitIn(repo, "add", "cfg/p.json")
 		removeTree(repo, "cfg")
 	}},
-	{"all three sides of a conflict for a policy that was never committed", "cfg/p.json", "policy_missing", "merge_conflict", func(repo string) {
+	{"all three sides of a conflict for a policy that was never committed", "cfg/p.json", "policy_missing", "undetermined", func(repo string) {
 		stageThreeSidesOf(repo, "cfg/p.json")
 	}},
 	{"a committed policy marked skip-worktree, then deleted", "cfg/p.json", "policy_missing", "skip_worktree", func(repo string) {
@@ -171,7 +159,7 @@ var causeRows = []causeRow{
 		gitIn(repo, "submodule", "deinit", "-f", "vendor/sub")
 		removeTree(repo, "vendor/sub")
 	}},
-	{"a committed policy deleted while another git process holds the index", "cfg/p.json", "policy_missing", "index_locked", func(repo string) {
+	{"a committed policy deleted while another git process holds the index", "cfg/p.json", "policy_missing", "undetermined", func(repo string) {
 		commitThenRemove(repo, "cfg/p.json")
 		Expect(os.WriteFile(filepath.Join(repo, ".git", "index.lock"), nil, 0o644)).To(Succeed())
 	}},
@@ -268,6 +256,10 @@ var _ = Describe("coach codesignal --check-project: the cause of a policy gap th
 		}
 
 		declared := declaredPolicyCauses()
+
+		for _, word := range droppedPolicyCauses {
+			Expect(declared).NotTo(ContainElement(word), "the check judges the policy from disk and no longer emits %q", word)
+		}
 
 		for _, word := range declared {
 			_, unreachable := unreachableCauses[word]

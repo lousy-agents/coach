@@ -10,8 +10,8 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 )
 
-// The --prepare-compiler refusal says a new policy cannot fix a policy with work in it, and says how to get past one that
-// has none. A checkout that converted line endings has none, so it is told the way past, not that nothing helps.
+// A policy that is invalid on disk is refused for the file on disk, whether or not it differs from the committed copy: a
+// checkout that converted line endings is refused as a file nobody touched is, and is not told its file differs from the commit.
 var _ = Describe("coach codesignal --prepare-compiler: a committed policy that is invalid, in a checkout that converts line endings", func() {
 	const policy = "pol.json"
 
@@ -32,7 +32,7 @@ var _ = Describe("coach codesignal --prepare-compiler: a committed policy that i
 		return string(stderr)
 	}
 
-	It("says how to get past it, as for a file nobody touched, and not that a new policy cannot fix it", func() {
+	It("refuses it as an invalid file with no new policy to author, as for a file nobody touched", func() {
 		repo := commitScannableGoRepo()
 		commitFile(repo, policy, invalidPolicy)
 		gitIn(repo, "config", "core.autocrlf", "true")
@@ -41,8 +41,9 @@ var _ = Describe("coach codesignal --prepare-compiler: a committed policy that i
 
 		stderr := refuse(repo)
 
-		Expect(stderr).To(ContainSubstring("the committed policy cannot be used: fix it, or move it aside and commit the move"), "stderr:\n%s", stderr)
-		Expect(stderr).NotTo(ContainSubstring("a new policy cannot fix it"), "stderr:\n%s", stderr)
+		Expect(stderr).NotTo(ContainSubstring("author_policy"), "authoring refuses a path that exists; stderr:\n%s", stderr)
+		Expect(stderr).NotTo(ContainSubstring("move it aside"), "stderr:\n%s", stderr)
+		Expect(stderr).To(ContainSubstring("a project policy that passes --check-project is required before compiler setup (policy_invalid)"), "stderr:\n%s", stderr)
 		Expect(stderr).NotTo(ContainSubstring("differs from the committed"), "stderr:\n%s", stderr)
 	})
 })

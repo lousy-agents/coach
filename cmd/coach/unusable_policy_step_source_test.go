@@ -11,15 +11,13 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// The sentence that says how to get past a policy that exists and cannot be used is printed by the scan and by the
-// --prepare-compiler refusal. It lives in one constant, so the two cannot say different things; this holds the production
-// code of the package to having it written once.
-func TestTheSentenceForAnUnusablePolicyIsWrittenOnceInTheProductionCode(t *testing.T) {
+// A policy is judged on disk, so no sentence the production code of the package prints says the policy must be committed
+// to be used. The unusable-policy step and the refusal of compiler setup are the two places that said it.
+func TestNoProductionSentenceSaysAPolicyMustBeCommittedToBeUsed(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	written := 0
 	for _, file := range files {
 		if strings.HasSuffix(file, "_test.go") {
 			continue
@@ -28,10 +26,11 @@ func TestTheSentenceForAnUnusablePolicyIsWrittenOnceInTheProductionCode(t *testi
 		if err != nil {
 			t.Fatal(err)
 		}
-		written += strings.Count(string(source), "the committed policy cannot be used")
-	}
-	if written != 1 {
-		t.Errorf("the sentence is written %d times in the non-test files of cmd/coach; want once, in unusablePolicyStep", written)
+		for _, sentence := range []string{"the committed policy cannot be used", "a reviewed, committed policy is required"} {
+			if strings.Contains(string(source), sentence) {
+				t.Errorf("%s still says %q", file, sentence)
+			}
+		}
 	}
 }
 

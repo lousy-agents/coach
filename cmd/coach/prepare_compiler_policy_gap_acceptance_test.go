@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("coach codesignal --prepare-compiler with a canonical policy that does not pass", func() {
-	DescribeTable("exits 2 and names the policy gap in the refusal",
+	DescribeTable("exits 2 and names the policy gap in the refusal, with no new policy to author over the file on disk",
 		func(contents string) {
 			repo := newTempGitRepo()
 			commitFile(repo, coachConfigPath, contents)
@@ -24,9 +24,11 @@ var _ = Describe("coach codesignal --prepare-compiler with a canonical policy th
 
 			Expect(exitCode).To(Equal(2), "stdout=%s stderr=%s", stdout, stderr)
 			Expect(stdout).To(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring("a reviewed, committed policy is required before compiler setup (policy_invalid)"), "stderr=%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("author_policy"), "authoring refuses a path that exists; stderr=%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("a new policy cannot fix it"), "stderr=%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("a project policy that passes --check-project is required before compiler setup (policy_invalid)"), "stderr=%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("TypeScript compiler setup:"), "a policy gap must refuse before any compiler-setup prompt; stderr=%s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one (author_policy)"), "stderr=%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("the committed policy cannot be used"), "stderr=%s", stderr)
 			expectNoRunnableCommand(string(stderr))
 		},
 		Entry("invalid canonical file", invalidPolicyText),
@@ -82,7 +84,7 @@ var _ = Describe("coach codesignal --prepare-compiler with an explicit policy th
 
 			Expect(exitCode).To(Equal(2), "stdout=%s stderr=%s", stdout, stderr)
 			Expect(stdout).To(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring("a reviewed, committed policy is required before compiler setup (policy_missing)"), "stderr=%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("a project policy that passes --check-project is required before compiler setup (policy_missing)"), "stderr=%s", stderr)
 			for _, text := range want {
 				Expect(string(stderr)).To(ContainSubstring(text), "stderr=%s", stderr)
 			}

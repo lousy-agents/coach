@@ -7,23 +7,23 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// A policy that exists and cannot be used is not "never committed": a new policy cannot be authored at its path while it is
-// there, so the line says to fix it, or to move it aside and commit the move, which leaves nothing at the path and so brings
-// guided authoring back. It names no command.
-func TestPolicyRequiredLineForAPolicyThatExistsAndCannotBeUsedSaysToFixItOrMoveItAside(t *testing.T) {
+// A policy whose committed copy is invalid and that is gone from disk is authored again, and the line names the one step that
+// the scan names too. Nothing in it says that a policy must be committed to be used.
+func TestPolicyRequiredLineForAnInvalidCommittedPolicyGoneFromDiskNamesTheStepAndNoCommit(t *testing.T) {
 	line := policyRequiredLine("coach codesignal", projectreadiness.GapPolicyInvalid, projectreadiness.RemedyAuthor, "abc123", "pol.json")
 
-	const want = "; the committed policy cannot be used: fix it, or move it aside and commit the move, then run guided policy authoring to write a new one (author_policy)."
-	if !strings.HasSuffix(line, want) {
-		t.Errorf("line %q; want it to end with %q", line, want)
+	if want := "a project policy that passes --check-project is required before compiler setup (policy_invalid); "; !strings.HasPrefix(line, want) {
+		t.Errorf("line %q; want it to start with %q", line, want)
 	}
-	if strings.Contains(line, "authoring first") {
-		t.Errorf("line %q; guided authoring is not offered while the unusable policy is at the path", line)
+	if !strings.Contains(line, unusablePolicyStep) || !strings.HasSuffix(line, "(author_policy).") {
+		t.Errorf("line %q; want the step %q and the next action author_policy", line, unusablePolicyStep)
+	}
+	if strings.Contains(line, "commit") {
+		t.Errorf("line %q; a policy on disk needs no commit", line)
 	}
 }
 
-// A committed document that is not valid, with work in the file (a fix on disk, staged, or in a conflict), has no remedy: a new policy
-// would replace the work. The refusal says that, and not that the policy is to be moved aside; the order of its arms decides it.
+// A document on disk that is not valid has no remedy: a new policy would replace the file. The refusal says that, and not that the policy is to be moved aside; the order of its arms decides it.
 func TestPolicyRequiredLineForAnInvalidPolicyThatNoNewPolicyFixesSaysSo(t *testing.T) {
 	for _, path := range []string{"pol.json", ".lousy-agents/coach.json"} {
 		t.Run(path, func(t *testing.T) { requireTheNoRemedyLine(t, path) })

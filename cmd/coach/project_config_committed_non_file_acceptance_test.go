@@ -36,14 +36,15 @@ type notAFileSpec struct {
 // directory one, and offers no new policy for a path the revision already holds. A scan judges the entry on disk
 // instead (ADR-009): a regular file there is the policy whatever the revision commits at the path.
 var _ = Describe("coach codesignal: a policy the revision commits as something other than a file", func() {
-	DescribeTable("--check-project names it as that, and no new policy is offered over it",
+	DescribeTable("--check-project passes the regular file on disk, as the scan reads it",
 		func(spec notAFileSpec) {
 			repo := commitScannableGoRepo()
 			spec.arrange(repo, spec.policy)
 
 			doc := expectCheckProject(repo, "--project-config", spec.policy)
 
-			Expect(causeOfGap(doc, "policy_invalid")).To(Equal(spec.cause), "gaps: %+v", doc.Gaps)
+			Expect(doc.Checks.Policy.State).To(Equal("pass"), "gaps: %+v", doc.Gaps)
+			Expect(gapCodes(doc)).NotTo(ContainElement(HavePrefix("policy_")))
 			Expect(nextActionKinds(doc)).NotTo(ContainElement("author_policy"), "next actions: %+v", doc.NextActions)
 		},
 		Entry("a symbolic link, with a regular file on disk", notAFileSpec{commitLinkThenWriteFile, "cfg/p.json", "symbolic link", "committed_as_link"}),

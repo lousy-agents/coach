@@ -40,7 +40,7 @@ var _ = Describe("coach codesignal --baseline (TypeScript): a scan whose policy 
 		Expect(string(stderr)).NotTo(ContainSubstring("--project-config"), "naming the discovered policy makes the next command judge it on disk, as an explicit one:\n%s", stderr)
 	})
 
-	It("prints a check that judges the policy as the scan did, from the analyzed revision", func() {
+	It("prints a check that judges the policy on disk, where the canonical policy is gone", func() {
 		path := pathWithStubNode("v24.9.9")
 		_, stderr, _ := runCoachCodesignalBaselineEnv(repo, path, "--project-language", "typescript", "--format=json")
 
@@ -50,6 +50,8 @@ var _ = Describe("coach codesignal --baseline (TypeScript): a scan whose policy 
 		Expect(exitCode).To(Equal(0), "stderr: %s", checkStderr)
 		var doc readinessResultDoc
 		Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-		Expect(strings.TrimSpace(doc.Checks.Policy.State)).To(Equal("pass"), "the scan read the committed policy; the printed check must agree: %+v", doc.Checks.Policy)
+		Expect(strings.TrimSpace(doc.Checks.Policy.State)).To(Equal("fail"), "the file is not on disk, so no policy passes: %+v", doc.Checks.Policy)
+		Expect(doc.Checks.Policy.Code).To(Equal("policy_missing"), "%+v", doc.Checks.Policy)
+		Expect(nextActionKinds(doc)).To(ContainElement("restore_policy"), "the committed policy is restored, as for a named one")
 	})
 })

@@ -92,7 +92,7 @@ func assertRequiredLinesLead(t *testing.T, remedy projectreadiness.PolicyRemedy,
 	if wantFirst != "" && lines[0] != wantFirst {
 		t.Errorf("first line = %q, want the cause %q", lines[0], wantFirst)
 	}
-	if !strings.Contains(lines[len(lines)-1], "a reviewed, committed policy is required before compiler setup") {
+	if !strings.Contains(lines[len(lines)-1], "a project policy that passes --check-project is required before compiler setup") {
 		t.Errorf("last line = %q, want the refusal", lines[len(lines)-1])
 	}
 }
