@@ -32,7 +32,7 @@ var _ = Describe("coach codesignal: a scan reads a policy from a git layout git 
 		stdout, stderr, exitCode := codesignalJSONIn(dir, nil, "--baseline", "--project-config", explicitPolicyPath)
 
 		ExpectWithOffset(1, exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
-		ExpectWithOffset(1, scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(explicitPolicyPath, singleRootPolicyJSON, true))))
+		ExpectWithOffset(1, scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(explicitPolicyPath, singleRootPolicyJSON, diskCauseSameAsHead))))
 	}
 
 	It("scans a linked worktree, whose git directory is not its repository's main one", func() {
@@ -152,7 +152,7 @@ var _ = Describe("coach codesignal: a scan still reads a repository whose git di
 		stdout, stderr, exitCode := codesignalJSONIn(repo, nil, "--baseline", "--project-config", explicitPolicyPath)
 
 		Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
-		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(explicitPolicyPath, singleRootPolicyJSON, true))))
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(explicitPolicyPath, singleRootPolicyJSON, diskCauseSameAsHead))))
 	})
 
 	It("scans a work tree whose .git is a symlink to a git directory kept elsewhere under another name", func() {
@@ -171,7 +171,7 @@ var _ = Describe("coach codesignal: a scan still reads a repository whose git di
 		stdout, stderr, exitCode := codesignalJSONIn(repo, nil, "--baseline", "--project-config", explicitPolicyPath)
 
 		Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
-		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(explicitPolicyPath, singleRootPolicyJSON, true))))
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(explicitPolicyPath, singleRootPolicyJSON, diskCauseSameAsHead))))
 	})
 
 	It("scans a work tree that GIT_WORK_TREE names, though its git directory sits in a directory that holds no work tree", func() {
@@ -188,6 +188,6 @@ var _ = Describe("coach codesignal: a scan still reads a repository whose git di
 		stdout, stderr, exitCode := codesignalJSONIn(repo, extra, "--baseline", "--project-config", explicitPolicyPath)
 
 		Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
-		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(explicitPolicyPath, singleRootPolicyJSON, true))))
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(explicitPolicyPath, singleRootPolicyJSON, diskCauseSameAsHead))))
 	})
 })
