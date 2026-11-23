@@ -137,24 +137,43 @@ var _ = Describe("coach codesignal --worktree invocation", func() {
 	})
 
 	When("a flag is misused and the flag package prints its usage", func() {
-		It("does not list the experimental flag", func() {
+		It("lists the graduated flag (#168 worktree graduation)", func() {
 			_, stderr, exitCode := runCoachRaw("codesignal", "--worktree", "--base")
 
 			Expect(exitCode).To(Equal(2))
 			Expect(string(stderr)).To(ContainSubstring("flag needs an argument: -base"))
 			Expect(string(stderr)).To(ContainSubstring("-baseline"), "the usage listing is still printed")
-			Expect(string(stderr)).NotTo(ContainSubstring("-worktree"))
+			Expect(string(stderr)).To(MatchRegexp(`(?m)^  -worktree$`))
+		})
+
+		It("prints a synopsis that advertises --worktree when no mode flag is given (#168 worktree graduation)", func() {
+			_, stderr, exitCode := runCoachBinary(commandPath, editedRepo(), nil, "codesignal", "--format=json")
+
+			Expect(exitCode).To(Equal(2))
+			Expect(string(stderr)).To(ContainSubstring("missing required --base flag"))
+			Expect(string(stderr)).To(ContainSubstring("[--worktree]"))
 		})
 	})
 
 	When("a user reads the help text", func() {
-		It("does not list the experimental flag, which stays accepted", func() {
+		It("lists the graduated flag without calling it experimental, and still accepts it (#168 worktree graduation)", func() {
 			stdout, stderr, exitCode := runCoachRaw("codesignal", "--help")
 			Expect(exitCode).To(Equal(0))
-			Expect(string(stdout) + string(stderr)).NotTo(ContainSubstring("-worktree"))
+			help := string(stdout) + string(stderr)
+			Expect(help).To(MatchRegexp(`(?m)^  -worktree\n\s+\S`), "the flag listing carries a description")
+			Expect(help).NotTo(ContainSubstring("experimental"))
 
 			_, runStderr, runExit := runCoachBinary(commandPath, editedRepo(), nil, "codesignal", "--worktree", "--format=json")
 			Expect(runExit).To(Equal(0), "stderr: %s", runStderr)
+		})
+
+		It("shows --worktree in the synopsis line of the help (#168 worktree graduation)", func() {
+			stdout, _, exitCode := runCoachRaw("codesignal", "--help")
+
+			Expect(exitCode).To(Equal(0))
+			synopsis := strings.SplitN(string(stdout), "\n", 2)[0]
+			Expect(synopsis).To(HavePrefix("usage: coach codesignal (--base <ref> | --baseline)"))
+			Expect(synopsis).To(ContainSubstring("[--worktree]"))
 		})
 	})
 })
