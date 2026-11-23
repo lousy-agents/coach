@@ -77,7 +77,7 @@ coach codesignal --worktree --baseline       # every tracked and new Go/TS/TSX f
 - Supported-language source and project configuration files are read from the working tree, new and untracked files included. A deleted file is absent. A symbolic link is not followed and is named.
 - Run it from the repository root. Elsewhere it exits `2` and prints the command to run.
 - `scope.worktree` reports the revision, the modified, added, deleted and untracked counts, and the configuration files read from disk.
-- When part of the tree is unread (a sparse checkout, a skip-worktree or assume-unchanged entry, a directory git could not open, or a file Coach could not read), the verdict says so instead of reading as clean. With `--fail-on-incomplete-coverage` it exits `3`.
+- When git hides or Coach cannot read part of the tree the scan would analyze (a sparse checkout, a skip-worktree or assume-unchanged entry, a directory git could not open, or a file Coach could not read), the verdict says so instead of reading as clean. With `--fail-on-incomplete-coverage` it exits `3`. Hidden paths that are all out of scope do not qualify the verdict; see [Unread parts of the working tree](./docs/cli-codesignal.md#unread-parts-of-the-working-tree).
 
 It is a local check, not a pull-request check. See [`--worktree` in the CLI contract](./docs/cli-codesignal.md#uncommitted-work---worktree).
 
