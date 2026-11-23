@@ -10,8 +10,8 @@ import (
 
 const suggestCommand = "--suggest-project-config"
 
-// What the message for a path under a regular file says, by whether the analyzed revision commits that file. The
-// the CLI contract states the same two things, and a spec reads it for them.
+// What the message for a path under a regular file says, by whether the analyzed revision commits that file.
+// The CLI contract states the same two things, and a spec reads it for them.
 const (
 	adviceForAFileNothingCommits = "move or remove it"
 	wordingForACommittedFile     = "a file the analyzed revision commits, so the path is probably wrong"
