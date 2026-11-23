@@ -81,8 +81,6 @@ var _ = Describe("coach codesignal reads the project policy from disk: a policy 
 			expectDiskJudgedRefusal(stdout, stderr, exitCode, coachConfigPath, "larger than the policy size limit")
 		})
 
-		// Baseline-affected on git 2.43: its missing-object rows fail in the same way, so this row is red there for the
-		// object, not for the behavior, until the sandbox's git is newer.
 		It("#168 A2b: a policy whose committed object is missing, beside a valid policy on disk, is used under "+mode.name+" with the cause head_unreadable", func() {
 			repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, `{"schema_version":"1","roots":["."],"note":"the committed copy"}`})
 			removeCommittedObject(repo, coachConfigPath)

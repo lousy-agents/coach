@@ -13,7 +13,7 @@ import (
 type diskQuestion struct {
 	namedPath string
 	// matters says whether a refusal at the path is the scan's to report. A file the scan would not have read anyway
-	// is not: a root project.json that is not committed is ignored whether it is usable or not.
+	// is not: a refusal at a root project.json that is not committed is dropped, while a usable one is still selected.
 	matters func(path string) bool
 	refuse  func(refusal *projectconfig.DiskPolicyRefusal) error
 }
