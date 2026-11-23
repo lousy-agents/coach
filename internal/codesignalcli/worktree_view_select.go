@@ -34,6 +34,7 @@ func (v *WorktreeView) SelectDiff(headSHA string, committed []gitrepo.SelectedFi
 	if err != nil {
 		return DiffSelection{}, err
 	}
+	v.scope = scope
 	v.scopeExcluded = pathSet(droppedBy(files, kept))
 	v.languageNamed = pathSet(unsupportedLanguagePaths(append(append([]codesignal.Diagnostic(nil), committedDiagnostics...), diagnostics...)))
 	return DiffSelection{
@@ -62,6 +63,7 @@ func (v *WorktreeView) SelectBaseline(discovered []gitrepo.SelectedFile, coverag
 	if err != nil {
 		return BaselineSelection{}, err
 	}
+	v.scope = scope
 	v.scopeExcluded = pathSet(droppedBy(files, kept))
 	return BaselineSelection{Files: kept, Coverage: coverage}, nil
 }
