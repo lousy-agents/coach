@@ -3,8 +3,6 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"os"
-	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -82,22 +80,6 @@ var _ = Describe("coach codesignal discloses the policy a scan used in scope.pol
 			wantPath:    coachConfigPath, usedBody: reordered, wantMatching: false, wantCause: diskCauseDiffersFromHead,
 			wantLine:    diskPolicyLine(coachConfigPath, reordered, "differs from HEAD."),
 			wantWarning: diskPolicyDiffersWarning,
-		},
-		{
-			description: "a file deleted on disk with no other policy",
-			policies:    []scopePolicyFile{{coachConfigPath, singleRootPolicyJSON}},
-			arrange:     func(repo string) { Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed()) },
-			wantPath:    coachConfigPath, usedBody: singleRootPolicyJSON, wantMatching: false, wantCause: diskCauseMissingOnDisk,
-			wantLine:    diskPolicyLine(coachConfigPath, singleRootPolicyJSON, "differs from HEAD."),
-			wantWarning: diskPolicyMissingOnDiskWarning(coachConfigPath),
-		},
-		{
-			description: "the canonical file deleted on disk while a root project.json with the same bytes is committed (guard: the digest is equal, only the selected path differs)",
-			policies:    []scopePolicyFile{{coachConfigPath, singleRootPolicyJSON}, {legacyConfigPath, singleRootPolicyJSON}},
-			arrange:     func(repo string) { Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed()) },
-			wantPath:    coachConfigPath, usedBody: singleRootPolicyJSON, wantMatching: false, wantCause: diskCauseMissingOnDisk,
-			wantLine:    diskPolicyLine(coachConfigPath, singleRootPolicyJSON, "differs from HEAD."),
-			wantWarning: diskPolicyMissingOnDiskWarning(coachConfigPath),
 		},
 		{
 			description: "a policy named with --project-config and left alone",

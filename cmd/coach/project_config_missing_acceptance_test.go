@@ -71,7 +71,7 @@ var _ = Describe("coach codesignal: an explicit --project-config that does not e
 	})
 
 	When("no --project-config is passed and a committed discovered policy is deleted on disk", func() {
-		It("is not subject to the explicit-path rule: the scan succeeds on the committed copy and discloses it as missing on disk", func() {
+		It("#168 item 3: is not subject to the explicit-path rule: the scan succeeds file-local and a WARNING names the missing policy", func() {
 			repo := commitScannableGoRepo()
 			commitFile(repo, coachConfigPath, singleRootPolicyJSON)
 			Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
@@ -80,16 +80,12 @@ var _ = Describe("coach codesignal: an explicit --project-config that does not e
 
 			Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("project_config_missing"))
-			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, singleRootPolicyJSON, diskCauseMissingOnDisk))))
-			var kinds []string
-			for _, diagnostic := range decodeCoachReport(stdout).Diagnostics {
-				kinds = append(kinds, diagnostic.Kind)
-			}
-			Expect(kinds).To(ConsistOf("worktree_not_clean"), "a deleted policy is disclosed by the missing-on-disk warning, so worktree_report_reflects_committed_head no longer applies")
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", BeNil()))
 
 			text, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=text")
 			Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", text, stderr)
-			expectDiskPolicyDisclosure(scopePolicyModes[0], text, diskPolicyLine(coachConfigPath, singleRootPolicyJSON, "differs from HEAD."), diskPolicyMissingOnDiskWarning(coachConfigPath))
+			Expect(string(text)).NotTo(MatchRegexp(`(?m)^policy: `), "text:\n%s", text)
+			Expect(warningLinesNaming(text, coachConfigPath)).NotTo(BeEmpty(), "text:\n%s", text)
 		})
 	})
 

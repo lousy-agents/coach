@@ -53,20 +53,6 @@ var _ = Describe("coach codesignal reads the project policy from disk: a policy 
 			expectDiskPolicyDisclosure(mode, text, diskPolicyLine(coachConfigPath, goLayerPolicyConfigJSON, "not committed at HEAD."), diskPolicyNotCommittedWarning(coachConfigPath))
 		})
 
-		It("#168 item 4 and item 11 (interim until A3): a discovered policy committed at HEAD and deleted on disk uses the committed copy under "+mode.name+", disclosed as not matches_head with the missing-on-disk WARNING", func() {
-			repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, goLayerPolicyConfigJSON})
-			Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
-			expectGitStatusContains(repo, " D "+coachConfigPath)
-
-			report, jsonOut := diskPolicyJSONScan(mode, repo, base)
-
-			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the committed copy must be used")
-			Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(coachConfigPath, goLayerPolicyConfigJSON, diskCauseMissingOnDisk))))
-			text := diskPolicyTextScan(mode, repo, base)
-			expectDiskPolicyDisclosure(mode, text, diskPolicyLine(coachConfigPath, goLayerPolicyConfigJSON, "differs from HEAD."), diskPolicyMissingOnDiskWarning(coachConfigPath))
-			Expect(string(text)).NotTo(ContainSubstring(diskPolicyDiffersWarning))
-		})
-
 		It("#168 item 11: a policy named with --project-config that is committed and deleted on disk still exits 2 under "+mode.name, func() {
 			repo, base := diskPolicyRepo(scopePolicyFile{customPolicyPath, goLayerPolicyConfigJSON})
 			Expect(os.Remove(filepath.Join(repo, customPolicyPath))).To(Succeed())

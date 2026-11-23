@@ -15,7 +15,7 @@ import (
 )
 
 var _ = Describe("coach codesignal (TypeScript, controlling terminal): compiler setup for a scan whose policy was discovered, not named", func() {
-	It("continues the same scan after a successful install, judging the discovered policy from the analyzed revision as it always has", func() {
+	It("#168 item 3: offers no compiler setup when the discovered policy is committed at HEAD and deleted on disk, because the scan is file-local", func() {
 		repo := newTempGitRepo()
 		commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 		commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
@@ -27,16 +27,13 @@ var _ = Describe("coach codesignal (TypeScript, controlling terminal): compiler 
 
 		session := startCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path),
 			"codesignal", "--baseline", "--project-language", "typescript", "--format=json")
-		session.waitForPrompt("an unrecognized or blank answer cancels.")
-		session.writeLine("project_mise")
-		session.waitForPrompt("Type 'install' to run this setup command now")
-		session.writeLine("install")
 		stdout, stderr, _, exitCode := session.wait()
 
-		Expect(exitCode).To(Equal(0), "the readiness rerun must pass the discovered policy so the scan continues; stderr: %s", stderr)
-		Expect(miseInvocationsIncludeInstall(miseDir)).To(BeTrue(), "sanity: the confirmed selection must have invoked `mise install`")
+		Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+		Expect(string(stderr)).NotTo(ContainSubstring("Type 'install' to run this setup command now"), "a file-local scan needs no compiler")
+		Expect(miseInvocationsIncludeInstall(miseDir)).To(BeFalse(), "no setup may run for a file-local scan")
 		var report map[string]any
 		Expect(json.Unmarshal(stdout, &report)).To(Succeed(), "stdout: %s stderr: %s", stdout, stderr)
-		Expect(report).To(HaveKey("coverage"))
+		Expect(report).To(HaveKeyWithValue("scope", HaveKeyWithValue("policy", BeNil())))
 	})
 })

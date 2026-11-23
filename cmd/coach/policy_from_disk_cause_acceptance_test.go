@@ -2,8 +2,6 @@ package main
 
 import (
 	"maps"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -41,12 +39,6 @@ var _ = Describe("coach codesignal discloses why the policy used is the one it i
 				overwriteOnDiskCreatingParents(repo, coachConfigPath, goLayerPolicyConfigJSON)
 			},
 			wantCause: "not_committed",
-		},
-		{
-			description: "a committed policy deleted on disk (interim until A3)",
-			policies:    []scopePolicyFile{{coachConfigPath, goLayerPolicyConfigJSON}},
-			arrange:     func(repo string) { Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed()) },
-			wantCause:   "missing_on_disk",
 		},
 		{
 			description: "a committed policy replaced on disk by a file past the size budget (interim until A2b)",
