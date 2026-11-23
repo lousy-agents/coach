@@ -73,6 +73,10 @@ readable by `nobody`'s group only. It also gives `nobody` its own copy of the
 module cache, made once per `go.sum`. All of these are cached under
 `$COACH_CI_ENV_CACHE` (default `$TMPDIR/coach-ci-env-<uid>`); an existing cache
 root must be owned by the running user and writable by no one else.
+Run as root, it needs a normal clone. In a linked worktree `.git` is a file
+that points into the main repository's `.git`, which the copy does not include
+and `nobody` may not be able to read, and `go build` then fails with
+`error obtaining VCS status`.
 
 It gives the tests:
 
@@ -94,6 +98,21 @@ non-zero and names both versions, and runs no test.
 `WARNING: the git-version leg was NOT covered`. The git-version leg has not been
 run in an agent sandbox, which cannot build CI's git, so a sandbox run uses
 `COACH_CI_GIT_ALLOW_MISMATCH=1`.
+
+The `ts-project-backend` specs need `js/semantics/node_modules`, which CI's job
+installs with `mise run js-install` before it runs them. To run them as that
+job does, install first, then pass the job's own arguments (from the
+`ts-project-backend-acceptance` task in `mise.toml`):
+
+```sh
+mise run js-install
+mise run acceptance-ci-env -- -race ./cmd/coach/... ./internal/codesignalcli -run Acceptance -args -ginkgo.label-filter=ts-project-backend -ginkgo.fail-on-empty
+```
+
+When `node_modules` is installed, the task copies it into its repository copy
+(following links) and says so. When it is missing, a run whose label filter
+selects `ts-project-backend` is refused, naming `mise run js-install`; any
+other run says that those specs will skip.
 
 A spec that cannot build its state as root, such as a mode 000 file, skips
 under root and says that `mise run acceptance-ci-env` runs it as non-root. A test

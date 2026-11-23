@@ -26,12 +26,23 @@ func run(goTestArgs []string, stdout, stderr io.Writer) int {
 	if git.warning != "" {
 		fmt.Fprintln(stdout, prefix+git.warning)
 	}
-	space, err := prepareWorkspace(git.path)
+	withJS, jsNote, err := jsPlan(goTestArgs)
+	if err != nil {
+		fmt.Fprintln(stderr, prefix+err.Error())
+		return 2
+	}
+	if jsNote != "" {
+		fmt.Fprintln(stdout, prefix+jsNote)
+	}
+	space, err := prepareWorkspace(git.path, withJS)
 	if err != nil {
 		fmt.Fprintln(stderr, prefix+err.Error())
 		return 2
 	}
 	defer space.cleanup()
+	if space.jsNote != "" {
+		fmt.Fprintln(stdout, prefix+space.jsNote)
+	}
 	if len(goTestArgs) == 0 {
 		goTestArgs = []string{"./..."}
 	}

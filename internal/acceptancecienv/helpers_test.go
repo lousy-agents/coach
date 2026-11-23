@@ -20,20 +20,21 @@ const repoRoot = "../.."
 const probePackage = "./internal/acceptancecienv/testdata/probe"
 
 type probeRecord struct {
-	UID               int      `json:"uid"`
-	Home              string   `json:"home"`
-	HomeEntries       []string `json:"home_entries"`
-	HomeReadError     string   `json:"home_read_error"`
-	TmpDir            string   `json:"tmpdir"`
-	TmpDirEntries     []string `json:"tmpdir_entries"`
-	TmpDirReadError   string   `json:"tmpdir_read_error"`
-	GlobalConfig      string   `json:"global_config"`
-	GlobalConfigError bool     `json:"global_config_error"`
-	GitVersion        string   `json:"git_version"`
-	GoOnPath          bool     `json:"go_on_path"`
-	ConfigFromEnv     []string `json:"config_from_env"`
-	ConfigScopes      []string `json:"config_scopes"`
-	ScrubbedSet       []string `json:"scrubbed_set"`
+	UID               int               `json:"uid"`
+	Home              string            `json:"home"`
+	HomeEntries       []string          `json:"home_entries"`
+	HomeReadError     string            `json:"home_read_error"`
+	TmpDir            string            `json:"tmpdir"`
+	TmpDirEntries     []string          `json:"tmpdir_entries"`
+	TmpDirReadError   string            `json:"tmpdir_read_error"`
+	GlobalConfig      string            `json:"global_config"`
+	GlobalConfigError bool              `json:"global_config_error"`
+	GitVersion        string            `json:"git_version"`
+	GoOnPath          bool              `json:"go_on_path"`
+	ConfigFromEnv     []string          `json:"config_from_env"`
+	ConfigScopes      []string          `json:"config_scopes"`
+	ScrubbedSet       []string          `json:"scrubbed_set"`
+	JSInstalled       map[string]string `json:"js_installed"`
 }
 
 type taskRun struct {
@@ -65,6 +66,11 @@ func runTask(pin string, extraEnv ...string) taskRun {
 }
 
 func runTaskWith(pin string, goTestArgs []string, extraEnv ...string) taskRun {
+	return runTaskIn(repoRoot, pin, goTestArgs, extraEnv...)
+}
+
+// runTaskIn is runTaskWith from the repository at dir.
+func runTaskIn(dir, pin string, goTestArgs []string, extraEnv ...string) taskRun {
 	outDir, err := os.MkdirTemp("", "acceptance-ci-env-probe-*")
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	DeferCleanup(os.RemoveAll, outDir)
@@ -72,7 +78,7 @@ func runTaskWith(pin string, goTestArgs []string, extraEnv ...string) taskRun {
 	probeOut := filepath.Join(outDir, "probe.json")
 
 	command := exec.Command("go", append([]string{"run", "./cmd/acceptance-ci-env"}, goTestArgs...)...)
-	command.Dir = repoRoot
+	command.Dir = dir
 	command.Env = append(environWithout("COACH_CI_GIT", "COACH_CI_GIT_ALLOW_MISMATCH", "COACH_CI_GIT_VERSION"), "COACH_CI_GIT_VERSION="+pin, "COACH_CI_ENV_PROBE_OUT="+probeOut)
 	command.Env = append(command.Env, extraEnv...)
 	var stdout, stderr bytes.Buffer
@@ -132,4 +138,27 @@ func expectOwnDirectory(variable, dir string, entries []string, readErr string) 
 	ExpectWithOffset(1, dir).NotTo(Equal(os.Getenv(variable)), "%s must not be the caller's", variable)
 	ExpectWithOffset(1, readErr).To(BeEmpty(), "%s must be readable by the tests", variable)
 	return entries
+}
+
+// repositoryCopy copies .git and the files git does not ignore into a new
+// directory, so a spec can add or leave out an ignored file such as the
+// installed js/semantics without touching the caller's tree.
+func repositoryCopy() string {
+	target, err := os.MkdirTemp("", "acceptance-ci-env-repo-*")
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	DeferCleanup(os.RemoveAll, target)
+	listing := exec.Command("git", "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	listing.Dir = repoRoot
+	names, err := listing.Output()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	copying := exec.Command("cp", "-a", "--parents", "--no-dereference", "--target-directory="+target, ".git")
+	copying.Dir = repoRoot
+	out, err := copying.CombinedOutput()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "%s", out)
+	archive := exec.Command("sh", "-c", `tar --null --files-from=- --ignore-failed-read -cf - | tar -xf - -C "$1"`, "sh", target)
+	archive.Dir = repoRoot
+	archive.Stdin = bytes.NewReader(names)
+	out, err = archive.CombinedOutput()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "%s", out)
+	return target
 }

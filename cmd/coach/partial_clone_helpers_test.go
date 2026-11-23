@@ -76,7 +76,7 @@ func skipUnlessGitCanRefuseLazyFetch() {
 	major, _ := strconv.Atoi(match[1])
 	minor, _ := strconv.Atoi(match[2])
 	if major < 2 || major == 2 && minor < 44 {
-		Skip("this git (" + strings.TrimSpace(string(printed)) + ") predates GIT_NO_LAZY_FETCH, so it cannot be told not to fetch")
+		Skip("needs git 2.44 or later: this git (" + strings.TrimSpace(string(printed)) + ") predates GIT_NO_LAZY_FETCH, so it cannot be told not to fetch; `mise run acceptance-ci-env` runs it under CI's pinned git")
 	}
 }
 
