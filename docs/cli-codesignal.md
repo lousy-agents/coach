@@ -209,7 +209,7 @@ terminal is what opens the combined setup offer above.
 
 ## Git version
 
-Coach runs git for every read, and passes options that only a recent git knows. Git 2.42 or later is the version to use.
+Coach runs git for every read, and passes options that only a recent git knows. Git 2.43 or later is the version to use. It is the oldest git that CI runs the acceptance specs on: Ubuntu 24.04's own git, in the `distro-git` job.
 
 | git | what Coach uses | on an older git |
 | --- | --- | --- |
