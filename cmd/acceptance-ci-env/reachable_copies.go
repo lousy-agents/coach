@@ -41,7 +41,7 @@ func reachableByOthers(dir string) bool {
 // unreachable ones under the user's own tool installs (mise and ~/.local) into
 // the cache, and drops the rest, as CI's PATH has none of them. The git
 // directory goes first, so the git that was checked is the git that runs.
-func reachablePath(base, path, gitDir string) (string, error) {
+func reachablePath(base, path, gitDir string, gid int) (string, error) {
 	entries := append([]string{gitDir}, filepath.SplitList(path)...)
 	var kept []string
 	for _, entry := range entries {
@@ -52,7 +52,7 @@ func reachablePath(base, path, gitDir string) (string, error) {
 		if !isToolInstall(entry) && entry != gitDir {
 			continue
 		}
-		copied, err := cachedCopy(base, entry)
+		copied, err := cachedCopy(base, entry, gid)
 		if err != nil {
 			return "", err
 		}
@@ -66,28 +66,34 @@ func isToolInstall(entry string) bool {
 	return home != "" && strings.HasPrefix(entry, filepath.Join(home, ".local")+string(filepath.Separator))
 }
 
-// cachedCopy copies a PATH entry once into the cache. An entry named bin is
-// copied with its parent, because a toolchain such as Go finds its root
-// relative to its binary.
-func cachedCopy(base, entry string) (string, error) {
+// cachedCopy copies a PATH entry once into the cache. A bin directory inside a
+// mise install is copied with its install, because a toolchain such as Go
+// finds its root relative to its binary; any other entry is copied alone, so
+// a bin such as ~/.local/bin does not bring all of ~/.local with it.
+func cachedCopy(base, entry string, gid int) (string, error) {
 	source, suffix := entry, ""
-	if filepath.Base(entry) == "bin" {
+	if filepath.Base(entry) == "bin" && strings.Contains(entry, string(filepath.Separator)+"installs"+string(filepath.Separator)) {
 		source, suffix = filepath.Dir(entry), "bin"
 	}
 	if resolved, err := filepath.EvalSymlinks(source); err == nil {
 		source = resolved
 	}
-	sum := sha256.Sum256([]byte(source))
-	target := filepath.Join(base, "tools", hex.EncodeToString(sum[:8]))
-	if err := copyOnce(source, target); err != nil {
+	target := filepath.Join(base, "tools", hashOf(source))
+	if err := copyOnce(source, target, gid); err != nil {
 		return "", err
 	}
 	return filepath.Join(target, suffix), nil
 }
 
+func hashOf(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:8])
+}
+
 // copyOnce copies source to target unless an earlier run finished the same
-// copy, which leaves a marker beside it.
-func copyOnce(source, target string) error {
+// copy, which leaves a marker beside it. The copy is readable by the given
+// group, the non-root user's, and by no one else.
+func copyOnce(source, target string, gid int) error {
 	marker := target + ".done"
 	if _, err := os.Stat(marker); err == nil {
 		return nil
@@ -96,50 +102,17 @@ func copyOnce(source, target string) error {
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
 	}
-	if out, err := exec.Command("cp", "-a", source, target).CombinedOutput(); err != nil {
-		return fmt.Errorf("copying %s for the non-root user: %v: %s", source, err, out)
+	steps := [][]string{
+		{"cp", "-a", source, target},
+		{"chgrp", "-R", strconv.Itoa(gid), target},
+		{"chmod", "-R", "g+rX,o-rwx", target},
 	}
-	if out, err := exec.Command("chmod", "-R", "a+rX", target).CombinedOutput(); err != nil {
-		return fmt.Errorf("opening %s to the non-root user: %v: %s", target, err, out)
+	for _, step := range steps {
+		if out, err := exec.Command(step[0], step[1:]...).CombinedOutput(); err != nil {
+			return fmt.Errorf("preparing %s for the non-root user (%s): %v: %s", source, step[0], err, out)
+		}
 	}
 	return os.WriteFile(marker, nil, 0o644)
-}
-
-// useReachableGoCaches gives the non-root user a module cache it can read and
-// a build cache it can write.
-func (w *workspace) useReachableGoCaches(base string, overrides map[string]string) error {
-	out, err := exec.Command("go", "env", "GOMODCACHE").Output()
-	if err != nil {
-		return fmt.Errorf("go env GOMODCACHE: %v", err)
-	}
-	modcache := strings.TrimSpace(string(out))
-	if !reachableByOthers(modcache) {
-		target := filepath.Join(base, "gomodcache")
-		if err := copyOnce(modcache, target); err != nil {
-			return err
-		}
-		modcache = target
-	}
-	gocache := filepath.Join(base, "gocache")
-	if err := os.MkdirAll(gocache, 0o777); err != nil {
-		return err
-	}
-	if err := os.Chmod(gocache, 0o777); err != nil {
-		return err
-	}
-	gopath := filepath.Join(base, "gopath")
-	if err := os.MkdirAll(gopath, 0o777); err != nil {
-		return err
-	}
-	if err := os.Chmod(gopath, 0o777); err != nil {
-		return err
-	}
-	overrides["GOMODCACHE"] = modcache
-	overrides["GOCACHE"] = gocache
-	overrides["GOPATH"] = gopath
-	overrides["GOTOOLCHAIN"] = "local"
-	overrides["GOROOT"] = unset
-	return nil
 }
 
 func chownTree(dir string, uid, gid int) error {

@@ -19,43 +19,59 @@ type workspace struct {
 	cleanup    func()
 }
 
-func prepareWorkspace(gitPath string) (workspace, error) {
-	base := os.Getenv("COACH_CI_ENV_CACHE")
-	if base == "" {
-		base = filepath.Join(os.TempDir(), "coach-ci-env-"+strconv.Itoa(os.Geteuid()))
-	}
-	if err := os.MkdirAll(base, 0o755); err != nil {
+func prepareWorkspace(gitPath string) (space workspace, err error) {
+	base, err := ownedBase()
+	if err != nil {
 		return workspace{}, err
 	}
 	runDir, err := os.MkdirTemp(base, "run-*")
 	if err != nil {
 		return workspace{}, err
 	}
-	space := workspace{home: filepath.Join(runDir, "home"), uid: os.Geteuid(), cleanup: func() { _ = os.RemoveAll(runDir) }}
-	for _, dir := range []string{space.home, filepath.Join(runDir, "xdg")} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return workspace{}, err
+	space = workspace{home: filepath.Join(runDir, "home"), uid: os.Geteuid(), cleanup: func() { _ = os.RemoveAll(runDir) }}
+	defer func() {
+		if err != nil {
+			space.cleanup()
 		}
+	}()
+	overrides, err := isolatedGitAndHome(runDir)
+	if err != nil {
+		return workspace{}, err
+	}
+	overrides["PATH"] = filepath.Dir(gitPath) + string(filepath.ListSeparator) + os.Getenv("PATH")
+	if space.uid == 0 {
+		err = space.dropToNobody(base, runDir, gitPath, overrides)
+	} else {
+		space.repo, err = os.Getwd()
+		if err == nil {
+			err = keepCallersGoCaches(overrides)
+		}
+	}
+	if err != nil {
+		return workspace{}, err
+	}
+	space.env = withOverrides(withoutInheritedGitConfig(os.Environ()), overrides)
+	return space, nil
+}
+
+// isolatedGitAndHome makes the empty HOME, the empty user-level git config and
+// the temporary directory the tests run with, all inside runDir.
+func isolatedGitAndHome(runDir string) (map[string]string, error) {
+	dirs := map[string]string{"HOME": "home", "XDG_CONFIG_HOME": "xdg", "TMPDIR": "tmp"}
+	overrides := map[string]string{}
+	for name, dir := range dirs {
+		path := filepath.Join(runDir, dir)
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			return nil, err
+		}
+		overrides[name] = path
 	}
 	emptyConfig := filepath.Join(runDir, "gitconfig")
 	if err := os.WriteFile(emptyConfig, nil, 0o644); err != nil {
-		return workspace{}, err
+		return nil, err
 	}
-	overrides := map[string]string{
-		"HOME":              space.home,
-		"GIT_CONFIG_GLOBAL": emptyConfig,
-		"XDG_CONFIG_HOME":   filepath.Join(runDir, "xdg"),
-	}
-	if space.uid == 0 {
-		if err := space.dropToNobody(base, runDir, gitPath, overrides); err != nil {
-			space.cleanup()
-			return workspace{}, err
-		}
-	} else if space.repo, err = os.Getwd(); err != nil {
-		return workspace{}, err
-	}
-	space.env = withOverrides(os.Environ(), overrides)
-	return space, nil
+	overrides["GIT_CONFIG_GLOBAL"] = emptyConfig
+	return overrides, nil
 }
 
 // dropToNobody prepares a root run: the repository, the unreadable toolchain
@@ -74,12 +90,12 @@ func (w *workspace) dropToNobody(base, runDir, gitPath string, overrides map[str
 	if err := copyRepository(w.repo); err != nil {
 		return err
 	}
-	path, err := reachablePath(base, os.Getenv("PATH"), filepath.Dir(gitPath))
+	path, err := reachablePath(base, os.Getenv("PATH"), filepath.Dir(gitPath), gid)
 	if err != nil {
 		return err
 	}
 	overrides["PATH"] = path
-	if err := w.useReachableGoCaches(base, overrides); err != nil {
+	if err := useNobodysGoCaches(base, overrides, uid, gid); err != nil {
 		return err
 	}
 	if err := chownTree(runDir, uid, gid); err != nil {
@@ -104,33 +120,4 @@ func (w workspace) goTest(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return 0
-}
-
-// unset, as an override, removes the variable: a GOROOT that names the root
-// user's toolchain would send the non-root go to a directory it cannot read.
-const unset = "\x00unset"
-
-func withOverrides(environ []string, overrides map[string]string) []string {
-	var out []string
-	for _, entry := range environ {
-		name, _, _ := cutEnv(entry)
-		if _, overridden := overrides[name]; !overridden {
-			out = append(out, entry)
-		}
-	}
-	for name, value := range overrides {
-		if value != unset {
-			out = append(out, name+"="+value)
-		}
-	}
-	return out
-}
-
-func cutEnv(entry string) (string, string, bool) {
-	for i := 0; i < len(entry); i++ {
-		if entry[i] == '=' {
-			return entry[:i], entry[i+1:], true
-		}
-	}
-	return entry, "", false
 }

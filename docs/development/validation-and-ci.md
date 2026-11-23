@@ -68,10 +68,21 @@ mise run acceptance-ci-env -- ./cmd/coach/...
 ```
 
 It runs the tests as a non-root user. Run as root, it runs them as `nobody`, over
-copies of the repository and of the toolchains on PATH that `nobody` can read,
-cached under `$COACH_CI_ENV_CACHE` (default `$TMPDIR/coach-ci-env`). It gives
-them an empty HOME and an empty `GIT_CONFIG_GLOBAL`, leaves the system git
-config as it is, and keeps CI's PATH: the mise toolchain.
+copies of the repository (with `.git`) and of the mise toolchains on PATH,
+readable by `nobody`'s group only. It also gives `nobody` its own copy of the
+module cache, made once per `go.sum`. All of these are cached under
+`$COACH_CI_ENV_CACHE` (default `$TMPDIR/coach-ci-env-<uid>`); an existing cache
+root must be owned by the running user and writable by no one else.
+
+It gives the tests:
+
+- an empty HOME, `XDG_CONFIG_HOME`, `TMPDIR` and `GIT_CONFIG_GLOBAL`, with the
+  Go caches named outside HOME;
+- the system git config as it is;
+- no git configuration or identity carried in the environment
+  (`GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, `GIT_CONFIG_PARAMETERS`,
+  `GIT_AUTHOR_*`, `GIT_COMMITTER_*`), which CI does not set;
+- CI's PATH, the mise toolchain, with the checked git first.
 
 CI's git floats, and the task is pinned. `COACH_CI_GIT_VERSION` in the task's
 `env` in `mise.toml` is the one place the expected git version is stated; bump
