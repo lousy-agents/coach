@@ -5,6 +5,95 @@ analyzer libraries. Customer onboarding lives in [README.md](../README.md).
 
 This documents shipped behavior. It is not a gate and not a 1.0 promise.
 
+## Install
+
+Coach needs `git` 2.42 or later on `PATH`. [Git version](#git-version) lists what older versions lack.
+
+Install [mise](https://mise.jdx.dev/) if you do not have it, then pin the CLI from [GitHub Releases](https://github.com/lousy-agents/coach/releases):
+
+```sh
+curl https://mise.run | sh
+~/.local/bin/mise use -g github:lousy-agents/coach
+```
+
+That mutates a **global** mise config. Hook mise into your shell so `coach` is on `PATH` (pick the one you use):
+
+```sh
+echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc && eval "$(~/.local/bin/mise activate bash)"
+# echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc && eval "$(~/.local/bin/mise activate zsh)"
+# ~/.local/bin/mise activate fish | source
+```
+
+Pin a release if you want a fixed binary. Replace `<tag>` with a release tag from the Releases page:
+
+```sh
+mise use -g github:lousy-agents/coach@<tag>
+```
+
+To run without changing a global toolchain, prefix the command with `mise exec`: `mise exec github:lousy-agents/coach -- coach codesignal --baseline`.
+
+Release archives exist for `darwin_arm64`, `darwin_x86_64`, `linux_x86_64`, and `windows_x86_64`. There is no `linux_arm64` build yet. The signed-archive procedure without mise is in [Signed archive without mise](#signed-archive-without-mise).
+
+### From source
+
+This path uses the repo's `mise.toml` to pin the **dev toolchain** (Go 1.27.1, Node 24). That is not the same as installing the published `coach` binary.
+
+```sh
+git clone https://github.com/lousy-agents/coach.git
+cd coach
+mise install
+mise exec -- go install ./cmd/coach
+```
+
+## Run
+
+From any Git worktree. Prefer a one-shot that does not mutate a global toolchain:
+
+```sh
+mise exec github:lousy-agents/coach -- coach codesignal --base main
+```
+
+```sh
+coach codesignal --base main          # diff HEAD against main
+coach codesignal --baseline           # every tracked Go/TS/TSX file at HEAD
+coach codesignal --base main --format json
+```
+
+`--base` can be any ref Git can resolve (branch, tag, or SHA). Default output is text. `--base` and `--baseline` are mutually exclusive.
+
+Signals are ranked, with `severity` and `rule_id` printed on each: lifecycle group first (with `--base`, introduced and changed findings come first), then severity, confidence, and path, with findings of the same metric rule (cognitive complexity, branch density, nesting depth) ordered by how far each exceeds its threshold. To read a long report, add `--min-severity high|medium|advisory|low` to hide lower severities (`--min-severity medium` also hides `advisory` layer-rule findings, and a `--top` cap can push them out because `advisory` ranks below every `medium` finding in the same lifecycle group; only `complexity.cognitive_complexity` and `complexity.max_nesting_depth` findings can be `high`, so `--min-severity high` shows only those two rules; `security.toctou_check_then_act` and `state.hidden_input_mutation` are always `medium`, so a `high` floor withholds them) or `--top N` to keep the first `N` in that order (with `--base`, that order puts `resolved` findings ahead of `unknown` ones, so a cap can spend slots on findings already fixed; see [Report order](#report-order)). Both state how many signals they withheld (text also says how to show them all: the command, or a note to re-run without the narrowing flags you gave when an argument is unsafe to print; the printed command starts with `coach`, so if you launched through mise, run it as `mise exec github:lousy-agents/coach -- coach codesignal ...`), leave `summary` and `coverage` describing the full analysis, and never change the exit status. See [Narrowing the rendered report](#narrowing-the-rendered-report).
+
+Default `--scope` is `production`. `--build-target <pattern>` further limits Go production reachability; it is a no-op under `--scope all`.
+
+## What you should see
+
+A short text report per signal (`rule_id`, `severity`, `path`, `line`,
+`lifecycle`, `source_scope`, `changed`, `evidence`, why it matters,
+recommendation), or a quiet report if nothing matched. `lifecycle` is `introduced` / `existing` / `resolved` / `unknown`
+(and `baseline` under `--baseline`). The text report also prints a `policy:` line when a project policy is selected. `--top` caps findings, not diagnostics: diagnostics still print after the findings, so on a large repository the text report can be long. Use `--format json` for machine reads.
+
+Diff-mode limits (do not treat these as a clean PR):
+
+- Diff mode runs `git diff --name-status` with `--find-renames` (git's
+  default 50% similarity) and `--find-copies-harder` (also considers
+  unmodified files as copy sources — more aggressive than git's defaults).
+  Rename (`R`) and copy (`C`) **new paths** are analyzed. A pure git
+  rename or copy without old-path continuity yields `lifecycle: unknown`
+  plus a `continuity_not_determined` path diagnostic — coach does not
+  diff a rename against its old path, so a pure move is not classified
+  `existing` or `introduced`. Adopters who only watch
+  `introduced_signals` shall treat that path as incomplete, not green.
+- Statuses the CLI does not analyze (`T`, `U`, `X`, `B`) stay
+  `unsupported_change_type`. Those paths increment
+  `summary.files_unanalyzed` and `summary.files_with_diagnostics`, and the
+  text headline qualifies the all-clear with the numeric unanalyzed count.
+
+Text `line` is 1-based. JSON `location.start_row` is 0-based.
+
+Coach analyzes Go, TypeScript, and TSX. Other files get an `unsupported_language` diagnostic and are skipped.
+
+Lifecycle values and the counters that add them up are in [Lifecycle and counters](#lifecycle-and-counters).
+
 ## Commands
 
 ```text
@@ -210,6 +299,232 @@ appends `on a terminal: coach codesignal --baseline --project-config <path>
 --project-language typescript -- offers project-package setup`, naming the
 same scan invocation rather than a standalone subcommand: rerunning it on a
 terminal is what opens the combined setup offer above.
+
+## Project policy
+
+Opt into cross-file layer checks with a committed JSON config. Coach does not guess your architecture: you declare layers and forbidden import edges.
+
+```sh
+# Go: discover module/workspace roots (candidate only — review, add layers, commit)
+coach codesignal --baseline --suggest-project-config
+
+# after the file is committed at the analyzed revision
+coach codesignal --base main --project-config .lousy-agents/coach.json
+coach codesignal --baseline --project-config .lousy-agents/coach.json --project-language typescript
+```
+
+Move a root `project.json` to that path, from any directory of the repository:
+
+```sh
+top="$(git rev-parse --show-toplevel)" && mkdir -p "$top"/.lousy-agents && git -C "$top" mv -- project.json .lousy-agents/coach.json
+```
+
+An explicit `--project-config` still reads only that path. A schema-valid root `project.json` is still read with a deprecation diagnostic until the follow-up removal ([issue #511](https://github.com/lousy-agents/coach/issues/511)). The lookup is [`.lousy-agents` config](./conventions/lousy-agents-config.md).
+
+`--project-config` content is read from the working tree, and `scope.policy` discloses how it differs from `HEAD`. The path itself is checked on disk first, and what is there decides what Coach says. Every case below exits `2`, and stdout stays empty except for the policy-candidate document on the guided-authoring path. <!-- TODO(#168 A2b-1): the refusal list below still names the staged copy, merge conflict, index lock and committed-as-link causes of the scan refusals; rewrite when A2b-1 (disk-judged scan refusals) merges -->
+
+- Nothing is there, the policy was never committed, and the index holds nothing
+  for it: `project_config_missing`. A Go scan then prints
+  `--suggest-project-config`; a TypeScript scan on a controlling terminal opens
+  guided authoring, and `--check-project` names `author_policy`. An index entry
+  that holds no content, made with `git add --intent-to-add` or by staging an
+  empty file, counts as nothing, unless it is marked skip-worktree: git add
+  refuses a new file at a path the mark hides, so Coach calls it an empty entry,
+  names the mark (or the sparse checkout), and offers no new policy.
+- Nothing is there but the policy is committed at the analyzed revision:
+  `project_config_missing`, with the one command that brings it back,
+  `git restore --source=<revision> --staged --worktree -- ':(top,literal)<path>'`,
+  and no authoring. `--check-project` names it as the `restore_policy` next
+  action, with `executable: false`. Coach offers that command only when it
+  overwrites nothing and git can run it. If the index holds a staged edit to the
+  policy, the restore from the revision would discard the edit, so Coach does not
+  offer it as the default. It says why and offers no new policy, and it prints two
+  choices: the restore from the index, which keeps the edit, and, labelled as the
+  way to drop it, the restore from the revision, to drop it and bring back the
+  committed copy. If the index holds an unmerged entry for the policy, if the
+  policy is committed as a symbolic link, if a sparse checkout leaves it out of the
+  working tree or its index entry is marked skip-worktree, or if git cannot say
+  whether it is committed or what the index holds, Coach says why and offers
+  neither a restore nor a new policy.
+  An index entry that holds no content does not count as an edit: the restore
+  replaces it, and the message says that it brings back the committed copy,
+  unless the entry is marked skip-worktree, which stops a restore and is named
+  instead.
+- Nothing is there and the policy was never committed, but the index holds an
+  entry for it: `project_config_missing`, and no authoring, because a new policy
+  would replace staged work. A staged regular file gets the one command that
+  brings it back from the index, `git restore -- ':(top,literal)<path>'`. Coach
+  prints no command, and says why, when the entry is unmerged, is a symbolic link
+  or another entry that is not a regular file, or is marked skip-worktree or left
+  out by a sparse checkout, because the command would fail or would recreate what
+  the scan refuses. `--check-project` names neither next action.
+- A path under a regular file: `project_config_missing`. The message names the
+  file in the way. When the analyzed revision commits that file, the message says
+  it is a file the analyzed revision commits, so the path is probably wrong, and
+  gives no advice to move or remove it, because the file is the repository's and
+  the path is what is wrong. For a file nothing commits, the message says to move
+  or remove it, then to restore the policy from git when it is committed, unless
+  the index holds a staged edit to it, which the message names instead because a
+  restore would discard it, or it is committed as a symbolic link, which the
+  message says instead because a restore would recreate a link the scan refuses.
+  When the policy is only staged, never committed, it says to move the file and
+  then restore the staged copy from the index. When the index holds an unmerged
+  entry for the policy, the step that brings the conflicted file back
+  is described behind the step that moves the file, in words and with no command,
+  because bringing it back would delete that file as well. It prints no `git restore`
+  command and offers no authoring, because a restore would delete that file.
+- A symbolic link, a directory or other file that is not a regular file, a path
+  that runs through a symbolic link, a file that cannot be read, or a parent
+  that cannot be searched: `project_config_invalid`, naming the reason, with no
+  restore and no authoring.
+- A policy path that the analyzed revision does not commit as written, while it
+  commits the same path in another case (`CFG/p.json` named, `cfg/p.json`
+  committed; or `.Lousy-Agents/Coach.json` committed where Coach reads
+  `.lousy-agents/coach.json`): `project_config_invalid`, and `--check-project`
+  names `name_case_differs` and offers no new policy. One message serves a
+  policy you name and one Coach finds, on any file system and whatever
+  `core.ignorecase` says: it names the committed spelling and the path Coach
+  reads and says in words to make git record the policy at that path, then
+  commit and run again. It prints no command, and it always warns that a file
+  already at that path is to be moved aside first, because git can overwrite it
+  with `core.ignorecase` set. A rename you have already staged is told the same
+  as one you have not, because the revision still holds the old spelling until
+  you commit. A policy you name is also told to pass the committed spelling,
+  which is the way out for a slip of the case, and a directory renamed in case
+  only is told to take two steps on a file system that folds case. A revision
+  that commits exactly the path as written is read
+  whatever spelling the disk shows. See the [CLI contract](#commands).
+- A policy inside a submodule checkout, or at a path the analyzed revision
+  commits as a submodule, naming the submodule: `project_config_invalid` while
+  the checkout is there (the file in it, or the submodule itself), and
+  `project_config_missing` once it is gone (`git submodule deinit`).
+  `--check-project` names the cause `in_submodule` for all of them, and so for
+  a name below the submodule that differs in case from the checkout's: the
+  superproject holds no spelling of what is inside, so Coach does not report a
+  difference in case there. A name that spells the submodule's own path in
+  another case than the index records it, where git ignores case
+  (`core.ignorecase`), is inside it all the same, and the message names the
+  submodule as the index records it. The superproject records a submodule as one commit,
+  so the file can be neither restored nor committed here; name a policy this
+  repository commits. See the
+  [CLI contract](#commands).
+
+An uncommitted policy file is read from disk like a committed one. It passes with a warning: `project_policy_not_committed` in `--check-project`, and `scope.policy.cause` `not_committed` in a scan (see [Policy disclosure](#policy-disclosure-scopepolicy)). A valid config switches the report to `schema_version: "2"` and can emit `architecture.layer_violation`. `required_layer` can also emit `architecture.layer_bypass` (Go and TypeScript) on a narrow handler→SQL registry.
+
+TypeScript `--project-config` uses Coach's embedded analyzer and a host-resolved
+compiler whose own `package.json` version is in the supported set (`7.0.2`
+today). Version ranges (`^`, `~`, `latest`) never count. If you previously
+vendored Coach's analyzer under the analyzed repository, you can delete that
+copy. `--suggest-project-config` never invents `layers` or `forbidden_imports`,
+and it never auto-applies a config.
+
+Go `--suggest-project-config` prints a candidate. TypeScript
+`--suggest-project-config --project-language typescript` is an **interactive
+TTY session** and writes nothing until you confirm. Do not run it unattended.
+
+## TypeScript project readiness
+
+```sh
+coach codesignal --baseline --check-project --project-language typescript
+coach codesignal --baseline --suggest-project-config --project-language typescript
+```
+
+Run `--check-project` first. It is read-only: it reports compiler, Node, and
+policy fit and exits `0` so you inspect the result instead of treating process
+status as a gate. It is not a scan. It reads the project policy from the working
+tree: a usable regular file at the policy's path is the policy, whatever the index and
+the analyzed revision hold there, and its roots come from that file. How the file
+differs from the analyzed revision is a warning, never a gap, and it does not change
+`status`: `project_policy_not_committed`, `project_policy_differs_from_head` or
+`project_policy_head_unreadable`, in the JSON `warnings` and the text `Warnings:`
+section. A file whose content is not a usable policy is `policy_invalid` with no new
+policy to author: fix the file. Where nothing is on disk and the index holds work for
+the path, the cause is `undetermined` and no restore from the revision is offered over
+that work. A **scan** that cannot resolve a supported
+compiler or host Node exits `2` with empty stdout except the policy-candidate
+document on the guided-authoring path, and one or more stderr lines. On a
+controlling terminal, a TypeScript scan whose `--project-config` names a
+policy that does not exist on disk and was never committed instead opens a
+guided-authoring session (a policy that is committed, or that the index holds, gets what the cases above describe instead);
+with `--format json` this session's exit-2 output is
+a JSON object carrying `"schema_version": "1"` and `roots`, not a CodeSignal
+report — the absent `scope`/`signals`/`coverage` keys distinguish it.
+
+Coach's supported Node majors are exactly `24` and `26`. Any other major is the
+`node_unsupported` readiness gap. `@lousy-agents/coach-semantics` declares this
+as `engines.node: "^24 || ^26"`.
+
+`--prepare-compiler` is a consented, interactive mise TypeScript compiler-setup
+session (requires a TTY; refuses otherwise). It prompts before installing. It
+also refuses, naming the gap without opening a menu, when the readiness gap is
+a runtime boundary (missing or unsupported host Node): Coach has no setup
+command for a Node version problem, and the flag shares that gate with the
+scan's own compiler-setup offer so the two paths cannot disagree on it. The
+flag judges the policy the same way as `--check-project`, refuses while it has a gap,
+and prints the policy warnings before its prompt, as the scan's offer does. The
+flag remains **mise-only**, so it is narrower than the scan's offer in what it
+can install; Coach never names it as remediation for a gap only the project
+package manager could resolve.
+
+A **scan** (`--baseline`/`--base` with `--project-config`, `--project-language
+typescript`, a policy that passes `--check-project`, and an unresolved compiler) offers a superset
+of that setup interactively when it runs on a controlling terminal: it names
+the failing check and what happens after a successful install, then shows a
+menu of up to four choices —
+`project_package` (run the project's own package-manager install, e.g. `npm
+ci --ignore-scripts`), `project_mise`/`global_mise` (run `mise install` for a
+project- or globally-pinned supported TypeScript version), and `cancel`. A
+choice that would open only to report nothing to do is withheld from the
+menu, and a gap with nothing installable never opens a prompt at all. Picking
+`project_package` shows a preview (exact executable, arguments, working
+directory, expected on-disk changes, network use, and a bounded 5-minute
+timeout) before a separate, single-use `confirm`/`install` answer is
+required to actually run it — typing anything else, or a second leftover
+answer, cancels or is ignored rather than running twice. On cancel, nothing
+runs and the scan exits 2 with the original remediation. On failure, the scan
+exits 2, reports the failure, and never modifies the repository's tracked
+files. On success, Coach reruns the full readiness check and only continues
+the same scan through to a report if that rerun is clear; a rerun that still
+reports a gap still exits 2 with no report.
+
+Pass `--no-interactive`, or set a non-empty `CI` environment variable, to make
+Coach treat the run as unattended even when a real controlling terminal is
+attached — for example, a pty-allocating CI runner (`docker run -t`, `ssh -t`)
+with nobody at the keyboard. A scan then falls straight through to the same
+message-only remediation a piped invocation gets, and
+`--suggest-project-config` / `--prepare-compiler` refuse with exit `2` rather
+than opening a prompt nobody will answer.
+
+Still being built — do not expect these to work yet: unattended package-manager
+setup for the scanned project, Bun as a project runtime, and a packaged
+foreign-repository TypeScript journey.
+
+## Agent self-review hook (preview)
+
+The hook in the [README](../README.md#agent-self-review-preview) runs `coach codesignal --worktree` when a Claude Code session is about to stop. It blocks the stop with a message when the review did not run or was not clean. The `--worktree` flag is experimental until [#720](https://github.com/lousy-agents/coach/pull/720) merges. The PRD change that brings this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730).
+
+Each flag in the hook's command has a reason:
+
+- `--no-interactive` makes the run unattended. Without it, a TypeScript scan could open a setup prompt that no one answers. With it, the scan falls through to message-only remediation ([--no-interactive](#commands)).
+- `--fail-on-incomplete-coverage` turns incomplete coverage into exit `3`, so an unread part of the tree cannot read as clean ([Exit codes](#exit-codes)).
+- `--format json` lets the hook read `scope.policy.matches_head`.
+
+The hook's exit-code handling:
+
+| Exit | What the hook does |
+| --- | --- |
+| `0` | The review ran. It is clean unless `scope.policy.matches_head` is `false`. |
+| `1`, `2`, `127` | The review did not run: an operational failure (`1`), a usage error such as running outside the repository root (`2`), or `coach` not on `PATH` (`127`). The hook says so and blocks. |
+| `3` | Part of the in-scope working tree was not read. Not clean. |
+| any other | Not clean. |
+
+`matches_head: false` counts as not clean. The policy file is read from disk, so an agent that loosens `.lousy-agents/coach.json` could otherwise review its own change and come back clean. `scope.policy.cause` says why the policy differs: `differs_from_head` or `not_committed` ([Policy disclosure](#policy-disclosure-scopepolicy)).
+
+Clean does not mean no findings. The hook does not block on findings, which stay advisory.
+
+Claude Code sets `stop_hook_active` in the hook's input when a Stop hook has already blocked this stop. On that second attempt the hook prints the reason to stderr and exits `0`, so it cannot block forever.
+
+The hook needs `coach` on `PATH` (see [Install](#install)) and uses `CLAUDE_PROJECT_DIR` as the repository root. To test it by hand, pipe input to it, for example `echo '{}' | sh .claude/hooks/coach-self-review.sh`, because the hook reads its input from stdin.
 
 ## Git version
 
