@@ -49,7 +49,7 @@ that suggest/prepare still require `--baseline`).
 | `--fail-on-incomplete-coverage` | `false` | Exit `3` when required project coverage (model or bypass phase, on any analyzed side) is incomplete — including when the project backend is unavailable. A Go report records no provenance, so for Go this reads `project_coverage.complete`, which folds the model and any `required_layer` bypass search, and, for the base side of a diff, the coverage diagnostics. Go cases that count as incomplete include a repository with more than 5,000 tracked files of any type (Go discovery counts every file), a `required_layer` prefix that matches no function, and no `go` on `PATH` when `required_layer` is set. The report is always written to stdout first. Valid only on scan modes (`--base`, `--baseline`, `--worktree`). |
 
 Requires `git` on `PATH`. Analyzes **committed Git objects**, not the dirty
-worktree, unless `--worktree` is passed. TypeScript project mode also inspects
+worktree, unless `--worktree` is passed; the project policy is the exception, read from the working tree. TypeScript project mode also inspects
 worktree `package.json` / `node_modules` / `mise.toml` for compiler and Node
 readiness.
 
@@ -257,7 +257,7 @@ What it reads:
 
 Text prints one line under the scope summary: `worktree: <counts> on revision <sha>`, then `, compared with merge-base <sha>` for a diff, then `; configuration read from disk: <files>`. When no counts are non-zero it says `no uncommitted changes`, or `git status reports no uncommitted changes` when a `worktree_scan_incomplete` entry is present, or `the uncommitted-change counts could not be read` when the counts are zero and a `worktree_status_check_failed` diagnostic is present.
 
-The project policy is read from the commit under `--worktree`. An uncommitted change to the selected policy file, or an untracked policy file, is named by `worktree_changes_not_analyzed` and qualifies the verdict. <!-- TODO(#168 A2b/A3): the policy is read from disk under --worktree since #721; rewrite with the A2b/A3 refill -->
+The project policy is read from the working tree under `--worktree`, as in every scan. An uncommitted change to the selected policy file, or an untracked policy file, is the policy the scan uses, and `worktree_changes_not_analyzed` does not name it. `scope.policy` reports it with `matches_head` `false` and `cause` `differs_from_head` or `not_committed`, the text prints a WARNING, and a clean verdict is qualified ([Policy disclosure](#policy-disclosure-not-yet-implemented)).
 
 ### Policy disclosure (not yet implemented)
 
