@@ -488,12 +488,32 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 	})
 
 	When("the repository cannot resolve a committed subtree at the resolved revision (a corrupt/missing tree object)", func() {
-		It("exits 1 and never emits a readiness document, rather than reporting the committed policy file as missing", func() {
+		It("passes a policy that is usable on disk, with the warning that the committed copy could not be read, rather than reporting it as missing", func() {
+			skipUnlessGitCanRefuseLazyFetch()
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
 			writeInstalledTypescript(repo, "7.0.2")
 			commitFile(repo, "config/project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 			corruptCommittedTree(repo, "config")
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "config/project.json", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stdout: %s stderr: %s", stdout, stderr)
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed())
+			Expect(doc.Checks.Policy.State).To(Equal("pass"))
+			Expect(doc.Gaps).To(BeEmpty())
+			Expect(doc.Warnings).To(ContainElement(HaveField("Code", "project_policy_head_unreadable")))
+		})
+
+		It("exits 1 and never emits a readiness document when the policy is gone from disk, rather than reporting the committed policy file as missing", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
+			writeInstalledTypescript(repo, "7.0.2")
+			commitFile(repo, "config/project.json", `{"schema_version":"1","roots":["."]}`+"\n")
+			corruptCommittedTree(repo, "config")
+			Expect(os.Remove(filepath.Join(repo, "config", "project.json"))).To(Succeed())
 
 			path := pathWithStubNode("v24.9.9")
 

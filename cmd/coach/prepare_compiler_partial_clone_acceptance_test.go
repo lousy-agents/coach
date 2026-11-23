@@ -18,17 +18,9 @@ var _ = Describe("coach codesignal --prepare-compiler: a policy on disk whose bl
 		clone := commitPartialClone(func(bare string) string { return "file://" + bare })
 		Expect(os.MkdirAll(filepath.Join(clone, "cfg"), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(clone, "cfg", "p.json"), []byte(singleRootPolicyJSON), 0o644)).To(Succeed())
-		devNull, err := os.Open(os.DevNull)
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(devNull.Close)
-		transcript, err := os.Create(filepath.Join(GinkgoT().TempDir(), "stderr"))
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(transcript.Close)
+		run := prepareCompilerAnswering(clone, policyref.Named("cfg/p.json"), "mise_project\ndecline\n")
+		printed := run.transcript
 
-		prepareCompilerMiseTypeScript(clone, devNull, devNull, transcript, policyref.Named("cfg/p.json"))
-
-		printed, readErr := os.ReadFile(transcript.Name())
-		Expect(readErr).NotTo(HaveOccurred())
 		Expect(string(printed)).NotTo(ContainSubstring(`"cfg/p.json" could not be read at revision`), "stderr:\n%s", printed)
 		Expect(string(printed)).NotTo(ContainSubstring("git cat-file -e"), "no fetch is asked of the user for a policy the disk holds:\n%s", printed)
 		Expect(string(printed)).To(ContainSubstring("project_policy_head_unreadable"), "stderr:\n%s", printed)
