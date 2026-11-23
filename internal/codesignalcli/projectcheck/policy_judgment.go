@@ -19,7 +19,7 @@ type policyJudgment struct {
 // judgePolicy judges the policy from the working tree: a usable regular file there is the policy, whatever the
 // analyzed revision and the index hold for its path (ADR-009). Only a path with no usable file on disk asks the revision
 // and the index which way out there is. A root project.json that discovery falls back to is a policy only when it is a
-// valid one: an invalid or unreadable one is no policy, and the gap is the one for a policy that is missing.
+// valid one, unless the analyzed revision selects it too, in which case it is the policy and the gap is its refusal.
 func judgePolicy(run gitrepo.Runner, dir, revision string, policy policyref.Ref) (policyJudgment, error) {
 	if _, err := gitrepo.RepositoryRootWith(run, dir); err != nil {
 		return policyJudgment{}, err
@@ -30,7 +30,7 @@ func judgePolicy(run gitrepo.Runner, dir, revision string, policy policyref.Ref)
 	if err != nil {
 		failedAt := selectionFailurePath(dir, namedPath)
 		if discovered && failedAt == projectconfig.DefaultPath {
-			return judgeAbsentPolicy(run, dir, revision, policy)
+			return judgeRootProjectThatCannotBeUsed(run, dir, revision, policy, err)
 		}
 		return judgmentOfRefusal(failedAt, err, policy)
 	}
@@ -40,7 +40,7 @@ func judgePolicy(run gitrepo.Runner, dir, revision string, policy policyref.Ref)
 	config, err := projectconfig.UsableDiskPolicy(selection)
 	if err != nil {
 		if discovered && selection.Path == projectconfig.DefaultPath {
-			return judgeAbsentPolicy(run, dir, revision, policy)
+			return judgeRootProjectThatCannotBeUsed(run, dir, revision, policy, err)
 		}
 		return judgmentOfRefusal(selection.Path, err, policy)
 	}
