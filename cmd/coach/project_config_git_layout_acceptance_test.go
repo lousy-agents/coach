@@ -191,3 +191,89 @@ var _ = Describe("coach codesignal: a scan still reads a repository whose git di
 		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(explicitPolicyPath, singleRootPolicyJSON, diskCauseSameAsHead))))
 	})
 })
+
+var _ = Describe("coach codesignal: GIT_WORK_TREE does not excuse a git directory that is another repository's own (#168 A2a)", func() {
+	DescribeTable("exits 2 with no report, naming the git directory, whether or not a policy is read",
+		func(withPolicy bool) {
+			repo := commitScannableGoRepo()
+			scanArgs := []string{"--baseline"}
+			if withPolicy {
+				repo = commitExplicitPolicyRepo()
+				scanArgs = append(scanArgs, "--project-config", explicitPolicyPath)
+			}
+			other := commitScannableGoRepo()
+			extra := []string{"GIT_DIR=" + filepath.Join(other, ".git"), "GIT_WORK_TREE=" + repo}
+			layout := layoutOf(repo, extra)
+			Expect(layout.gitDir).To(Equal(filepath.Join(other, ".git")), "the fixture must point git at the other repository")
+			Expect(layout.topLevel).To(Equal(repo), "the fixture must name the first repository's working tree")
+			Expect(layout.gitDir).To(Equal(layout.commonDir), "the fixture must name a main git directory")
+			Expect(layout.coreWorktree).To(BeEmpty())
+			Expect(filepath.Base(layout.gitDir)).To(Equal(".git"))
+			Expect(filepath.Dir(layout.gitDir)).NotTo(Equal(layout.topLevel))
+
+			stdout, stderr, exitCode := codesignalJSONIn(repo, extra, scanArgs...)
+
+			Expect(exitCode).To(Equal(2), "stdout=%s stderr=%s", stdout, stderr)
+			Expect(string(stderr)).To(ContainSubstring("is not the one that holds this working tree"))
+			Expect(string(stderr)).To(ContainSubstring(layout.gitDir))
+			Expect(stdout).To(BeEmpty())
+		},
+		Entry("GIT_DIR names another repository's .git and GIT_WORK_TREE the scanned one, and a policy is on disk", true),
+		Entry("GIT_DIR names another repository's .git and GIT_WORK_TREE the scanned one, and there is no policy", false),
+	)
+
+	It("scans a repository when GIT_DIR names its own .git and GIT_WORK_TREE its work tree", func() {
+		repo := commitExplicitPolicyRepo()
+		extra := []string{"GIT_DIR=" + filepath.Join(repo, ".git"), "GIT_WORK_TREE=" + repo}
+		layout := layoutOf(repo, extra)
+		Expect(layout.gitDir).To(Equal(filepath.Join(repo, ".git")))
+		Expect(layout.topLevel).To(Equal(repo))
+		Expect(layout.coreWorktree).To(BeEmpty())
+
+		stdout, stderr, exitCode := codesignalJSONIn(repo, extra, "--baseline", "--project-config", explicitPolicyPath)
+
+		Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(explicitPolicyPath, singleRootPolicyJSON, diskCauseSameAsHead))))
+	})
+})
+
+var _ = Describe("coach codesignal: a separate git directory named .git outside its work tree is refused unless core.worktree records the work tree (#168 A2a)", func() {
+	separateDotGitRepo := func() (repo string, layout gitLayout) {
+		repo = commitExplicitPolicyRepo()
+		store := filepath.Join(GinkgoT().TempDir(), "stores", "proj", ".git")
+		Expect(os.MkdirAll(filepath.Dir(store), 0o755)).To(Succeed())
+		runGitInRepo(repo, "init", "-q", "--separate-git-dir="+store, repo)
+		layout = layoutOf(repo, nil)
+		Expect(layout.coreWorktree).To(BeEmpty(), "core.worktree must not be what links this layout")
+		Expect(filepath.Base(layout.gitDir)).To(Equal(".git"))
+		Expect(layout.gitDir).To(Equal(layout.commonDir))
+		Expect(layout.topLevel).To(Equal(repo))
+		Expect(repo).NotTo(HavePrefix(filepath.Dir(layout.gitDir)+string(filepath.Separator)), "the work tree must not sit inside the git directory's parent")
+		Expect(filepath.Join(repo, ".git")).To(BeARegularFile())
+		return repo, layout
+	}
+
+	It("exits 2 with no report, naming the git directory and the core.worktree workaround and not GIT_WORK_TREE", func() {
+		repo, layout := separateDotGitRepo()
+
+		stdout, stderr, exitCode := codesignalJSONIn(repo, nil, "--baseline", "--project-config", explicitPolicyPath)
+
+		Expect(exitCode).To(Equal(2), "stdout=%s stderr=%s", stdout, stderr)
+		Expect(string(stderr)).To(ContainSubstring("is not the one that holds this working tree"))
+		Expect(string(stderr)).To(ContainSubstring(layout.gitDir))
+		Expect(string(stderr)).To(ContainSubstring("core.worktree"))
+		Expect(string(stderr)).NotTo(ContainSubstring("GIT_WORK_TREE"))
+		Expect(stdout).To(BeEmpty())
+	})
+
+	It("scans the same repository once core.worktree names its work tree", func() {
+		repo, layout := separateDotGitRepo()
+		runGitInRepo(repo, "--git-dir="+layout.gitDir, "config", "core.worktree", repo)
+		Expect(layoutOf(repo, nil).coreWorktree).To(Equal(repo), "the workaround must be what links this layout")
+
+		stdout, stderr, exitCode := codesignalJSONIn(repo, nil, "--baseline", "--project-config", explicitPolicyPath)
+
+		Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(explicitPolicyPath, singleRootPolicyJSON, diskCauseSameAsHead))))
+	})
+})
