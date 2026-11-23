@@ -321,7 +321,7 @@ top="$(git rev-parse --show-toplevel)" && mkdir -p "$top"/.lousy-agents && git -
 
 An explicit `--project-config` still reads only that path. A schema-valid root `project.json` is still read with a deprecation diagnostic until the follow-up removal ([issue #511](https://github.com/lousy-agents/coach/issues/511)). The lookup is [`.lousy-agents` config](./conventions/lousy-agents-config.md).
 
-`--project-config` content is read from the working tree, and `scope.policy` discloses how it differs from `HEAD`. The path itself is checked on disk first, and what is there decides what Coach says. Every case below exits `2`, and stdout stays empty except for the policy-candidate document on the guided-authoring path. <!-- TODO(#168 A2b-1): the refusal list below still names the staged copy, merge conflict, index lock and committed-as-link causes of the scan refusals. Rewrite when A2b-1 (disk-judged scan refusals) merges -->
+`--project-config` content is read from the working tree, and `scope.policy` discloses how it differs from `HEAD`. The path itself is checked on disk first, and what is there decides what Coach says. Every case below exits `2`, and stdout stays empty except for the policy-candidate document on the guided-authoring path.
 
 - Nothing is there, the policy was never committed, and the index holds nothing
   for it: `project_config_missing`. A Go scan then prints
@@ -374,9 +374,10 @@ An explicit `--project-config` still reads only that path. A schema-valid root `
   because bringing it back would delete that file as well. It prints no `git restore`
   command and offers no authoring, because a restore would delete that file.
 - A symbolic link, a directory or other file that is not a regular file, a path
-  that runs through a symbolic link, a file that cannot be read, or a parent
-  that cannot be searched: `project_config_invalid`, naming the reason, with no
-  restore and no authoring.
+  that runs through a symbolic link, a file that cannot be read, a parent
+  that cannot be searched, a file that is not a valid policy, or one over the
+  size limit: `project_config_invalid`, naming the reason, with no restore and
+  no authoring.
 - A policy path that the analyzed revision does not commit as written, while it
   commits the same path in another case (`CFG/p.json` named, `cfg/p.json`
   committed, or `.Lousy-Agents/Coach.json` committed where Coach reads
@@ -393,7 +394,7 @@ An explicit `--project-config` still reads only that path. A schema-valid root `
   which is the way out for a slip of the case, and a directory renamed in case
   only is told to take two steps on a file system that folds case. A revision
   that commits exactly the path as written is read
-  whatever spelling the disk shows. See the [CLI contract](#commands).
+  whatever spelling the disk shows. See the [CLI contract](#commands). <!-- TODO(#168 batch 3): this item still says the revision decides the spelling of the policy path; rewrite when batch 3 (the on-disk spelling walk behind name_case_differs) lands -->
 - A policy inside a submodule checkout, or at a path the analyzed revision
   commits as a submodule, naming the submodule: `project_config_invalid` while
   the checkout is there (the file in it, or the submodule itself), and
