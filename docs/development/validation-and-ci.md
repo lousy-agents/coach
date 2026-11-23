@@ -139,7 +139,7 @@ GHA is a parallel scheduler of atomic `mise run <task>` steps. The local
 `ci` / `ci-fast` / `ci-all` composites are serial bundles of the same tasks; the
 workflow does not invoke those composites.
 
-Eight independent leaf jobs plus a `status` aggregator:
+Nine independent leaf jobs plus a `status` aggregator:
 
 - `verify` — `ci-go`: gofmt / go-vet / tidy-check / acceptance-style-check /
   source-layout-check / test / test-examples. `install_args` names Go, pnpm,
@@ -163,6 +163,12 @@ Eight independent leaf jobs plus a `status` aggregator:
   running, because a mise regression that declined the override would otherwise re-run the
   Node 24 leg and stay green, leaving the supported {24,26} set half-proven.
 - `wasm-build` — `mise run wasm-build`.
+- `distro-git` — the Go tests (`./...`) through `cmd/acceptance-ci-env`, in an
+  `ubuntu:24.04` container with that release's own git 2.43, the oldest git
+  `docs/cli-codesignal.md` names. The job sets `COACH_CI_GIT_VERSION=2.43.0`, so
+  the program refuses any other git, and, run as root in the container, runs
+  the tests as `nobody` with an empty HOME. Every other leaf runs the runner
+  image's git, which floats. Allow 60 minutes.
 - `vulncheck` — `mise run vulncheck`. Symbol-level source scan, text output, so a reachable vulnerable symbol exits 3 and fails the job. `install_args` names Go and the pinned `govulncheck`; the Go module cache matches the other Go jobs. The vulnerability database is not cached. SARIF is not uploaded: that format exits 0 when findings exist, and an upload would need code-scanning write on a workflow whose grant is `contents: read`.
 - `platform-smoke` — `platform-up` / `platform-smoke` / `platform-down` as three
   steps, so teardown still runs on failure.

@@ -269,12 +269,38 @@ jobs:
       - name: vulncheck
         run: mise run vulncheck
 
+  # Runs the Go tests under the oldest git Coach documents: Ubuntu 24.04's own
+  # 2.43, which the runner image does not have, as its git floats with the image.
+  # acceptance-ci-env runs them as a non-root user with an empty HOME, and the
+  # pin makes it refuse any other git, so a newer git cannot turn this leg into a
+  # copy of verify (#737).
+  distro-git:
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    timeout-minutes: 60
+    env:
+      COACH_CI_GIT_VERSION: "2.43.0"
+    steps:
+      - name: install Ubuntu 24.04's git
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl xz-utils build-essential
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
+        with:
+          version: "2026.11.12"
+          install_args: go
+          experimental: true
+
+      - name: Go tests under git 2.43, as a non-root user
+        run: mise exec -- go run ./cmd/acceptance-ci-env ./...
+
   # Single required check for branch protection. Leaf jobs stay parallel;
   # this job fails if any required leaf is not success. if: always() so a
   # failed leaf still produces a failed status rather than a missing check.
   status:
     if: always()
-    needs: [verify, js-verify, projectmodel-sidecar, ts-project-backend, ts-project-backend-node26, wasm-build, vulncheck, platform-smoke]
+    needs: [verify, js-verify, projectmodel-sidecar, ts-project-backend, ts-project-backend-node26, wasm-build, vulncheck, platform-smoke, distro-git]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
