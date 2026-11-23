@@ -18,13 +18,13 @@ var _ = Describe("a cmd/coach spec that needs GIT_NO_LAZY_FETCH, from git 2.44 (
 
 	for _, text := range needs244 {
 		It("#733 AC8: \""+text+"\" reports Skipped naming git 2.44 under an older git, and passes under 2.44 or later", func() {
-			command := exec.Command("go", "test", "./cmd/coach", "-count=1", "-run", "TestCoachAcceptance", "-args",
+			command := exec.Command("go", "test", "./cmd/coach", "-count=1", "-v", "-run", "TestCoachAcceptance", "-args",
 				"-ginkgo.v", "-ginkgo.no-color", "-ginkgo.focus="+regexp.QuoteMeta(text))
 			command.Dir = repoRoot
 			out, _ := command.CombinedOutput()
 			output := string(out)
 
-			Expect(output).To(MatchRegexp(`Ran [1-9]\d* of`), "the focus must select the spec; output:\n%s", output)
+			Expect(output).To(MatchRegexp(`Will run [1-9]\d* of`), "the focus must select the spec; output:\n%s", output)
 			if atLeast(hostGitVersion(), 2, 44) {
 				Expect(output).To(ContainSubstring("SUCCESS!"), "output:\n%s", output)
 				Expect(output).NotTo(ContainSubstring("[SKIPPED]"), "output:\n%s", output)

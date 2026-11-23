@@ -94,6 +94,19 @@ non-zero and names both versions, and runs no test.
 run in an agent sandbox, which cannot build CI's git, so a sandbox run uses
 `COACH_CI_GIT_ALLOW_MISMATCH=1`.
 
+The `ts-project-backend` specs need js/semantics' build outputs, which CI's job
+builds with `mise run js-install` before it runs them. Run that first, then
+pass the label:
+
+```sh
+mise run js-install
+mise run acceptance-ci-env -- ./cmd/coach/... -run Acceptance -args -ginkgo.label-filter=ts-project-backend
+```
+
+The task copies `js/semantics/node_modules` and `js/semantics/dist` into its
+repository copy and says so. Without them, it refuses, naming `mise run
+js-install`.
+
 A spec that cannot build its state as root, such as a mode 000 file, skips
 under root and says that `mise run acceptance-ci-env` runs it as non-root. A test
 that needs a newer git than the one running skips, naming the version it

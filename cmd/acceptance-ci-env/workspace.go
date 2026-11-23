@@ -13,13 +13,14 @@ import (
 // run in place; as root they run as `nobody` over copies that user can read.
 type workspace struct {
 	repo, home string
+	jsNote     string
 	uid        int
 	env        []string
 	wrap       []string
 	cleanup    func()
 }
 
-func prepareWorkspace(gitPath string) (space workspace, err error) {
+func prepareWorkspace(gitPath string, withJS bool) (space workspace, err error) {
 	base, err := ownedBase()
 	if err != nil {
 		return workspace{}, err
@@ -40,11 +41,14 @@ func prepareWorkspace(gitPath string) (space workspace, err error) {
 	}
 	overrides["PATH"] = filepath.Dir(gitPath) + string(filepath.ListSeparator) + os.Getenv("PATH")
 	if space.uid == 0 {
-		err = space.dropToNobody(base, runDir, gitPath, overrides)
+		err = space.dropToNobody(base, runDir, gitPath, overrides, withJS)
 	} else {
 		space.repo, err = os.Getwd()
 		if err == nil {
 			err = keepCallersGoCaches(overrides)
+		}
+		if withJS {
+			space.jsNote = "uses js/semantics' built outputs in place, as CI's job builds them before its tests"
 		}
 	}
 	if err != nil {
@@ -77,7 +81,7 @@ func isolatedGitAndHome(runDir string) (map[string]string, error) {
 // dropToNobody prepares a root run: the repository, the unreadable toolchain
 // directories on PATH and the module cache are copied where `nobody` can read
 // them, and the tests are wrapped in setpriv.
-func (w *workspace) dropToNobody(base, runDir, gitPath string, overrides map[string]string) error {
+func (w *workspace) dropToNobody(base, runDir, gitPath string, overrides map[string]string, withJS bool) error {
 	uid, gid, err := nobody()
 	if err != nil {
 		return err
@@ -89,6 +93,13 @@ func (w *workspace) dropToNobody(base, runDir, gitPath string, overrides map[str
 	w.repo = filepath.Join(runDir, "repo")
 	if err := copyRepository(w.repo); err != nil {
 		return err
+	}
+	if withJS {
+		copied, err := copyJSOutputs(w.repo)
+		if err != nil {
+			return err
+		}
+		w.jsNote = fmt.Sprintf("copied js/semantics' built outputs %v from this tree, as CI's job builds them before its tests", copied)
 	}
 	path, err := reachablePath(base, os.Getenv("PATH"), filepath.Dir(gitPath), gid)
 	if err != nil {

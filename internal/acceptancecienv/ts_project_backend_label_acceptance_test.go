@@ -15,7 +15,7 @@ var _ = Describe("mise run acceptance-ci-env with the ts-project-backend label (
 		run := runTaskWith(hostGitVersion(), []string{probePackage, "-args", "-ginkgo.label-filter=ts-project-backend"})
 
 		if _, err := os.Stat(filepath.Join(repoRoot, builtJSOutputs)); err == nil {
-			Expect(run.output()).To(ContainSubstring("copied js/semantics' built outputs"), "output:\n%s", run.output())
+			Expect(run.output()).To(MatchRegexp(`(copied js/semantics' built outputs|uses js/semantics' built outputs in place)`), "output:\n%s", run.output())
 			return
 		}
 		Expect(run.exitCode).NotTo(Equal(0), "output:\n%s", run.output())

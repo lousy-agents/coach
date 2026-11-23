@@ -232,6 +232,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config", func() 
 
 	When("HEAD resolves to a commit whose tree object is missing from the object store", func() {
 		It("exits 3 with project_config_suggestion_snapshot_unavailable, empty stdout", func() {
+			skipUnlessGitCanRefuseLazyFetch()
 			repo := newTempGitRepo()
 			commitFile(repo, "go.mod", "module example.com/corrupttree\n\ngo 1.25\n")
 
@@ -252,6 +253,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config", func() 
 
 	When("HEAD resolves to a commit whose tree object is missing, and the repository path contains a character %q must escape", func() {
 		It("exits 3 with project_config_suggestion_snapshot_unavailable, leaking neither the raw nor the %q-escaped absolute repository root", func() {
+			skipUnlessGitCanRefuseLazyFetch()
 			repo := newTempGitRepo()
 			commitFile(repo, "go.mod", "module example.com/corrupttreequote\n\ngo 1.25\n")
 
@@ -447,6 +449,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config", func() 
 
 	When("HEAD contains two Go modules and one module's go.mod blob is missing from the object store", func() {
 		It("fails closed instead of silently emitting a smaller, wrongly 'ready' candidate", func() {
+			skipUnlessGitCanRefuseLazyFetch()
 			repo := newTempGitRepo()
 			commitFile(repo, "go.mod", "module example.com/blobmissing\n\ngo 1.25\n")
 			commitFile(repo, "services/payments/go.mod", "module example.com/blobmissing/services/payments\n\ngo 1.25\n")
