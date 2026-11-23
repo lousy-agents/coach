@@ -51,6 +51,7 @@
       "name": "tooling",
       "prefixes": [
         "internal/acceptanceharness",
+        "internal/acceptancecienv",
         "internal/acceptancestyle",
         "internal/agentworkflows",
         "internal/claudehooks",
@@ -60,6 +61,7 @@
         "internal/validationtasks",
         "deploy/compose/platform/fixtures",
         ".opencode/plugin",
+        "cmd/acceptance-ci-env",
         "cmd/acceptance-guard-preflight",
         "cmd/acceptance-style-guard",
         "cmd/fakegithub-server",

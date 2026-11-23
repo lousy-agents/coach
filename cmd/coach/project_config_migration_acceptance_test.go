@@ -112,7 +112,7 @@ var _ = Describe("coach project config migration", func() {
 	When("the customer accepts the copy and the repository cannot be written to", func() {
 		It("emits project_config_migration_failed, creates nothing, and leaves project.json unchanged", func() {
 			if os.Geteuid() == 0 {
-				Skip("root writes to a read-only directory, so this state cannot be built")
+				Skip("root writes to a read-only directory, so this state cannot be built; `mise run acceptance-ci-env` runs it as non-root")
 			}
 			repo := commitDeprecatedProjectConfigRepo()
 			Expect(os.Chmod(repo, 0o555)).To(Succeed())
