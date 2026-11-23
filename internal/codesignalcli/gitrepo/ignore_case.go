@@ -9,7 +9,7 @@ import "strings"
 // An unset key is a plain no. Any other failure leaves the question unanswered, and the error says so: a
 // repository whose answer is unknown must not be taken for one that tells cases apart.
 func IgnoresCase(run Runner, dir string) (bool, error) {
-	output, err := run(dir, "config", "--type=bool", "--get", "core.ignorecase")
+	output, err := run(dir, "config", "--bool", "--get", "core.ignorecase")
 	if err != nil {
 		return false, noMatchIsNo(err)
 	}
