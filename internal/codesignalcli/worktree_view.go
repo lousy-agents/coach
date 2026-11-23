@@ -14,25 +14,22 @@ import (
 // analysis (--worktree). It remembers what the overlay did so the scan can
 // report it.
 type WorktreeView struct {
-	// AbsentPolicyPath is the policy the revision selects that the working tree does not hold. Git hiding that path
-	// leaves the scan unable to tell whether the policy on disk would have been another file, so it counts as in-scope.
-	AbsentPolicyPath string
-	status           WorktreeStatus
-	committed        SnapshotOpener
-	diskAt           func(dir string) worktreeoverlay.DiskSource
-	sparseState      func(dir string) (gitrepo.SparseState, error)
-	ignoreCase       func(dir string) (bool, error)
-	gitlinks         func(dir string) ([]string, error)
-	opened           bool
-	fsys             fs.FS
-	reads            *readRecorder
-	openErr          error
-	outcome          worktreeoverlay.Outcome
-	revision         string
-	counts           gitrepo.WorktreeCounts
-	overlaid         map[string]bool
-	removed          map[string]bool
-	absent           map[string]bool
+	status      WorktreeStatus
+	committed   SnapshotOpener
+	diskAt      func(dir string) worktreeoverlay.DiskSource
+	sparseState func(dir string) (gitrepo.SparseState, error)
+	ignoreCase  func(dir string) (bool, error)
+	gitlinks    func(dir string) ([]string, error)
+	opened      bool
+	fsys        fs.FS
+	reads       *readRecorder
+	openErr     error
+	outcome     worktreeoverlay.Outcome
+	revision    string
+	counts      gitrepo.WorktreeCounts
+	overlaid    map[string]bool
+	removed     map[string]bool
+	absent      map[string]bool
 	// fileLocalRead holds the overlaid paths file-local analysis actually read.
 	// An overlaid path outside it, such as an unmerged file in a diff scan or a
 	// source file only the project backend read, is disclosed.

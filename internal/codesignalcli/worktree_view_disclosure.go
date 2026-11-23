@@ -24,8 +24,9 @@ func (v *WorktreeView) ReadFromDisk(name string) bool {
 // names it, or the analysis read it as project configuration; new files are
 // analyzed, so they are not left in. An uncommitted edit to policyPath is
 // always disclosed, because the policy is read from the commit.
-func (v *WorktreeView) Disclosure(dir, revision, policyPath string) []codesignal.Diagnostic {
-	return append(v.sparseGuard(dir, policyPath), v.unreadDisclosure(dir, revision, policyPath)...)
+func (v *WorktreeView) Disclosure(dir, revision, policyPath string, absentPolicyPaths ...string) []codesignal.Diagnostic {
+	policyPaths := append([]string{policyPath}, absentPolicyPaths...)
+	return append(v.sparseGuard(dir, policyPaths), v.unreadDisclosure(dir, revision, policyPath)...)
 }
 
 // sparseGuard makes the scan incomplete when git hides tracked paths from the
@@ -33,7 +34,7 @@ func (v *WorktreeView) Disclosure(dir, revision, policyPath string) []codesignal
 // reach part of the tree. Such a path is served from its committed bytes, so a
 // clean committed file would give a false all-clear over a violating edit on
 // disk. Each cause is reported per reason and root.
-func (v *WorktreeView) sparseGuard(dir, policyPath string) []codesignal.Diagnostic {
+func (v *WorktreeView) sparseGuard(dir string, policyPaths []string) []codesignal.Diagnostic {
 	state, err := v.sparseState(dir)
 	if err != nil {
 		return []codesignal.Diagnostic{worktreeStatusFailureDiagnostic(err)}
@@ -42,7 +43,7 @@ func (v *WorktreeView) sparseGuard(dir, policyPath string) []codesignal.Diagnost
 	if err != nil {
 		return []codesignal.Diagnostic{worktreeStatusFailureDiagnostic(err)}
 	}
-	diagnostics := append(v.hiddenPathDiagnostics(state, policyPath), nested...)
+	diagnostics := append(v.hiddenPathDiagnostics(state, policyPaths), nested...)
 	return append(diagnostics, statusWarningDiagnostics(v.status.Warnings)...)
 }
 

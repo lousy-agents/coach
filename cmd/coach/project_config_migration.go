@@ -29,10 +29,8 @@ func prepareScanProjectAnalysis(dir, revision string, f codesignalFlags, status 
 	if view != nil && project == nil {
 		project = &codesignalcli.ProjectAnalysis{}
 	}
-	if view != nil {
-		view.AbsentPolicyPath = absentPolicyPath(prepared.diagnostics)
-	}
 	if project != nil {
+		project.AbsentPolicyPath = absentPolicyPath(prepared.diagnostics)
 		project.Worktree = view
 		project.Status = status.get()
 	}

@@ -68,13 +68,16 @@ func TestChoosePolicyRelatesTheRootProjectJSONOnDiskToTheCanonicalPolicyHeadSele
 		{"a root project.json HEAD holds as a blob that cannot be read", projectconfig.CommittedCopy{Kind: projectconfig.CopyUnreadable}, codesignal.PolicyCauseHeadUnreadable},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			evidence := policyEvidence{headPath: projectconfig.CanonicalPath, disk: disk, head: tt.head, holdsConvertedAt: func(string) bool { return true }}
+		t.Run(tt.name, func(t *testing.T) { expectCauseOfRootProjectJSON(t, disk, tt.head, tt.want) })
+	}
+}
 
-			if cause := choosePolicy(evidence).scope.Cause; cause != tt.want {
-				t.Fatalf("cause = %q, want %q", cause, tt.want)
-			}
-		})
+func expectCauseOfRootProjectJSON(t *testing.T, disk projectconfig.DiskSelection, head projectconfig.CommittedCopy, want codesignal.PolicyCause) {
+	t.Helper()
+	evidence := policyEvidence{headPath: projectconfig.CanonicalPath, disk: disk, head: head, holdsConvertedAt: func(string) bool { return true }}
+
+	if cause := choosePolicy(evidence).scope.Cause; cause != want {
+		t.Fatalf("cause = %q, want %q", cause, want)
 	}
 }
 

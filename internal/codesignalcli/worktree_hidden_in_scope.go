@@ -16,12 +16,12 @@ import (
 // filter keeps. A root is judged only by its own paths. The scope filter runs
 // once for the source of every root that a configuration file or the policy did
 // not already decide.
-func (v *WorktreeView) hidesInScope(hiddenByRoot map[string][]string, policyPath string) map[string]string {
+func (v *WorktreeView) hidesInScope(hiddenByRoot map[string][]string, policyPaths ...string) map[string]string {
 	verdicts := make(map[string]string, len(hiddenByRoot))
 	sourcesByRoot := map[string][]gitrepo.SelectedFile{}
 	var allSources []gitrepo.SelectedFile
 	for root, hidden := range hiddenByRoot {
-		configHidden, sources := classifyHidden(hidden, policyPath, v.AbsentPolicyPath)
+		configHidden, sources := classifyHidden(hidden, policyPaths...)
 		switch {
 		case configHidden:
 			verdicts[root] = codesignal.HidesInScopeYes
