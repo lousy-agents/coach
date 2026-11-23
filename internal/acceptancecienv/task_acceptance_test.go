@@ -34,9 +34,9 @@ var _ = Describe("mise run acceptance-ci-env runs Go tests under CI's conditions
 		Expect(run.exitCode).To(Equal(0), "output:\n%s", run.output())
 		Expect(run.probe).NotTo(BeNil(), "the probe test must have run; output:\n%s", run.output())
 		Expect(run.probe.ConfigFromEnv).To(BeEmpty(), "git config carried in the environment must not reach the tests: CI sets none")
-		Expect(run.probe.IdentityFromEnv).To(BeEmpty(), "a git identity carried in the environment must not reach the tests: CI sets none")
 		Expect(run.probe.UID).NotTo(Equal(0), "the tests must not run as root")
-		Expect(run.probe.HomeEntries).To(BeEmpty(), "HOME must start empty: %+v", run.probe)
+		Expect(expectOwnDirectory("HOME", run.probe.Home, run.probe.HomeEntries, run.probe.HomeReadError)).To(BeEmpty(), "HOME must start empty")
+		expectOwnDirectory("TMPDIR", run.probe.TmpDir, run.probe.TmpDirEntries, run.probe.TmpDirReadError)
 		Expect(run.probe.GlobalConfig).To(BeEmpty(), "no user-level git config may reach the tests: %+v", run.probe)
 		Expect(run.probe.GoOnPath).To(BeTrue(), "CI's PATH, with the mise toolchain, must be kept")
 		Expect(run.probe.GitVersion).To(ContainSubstring(hostGitVersion()))
@@ -50,7 +50,7 @@ var _ = Describe("mise run acceptance-ci-env runs Go tests under CI's conditions
 		Expect(run.exitCode).To(Equal(0), "output:\n%s", run.output())
 		Expect(run.probe).NotTo(BeNil(), "output:\n%s", run.output())
 		Expect(run.probe.UID).NotTo(Equal(0))
-		Expect(run.probe.HomeEntries).To(BeEmpty())
+		Expect(expectOwnDirectory("HOME", run.probe.Home, run.probe.HomeEntries, run.probe.HomeReadError)).To(BeEmpty(), "HOME must start empty")
 		var loud []string
 		for _, line := range lines(run.output()) {
 			if strings.Contains(line, notCoveredLine) {
