@@ -115,18 +115,20 @@ var _ = Describe("coach codesignal: a hostile git configuration or environment e
 		Expect(stdout).To(BeEmpty())
 	})
 
-	It("reads the policy on disk and reports when GIT_DIR or a .git file points at a different repository (interim until the cross-repository guard lands)", func() {
+	It("fails closed, with no report, when GIT_DIR or a .git file points at a different repository", func() {
 		repo := commitExplicitPolicyRepo()
 		other := commitScannableGoRepo()
 
 		stdout, stderr, viaEnv := runCoachBinary(commandPath, repo, append(os.Environ(), "GIT_DIR="+filepath.Join(other, ".git")), "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
-		Expect(viaEnv).To(Equal(0), "stderr: %s", stderr)
-		Expect(stdout).NotTo(BeEmpty())
+		Expect(viaEnv).To(Equal(2), "a scan read a policy from the working tree of one repository and the history of another: stderr: %s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("is not the one that holds this working tree"))
+		Expect(stdout).To(BeEmpty())
 
 		Expect(os.RemoveAll(filepath.Join(repo, ".git"))).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(repo, ".git"), []byte("gitdir: "+filepath.Join(other, ".git")+"\n"), 0o644)).To(Succeed())
 		stdout, stderr, viaFile := runCoachBinary(commandPath, repo, nil, "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
-		Expect(viaFile).To(Equal(0), "stderr: %s", stderr)
-		Expect(stdout).NotTo(BeEmpty())
+		Expect(viaFile).To(Equal(2), "stderr: %s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("is not the one that holds this working tree"))
+		Expect(stdout).To(BeEmpty())
 	})
 })
