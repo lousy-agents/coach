@@ -1,6 +1,7 @@
 package projectconfig
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -9,8 +10,12 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// DiskSelection is the policy the working tree holds. The zero value is no policy on disk.
-type DiskSelection struct{ Path, Digest string }
+// DiskSelection is the policy the working tree holds: the bytes read and the digest of those same bytes. The zero
+// value is no policy on disk.
+type DiskSelection struct {
+	Path, Digest string
+	Content      json.RawMessage
+}
 
 // SelectOnDisk is the policy file the working tree selects for a scan, with the digest of the bytes it holds now.
 // An empty namedPath means the policy was discovered: the canonical file if that is a regular file, else project.json
@@ -55,7 +60,7 @@ func selectRegularFile(root *os.Root, repoPath string) (DiskSelection, bool, err
 	if err != nil {
 		return DiskSelection{}, false, err
 	}
-	return DiskSelection{Path: repoPath, Digest: Digest(content)}, true, nil
+	return DiskSelection{Path: repoPath, Digest: Digest(content), Content: content}, true, nil
 }
 
 // cannotBeThePolicy is whether the check found nothing usable at the path (absent, a link, or not a file), as

@@ -121,9 +121,32 @@ type PolicyScope struct {
 	// Digest is the pcfg_-prefixed sha256 of the policy bytes the scan used.
 	Digest string `json:"digest"`
 	// MatchesHead is true when the policy selected from disk has the same path
-	// and digest as the one the scan used (the policy at HEAD).
+	// and digest as the policy selected at HEAD.
 	MatchesHead bool `json:"matches_head"`
+	// Origin and Reason only select which text variant describes the policy; they are not part of the
+	// JSON contract, so a report decoded from JSON carries the zero Origin.
+	Origin PolicyOrigin `json:"-"`
+	// Reason says why the policy on disk could not be used; it accompanies PolicyOriginDiskUnusable.
+	Reason string `json:"-"`
 }
+
+// PolicyOrigin says how the policy a scan used relates to the one committed at HEAD.
+type PolicyOrigin string
+
+const (
+	// PolicyOriginUnknown is the zero value: the text reads MatchesHead alone.
+	PolicyOriginUnknown PolicyOrigin = ""
+	// PolicyOriginMatchesHead means the policy on disk is the committed one.
+	PolicyOriginMatchesHead PolicyOrigin = "matches_head"
+	// PolicyOriginDiffersFromHead means the scan used a policy on disk that differs from the committed one.
+	PolicyOriginDiffersFromHead PolicyOrigin = "differs_from_head"
+	// PolicyOriginNotCommitted means the scan used a policy on disk with no committed copy at HEAD.
+	PolicyOriginNotCommitted PolicyOrigin = "not_committed"
+	// PolicyOriginMissingOnDisk means the policy is committed at HEAD and absent on disk, so the scan used the committed copy.
+	PolicyOriginMissingOnDisk PolicyOrigin = "missing_on_disk"
+	// PolicyOriginDiskUnusable means the policy on disk could not be used, so the scan used the committed copy.
+	PolicyOriginDiskUnusable PolicyOrigin = "disk_unusable"
+)
 
 // WorktreeScope says what a --worktree scan read from disk and what the working
 // tree changes.

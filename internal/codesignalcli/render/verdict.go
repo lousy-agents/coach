@@ -20,7 +20,7 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 	incompleteProject := (report.ProjectCoverage != nil && !report.ProjectCoverage.Complete) ||
 		codesignal.HasProjectCoverageDiagnostic(report.Diagnostics)
 	if keepUnqualifiedAllClear(report, incompleteProject) {
-		fmt.Fprintf(b, "%s%s.\n", noActiveFindingsLead(report), layerReachSuffix(report))
+		renderAllClear(b, report, noActiveFindingsLead(report))
 		return
 	}
 
@@ -36,7 +36,7 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 	if len(causes) == 0 {
 		causes = append(causes, "additional diagnostics were recorded")
 	}
-	fmt.Fprintf(b, "%s, but the analysis is incomplete: %s.%s\n", noActiveFindingsLead(report), strings.Join(causes, "; "), layerReachSentence(report))
+	fmt.Fprintf(b, "%s, but the analysis is incomplete: %s%s.%s\n", noActiveFindingsLead(report), strings.Join(causes, "; "), policyTrailingClause(report), layerReachSentence(report))
 }
 
 func renderCoveredNoMatchVerdict(b *strings.Builder, report *codesignal.Report) {
@@ -46,14 +46,14 @@ func renderCoveredNoMatchVerdict(b *strings.Builder, report *codesignal.Report) 
 		if unanalyzed > 0 {
 			causes = append([]string{pathCountClause(unanalyzed)}, causes...)
 		}
-		fmt.Fprintf(b, "Scan found no configured covered match, but the analysis is incomplete: %s.%s\n", strings.Join(causes, "; "), layerReachSentence(report))
+		fmt.Fprintf(b, "Scan found no configured covered match, but the analysis is incomplete: %s%s.%s\n", strings.Join(causes, "; "), policyTrailingClause(report), layerReachSentence(report))
 		return
 	}
 	if unanalyzed == 0 {
-		fmt.Fprintf(b, "Complete scan found no configured covered match%s.\n", layerReachSuffix(report))
+		renderAllClear(b, report, "Complete scan found no configured covered match")
 		return
 	}
-	fmt.Fprintf(b, "Complete scan found no configured covered match, but %s.%s\n", pathCountClause(unanalyzed), layerReachSentence(report))
+	fmt.Fprintf(b, "Complete scan found no configured covered match, but %s%s.%s\n", pathCountClause(unanalyzed), policyTrailingClause(report), layerReachSentence(report))
 }
 
 // noActiveFindingsLead scopes the all-clear to the severity floor: when a

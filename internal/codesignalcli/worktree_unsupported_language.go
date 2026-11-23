@@ -16,8 +16,7 @@ import (
 // the scan cannot analyze, the way a committed diff names a committed change to
 // one. A project configuration file is left out: the analysis reads it, and
 // scope.worktree.config_files says so. A project policy file is left out too:
-// it is not source in an unsupported language, and the dirty-tree disclosure
-// lists it because the scan did not read its working-tree bytes. A directory
+// it is not source in an unsupported language. A directory
 // entry, a path under node_modules, a path the committed diff already selected,
 // and a new path the working tree deleted are left out as well.
 func unsupportedLanguageDiagnostics(entries []gitrepo.WorktreeEntry, seen map[string]bool) []codesignal.Diagnostic {
