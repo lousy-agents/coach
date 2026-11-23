@@ -65,15 +65,3 @@ func noActiveFindingsLead(report *codesignal.Report) string {
 	}
 	return "No active CodeSignal findings"
 }
-
-// worktreeScanClauses carries each run-level cause a --worktree scan recorded
-// for paths it cannot see, so the verdict names it.
-func worktreeScanClauses(diagnostics []codesignal.Diagnostic) []string {
-	var clauses []string
-	for _, d := range diagnostics {
-		if d.Kind == codesignal.DiagKindWorktreeScanIncomplete {
-			clauses = append(clauses, d.Message)
-		}
-	}
-	return clauses
-}

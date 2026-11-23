@@ -36,6 +36,9 @@ type WorktreeView struct {
 	fileLocalRead map[string]bool
 	// scopeExcluded holds the paths the scope filter excluded from analysis.
 	scopeExcluded map[string]bool
+	// scope is the scan's own scope filter, kept so the paths git hides are judged
+	// by the rule that selected the files the scan did analyze.
+	scope ScopeFilter
 	// languageNamed holds the paths an unsupported_language diagnostic already
 	// names, so the disclosure does not name them a second time.
 	languageNamed map[string]bool

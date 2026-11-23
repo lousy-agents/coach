@@ -30,6 +30,7 @@ func onlyInformationalDiagnostics(diagnostics []codesignal.Diagnostic) bool {
 	for _, d := range diagnostics {
 		switch {
 		case d.Kind == codesignal.DiagKindWorktreeNotClean, d.Kind == codesignal.DiagKindWorktreeReportReflectsCommittedHEAD:
+		case d.Kind == codesignal.DiagKindWorktreeScanIncomplete && !d.QualifiesVerdict():
 		case strings.TrimPrefix(d.Kind, "base_") == codesignal.DiagKindProjectExternalImportsNotEvaluated:
 		default:
 			return false
