@@ -11,7 +11,7 @@ This page is the operator env-var reference.
 
 The CLI in the README is the default product. A Docker API + worker stack can add agent judgments on a baseline scan. That path uses Docker, may call a model, and may read GitHub. It is not the default install.
 
-Verified in CI: Path A (`mise run platform-up` / `platform-smoke`) with the stub model. Paths B (real local model) and C (live GitHub.com) are operator labs. Findings are tagged `source=deterministic` or `source=agent`; agent output cannot suppress a deterministic finding.
+Verified in CI: Path A (`mise run platform-up` or `platform-smoke`) with the stub model. Paths B (real local model) and C (live GitHub.com) are operator labs. Findings are tagged `source=deterministic` or `source=agent`. Agent output cannot suppress a deterministic finding.
 
 ## Profiles
 

@@ -12,7 +12,7 @@ Coach gives you, or your coding agent, a private and repeatable report on struct
 
 Go and TypeScript developers, and the coding agents working for them, who review changes locally. Coach is experimental and stays on the 0.x line.
 
-**Not for yet:** merge gates, CI checks, security assurance, or a hosted service. Findings are advisory. A completed scan exits `0` even when it finds signals, and an empty report means no rule matched, not that the code is clean.
+**Not for yet.** Merge gates, CI checks, security assurance, or a hosted service. Findings are advisory. A completed scan exits `0` even when it finds signals, and an empty report means no rule matched, not that the code is clean.
 
 ## Install
 
@@ -33,7 +33,7 @@ From the root of a Git repository:
 coach codesignal --baseline --top 10
 ```
 
-This scans the Go, TypeScript, and TSX files that ship at `HEAD` and prints the ten highest-ranked findings. The default `--scope production` leaves out test-only and excluded files; `--scope all` analyzes every tracked Go, TypeScript, and TSX file. Each finding shows its rule, severity, path, line, evidence, why it matters, and a recommendation. The header counts the files analyzed and the signals found, and a line says how many signals `--top` withheld.
+This scans the Go, TypeScript, and TSX files that ship at `HEAD` and prints the ten highest-ranked findings. The default `--scope production` leaves out test-only and excluded files. `--scope all` analyzes every tracked Go, TypeScript, and TSX file. Each finding shows its rule, severity, path, line, evidence, why it matters, and a recommendation. The header counts the files analyzed and the signals found, and a line says how many signals `--top` withheld.
 
 If no rule matches, the report says `No active CodeSignal findings.` That means no rule matched the committed code, not that the code is clean. [What you should see](./docs/cli-codesignal.md#what-you-should-see) describes the full output.
 
@@ -45,7 +45,7 @@ If no rule matches, the report says `No active CodeSignal findings.` That means 
 coach codesignal --worktree --no-interactive --fail-on-incomplete-coverage --format json
 ```
 
-The hook needs a coach build that reports `scope.policy`. v0.12.0 does not, so there the hook blocks and says so. `--worktree` is labelled experimental. The PRD change that brings this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730). Coach ships the CLI behaviour. The hook below is an example to copy; Coach does not run a hosted hook service. The hook reports only whether the review ran and was clean. It does not pass findings to the agent.
+The hook needs a coach build that reports `scope.policy`. v0.12.0 does not, so there the hook blocks and says so. `--worktree` is labelled experimental. The PRD change that brings this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730). Coach ships the CLI behaviour. The hook below is an example to copy. Coach does not run a hosted hook service. The hook reports only whether the review ran and was clean. It does not pass findings to the agent.
 
 To run the review when Claude Code finishes a response, add this to `.claude/settings.json`:
 
