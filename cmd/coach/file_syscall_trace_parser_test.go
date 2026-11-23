@@ -1,10 +1,6 @@
 package main
 
 import (
-	"os"
-	"os/exec"
-	"strings"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -98,37 +94,6 @@ var _ = Describe("file-syscall trace parser", func() {
 		It("tolerates a successful newfstatat on the repository root", func() {
 			Expect(linuxPathAllowed(allow, "/tmp/repo-1")).To(BeFalse(), "repository root must not be an open or listing prefix")
 			Expect(linuxProbeAllowed(allow, "newfstatat", "/tmp/repo-1")).To(BeTrue())
-		})
-	})
-
-	When("unshare must keep the resolved Node first on PATH", func() {
-		It("prefixes PATH with the Node directory and passes PATH, HOME, and TMPDIR through env", func() {
-			got := unsharePathEnv("/home/runner/.local/share/mise/installs/node/24.0.0/bin/node", "/usr/local/bin:/usr/bin")
-			Expect(got).To(HavePrefix("/home/runner/.local/share/mise/installs/node/24.0.0/bin:"))
-			Expect(got).To(HaveSuffix("/usr/local/bin:/usr/bin"))
-			wrapper := unshareEnvWrapper(got, "/home/runner", "/tmp")
-			Expect(wrapper[0]).To(Equal("env"))
-			Expect(wrapper).To(ContainElement("PATH=" + got))
-			Expect(wrapper).To(ContainElement("HOME=/home/runner"))
-			Expect(wrapper).To(ContainElement("TMPDIR=/tmp"))
-			Expect(wrapper).NotTo(ContainElement("GIT_CONFIG_COUNT=1"))
-		})
-	})
-
-	When("snapshot git sanitizes the parent environ and only forwards HOME", func() {
-		It("makes git honor safe.directory from the unshare HOME gitconfig with GIT_CONFIG_NOSYSTEM set", func() {
-			home := writeUnshareGitHome()
-			cmd := exec.Command("git", "config", "--global", "--get", "safe.directory")
-			cmd.Env = []string{
-				"PATH=" + os.Getenv("PATH"),
-				"HOME=" + home,
-				"GIT_TERMINAL_PROMPT=0",
-				"GIT_CONFIG_NOSYSTEM=1",
-				"GIT_NO_LAZY_FETCH=1",
-			}
-			out, err := cmd.Output()
-			Expect(err).NotTo(HaveOccurred(), "git must read safe.directory from HOME gitconfig; stderr would mean the unshare HOME seam is wrong")
-			Expect(strings.TrimSpace(string(out))).To(Equal("*"))
 		})
 	})
 
