@@ -53,6 +53,6 @@ var _ = Describe("coach codesignal (TypeScript, controlling terminal): a committ
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(content)).To(Equal(onDisk))
 		},
-		theUsersWorkEntries(),
+		theUsersWorkTheScanRefusesEntries(),
 	)
 })
