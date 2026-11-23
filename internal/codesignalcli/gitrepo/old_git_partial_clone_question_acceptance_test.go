@@ -33,6 +33,13 @@ var _ = Describe("whether a repository is a partial clone, asked of a git before
 		Expect(RefuseMissingObjects(gitBefore218, "repo", "")).To(Succeed())
 	})
 
+	It("#737: reads core.ignorecase on git 2.17, as a --worktree scan does, rather than failing on an option git 2.18 added", func() {
+		ignores, err := IgnoresCase(gitBefore218, "repo")
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ignores).To(BeFalse())
+	})
+
 	It("#737: counts a remote that has a partial clone filter and no promisor setting as a partial clone, as git does, so the status of a --worktree scan does not compare blobs it may lack", func() {
 		t := GinkgoT()
 		source := gitfixture.Init(t)
