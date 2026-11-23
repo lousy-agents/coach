@@ -73,6 +73,10 @@ readable by `nobody`'s group only. It also gives `nobody` its own copy of the
 module cache, made once per `go.sum`. All of these are cached under
 `$COACH_CI_ENV_CACHE` (default `$TMPDIR/coach-ci-env-<uid>`); an existing cache
 root must be owned by the running user and writable by no one else.
+Run as root, it needs a normal clone. In a linked worktree `.git` is a file
+that points into the main repository's `.git`, which the copy does not include
+and `nobody` may not be able to read, and `go build` then fails with
+`error obtaining VCS status`.
 
 It gives the tests:
 
