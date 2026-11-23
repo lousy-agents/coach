@@ -2,7 +2,6 @@ package projectconfig
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
@@ -39,9 +38,10 @@ const (
 	CopyBoundStderr
 )
 
-// ReadCommittedCopy reads what revision holds at repoPath. A blob that is over the size budget or that git cannot read
-// is CopyUnreadable. A failure to say what the path holds at all, or a timeout, is returned: it describes the
-// repository and not the copy, so it is no disclosure.
+// ReadCommittedCopy reads what revision holds at repoPath. A blob that git cannot read in full is CopyUnreadable, with
+// the bound of git that stopped it when one did: the size budget, git's time bound and its stderr bound all leave that
+// one copy unread and the repository intact. A failure to say what the path holds at all is returned, because it
+// describes the repository and not the copy.
 func ReadCommittedCopy(dir, revision, repoPath string) (CommittedCopy, error) {
 	return readCommittedCopyThrough(NewGitRunner(), dir, revision, repoPath)
 }
@@ -55,19 +55,31 @@ func readCommittedCopyThrough(run gitrepo.Runner, dir, revision, repoPath string
 	case gitrepo.EntryAbsent:
 		return CommittedCopy{Kind: CopyAbsent}, nil
 	case gitrepo.EntryRegularFile:
-		return readCommittedBlob(run, dir, revision, repoPath)
+		return readCommittedBlob(run, dir, revision, repoPath), nil
 	}
 	return CommittedCopy{Kind: CopyNotAFile}, nil
 }
 
-func readCommittedBlob(run gitrepo.Runner, dir, revision, repoPath string) (CommittedCopy, error) {
+func readCommittedBlob(run gitrepo.Runner, dir, revision, repoPath string) CommittedCopy {
 	data, err := run(dir, "show", revision+":"+repoPath)
-	var bound *gitrepo.BoundError
-	switch {
-	case err == nil:
-		return CommittedCopy{Kind: CopyReadable, Content: data}, nil
-	case !errors.As(err, &bound) || bound.Kind == gitrepo.BoundStdout:
-		return CommittedCopy{Kind: CopyUnreadable}, nil
+	if err != nil {
+		return CommittedCopy{Kind: CopyUnreadable, Bound: boundThatStopped(err)}
 	}
-	return CommittedCopy{}, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal: %q could not be read at revision %q: %s", repoPath, revision, err), Cause: err}
+	return CommittedCopy{Kind: CopyReadable, Content: data}
+}
+
+// boundThatStopped is the bound of git that tripped for err, and none for the size budget, which names no bound, and for
+// a failure of git that is no bound.
+func boundThatStopped(err error) CopyBound {
+	var bound *gitrepo.BoundError
+	if !errors.As(err, &bound) {
+		return CopyBoundNone
+	}
+	switch bound.Kind {
+	case gitrepo.BoundTimeout:
+		return CopyBoundTime
+	case gitrepo.BoundStderr:
+		return CopyBoundStderr
+	}
+	return CopyBoundNone
 }

@@ -63,46 +63,20 @@ func policyWarning(policy *codesignal.PolicyScope, cause codesignal.PolicyCause)
 	case codesignal.PolicyCauseNotCommitted:
 		return fmt.Sprintf("WARNING: the project policy %s is on disk and not committed at HEAD; this scan used it.", terminalText(policy.Path))
 	case codesignal.PolicyCauseHeadUnreadable:
-		return fmt.Sprintf("WARNING: HEAD's copy of the project policy %s could not be read; this scan used the policy on disk, so its result can differ from CI, which reads the committed policy.", terminalText(policy.Path))
+		return fmt.Sprintf("WARNING: HEAD's copy of the project policy %s could not be read%s; this scan used the policy on disk, so its result can differ from CI, which reads the committed policy.", terminalText(policy.Path), headBoundClause(policy.HeadBound))
 	case codesignal.PolicyCauseMissingOnDisk:
 		return fmt.Sprintf("WARNING: %s is committed at HEAD and missing on disk; this scan used the committed copy.", terminalText(policy.Path))
 	}
 	return ""
 }
 
-// policyVerdictClause is the cause a clean result carries when the policy the scan used is not the committed one;
-// it is empty when there is no such policy.
-func policyVerdictClause(report *codesignal.Report) string {
-	policy := report.Scope.Policy
-	if policy == nil || policy.MatchesHead {
-		return ""
-	}
-	switch effectivePolicyCause(policy) {
-	case codesignal.PolicyCauseNotCommitted:
-		return "the project policy on disk is not committed at HEAD"
-	case codesignal.PolicyCauseMissingOnDisk:
-		return "the project policy is missing on disk and the committed copy was used"
-	case codesignal.PolicyCauseHeadUnreadable:
-		return "HEAD's copy of the project policy could not be read"
-	}
-	return "the project policy on disk differs from HEAD"
-}
-
-// policyTrailingClause adds the policy cause after the causes of an incomplete analysis as a clause of its own,
-// because a policy difference does not make the analysis incomplete.
-func policyTrailingClause(report *codesignal.Report) string {
-	if cause := policyVerdictClause(report); cause != "" {
-		return ", and " + cause
+// headBoundClause names the bound of git that stopped the read of HEAD's copy, and nothing for a copy no bound stopped.
+func headBoundClause(bound codesignal.HeadBound) string {
+	switch bound {
+	case codesignal.HeadBoundTime:
+		return " within git's time bound"
+	case codesignal.HeadBoundStderr:
+		return " within git's stderr bound"
 	}
 	return ""
-}
-
-// renderAllClear writes a verdict with no other cause, qualified only by the policy when the scan used one that is
-// not the committed policy.
-func renderAllClear(b *strings.Builder, report *codesignal.Report, lead string) {
-	if cause := policyVerdictClause(report); cause != "" {
-		fmt.Fprintf(b, "%s, but %s.%s\n", lead, cause, layerReachSentence(report))
-		return
-	}
-	fmt.Fprintf(b, "%s%s.\n", lead, layerReachSuffix(report))
 }

@@ -99,3 +99,31 @@ func expectDiskOverCommitted(t *testing.T, committedPath, diskPath string, head 
 		t.Fatalf("scope = %+v, want the policy on disk", choice.scope)
 	}
 }
+
+func TestHeadBoundOfNamesTheBoundOfGitThatStoppedTheReadOfHeadsCopy(t *testing.T) {
+	tests := []struct {
+		name  string
+		bound projectconfig.CopyBound
+		want  codesignal.HeadBound
+	}{
+		{"no bound", projectconfig.CopyBoundNone, codesignal.HeadBoundNone},
+		{"git's time bound", projectconfig.CopyBoundTime, codesignal.HeadBoundTime},
+		{"git's stderr bound", projectconfig.CopyBoundStderr, codesignal.HeadBoundStderr},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) { expectHeadBound(t, tt.bound, tt.want) })
+	}
+}
+
+func expectHeadBound(t *testing.T, bound projectconfig.CopyBound, want codesignal.HeadBound) {
+	t.Helper()
+	content := []byte(`{"a":1}`)
+	disk := projectconfig.DiskSelection{Path: projectconfig.CanonicalPath, Digest: projectconfig.Digest(content), Content: content}
+	head := projectconfig.CommittedCopy{Kind: projectconfig.CopyUnreadable, Bound: bound}
+
+	scope := choosePolicy(policyEvidence{disk: disk, head: head}).scope
+
+	if scope.Cause != codesignal.PolicyCauseHeadUnreadable || scope.HeadBound != want {
+		t.Fatalf("scope = %+v, want head_unreadable with bound %q", scope, want)
+	}
+}

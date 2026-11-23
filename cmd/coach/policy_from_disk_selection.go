@@ -50,7 +50,20 @@ func choosePolicy(e policyEvidence) policyChoice {
 	if cause == codesignal.PolicyCauseSameAsHead {
 		return usedPolicy(e.disk.Path, e.head.Content, cause)
 	}
-	return usedPolicy(e.disk.Path, e.disk.Content, cause)
+	choice := usedPolicy(e.disk.Path, e.disk.Content, cause)
+	choice.scope.HeadBound = headBoundOf(e.head.Bound)
+	return choice
+}
+
+// headBoundOf is the bound of git the text report names where HEAD's copy could not be read.
+func headBoundOf(bound projectconfig.CopyBound) codesignal.HeadBound {
+	switch bound {
+	case projectconfig.CopyBoundTime:
+		return codesignal.HeadBoundTime
+	case projectconfig.CopyBoundStderr:
+		return codesignal.HeadBoundStderr
+	}
+	return codesignal.HeadBoundNone
 }
 
 // relationToHead is how the policy on disk stands to the copy the revision holds at its path.
