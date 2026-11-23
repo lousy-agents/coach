@@ -15,6 +15,15 @@ func renderDiagnostic(b *strings.Builder, diagnostic codesignal.Diagnostic) {
 	if diagnostic.Revision != "" {
 		fmt.Fprintf(b, ", revision: %s", diagnostic.Revision)
 	}
+	if diagnostic.Reason != "" {
+		fmt.Fprintf(b, ", reason: %s", diagnostic.Reason)
+	}
+	if diagnostic.Root != "" {
+		fmt.Fprintf(b, ", root: %s", terminalText(diagnostic.Root+"/"))
+	}
+	if diagnostic.HidesInScope != "" {
+		fmt.Fprintf(b, ", hides_in_scope: %s", diagnostic.HidesInScope)
+	}
 	b.WriteByte('\n')
 }
 
