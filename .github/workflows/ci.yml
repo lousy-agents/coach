@@ -276,7 +276,12 @@ jobs:
   # copy of verify (#737).
   distro-git:
     runs-on: ubuntu-latest
-    container: ubuntu:24.04
+    # Owner-approved (#742): unconfined seccomp and AppArmor only let the non-root
+    # test user create the user namespace the network-isolation specs need; the
+    # ephemeral runner VM already grants passwordless sudo, so nothing else is new.
+    container:
+      image: ubuntu:24.04
+      options: --security-opt seccomp=unconfined --security-opt apparmor=unconfined
     timeout-minutes: 60
     env:
       COACH_CI_GIT_VERSION: "2.43.0"
