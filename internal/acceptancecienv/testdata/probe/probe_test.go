@@ -61,6 +61,7 @@ func TestRecordTheConditions(t *testing.T) {
 		"config_from_env":     fromCommandLine,
 		"config_scopes":       scopes,
 		"scrubbed_set":        set,
+		"js_installed":        readInstalledJS(),
 	}
 	data, err := json.Marshal(record)
 	if err != nil {

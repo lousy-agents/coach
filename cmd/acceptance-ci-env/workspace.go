@@ -13,13 +13,14 @@ import (
 // run in place; as root they run as `nobody` over copies that user can read.
 type workspace struct {
 	repo, home string
+	jsNote     string
 	uid        int
 	env        []string
 	wrap       []string
 	cleanup    func()
 }
 
-func prepareWorkspace(gitPath string) (space workspace, err error) {
+func prepareWorkspace(gitPath string, withJS bool) (space workspace, err error) {
 	base, err := ownedBase()
 	if err != nil {
 		return workspace{}, err
@@ -38,11 +39,11 @@ func prepareWorkspace(gitPath string) (space workspace, err error) {
 	if err != nil {
 		return workspace{}, err
 	}
-	run, err := runAs(space.uid, base, runDir, gitPath)
+	run, err := runAs(space.uid, base, runDir, gitPath, withJS)
 	if err != nil {
 		return workspace{}, err
 	}
-	space.repo, space.uid, space.wrap = run.repo, run.uid, run.wrap
+	space.repo, space.uid, space.wrap, space.jsNote = run.repo, run.uid, run.wrap, run.jsNote
 	overrides := maps.Clone(isolation)
 	maps.Copy(overrides, run.env)
 	space.env = withOverrides(withoutInheritedGitConfig(os.Environ()), overrides)
@@ -51,25 +52,27 @@ func prepareWorkspace(gitPath string) (space workspace, err error) {
 
 // runAs is the run of a non-root caller, in place, or of a root caller, as
 // nobody over copies.
-func runAs(uid int, base, runDir, gitPath string) (preparedRun, error) {
+func runAs(uid int, base, runDir, gitPath string, withJS bool) (preparedRun, error) {
 	if uid == 0 {
-		return nobodysRun(base, runDir, gitPath)
+		return nobodysRun(base, runDir, gitPath, withJS)
 	}
-	return callersRun(gitPath)
+	return callersRun(gitPath, withJS)
 }
 
 // preparedRun is what one kind of run contributes: where the tests run, as
-// whom, and the environment it sets.
+// whom, the environment it sets, and what it did with the installed JS
+// outputs.
 type preparedRun struct {
-	repo string
-	uid  int
-	wrap []string
-	env  map[string]string
+	repo   string
+	uid    int
+	wrap   []string
+	env    map[string]string
+	jsNote string
 }
 
 // callersRun runs the tests in place as the caller, with the checked git
 // first on PATH and the caller's Go caches named outside the empty HOME.
-func callersRun(gitPath string) (preparedRun, error) {
+func callersRun(gitPath string, withJS bool) (preparedRun, error) {
 	repo, err := os.Getwd()
 	if err != nil {
 		return preparedRun{}, err
@@ -79,7 +82,11 @@ func callersRun(gitPath string) (preparedRun, error) {
 		return preparedRun{}, err
 	}
 	env["PATH"] = filepath.Dir(gitPath) + string(filepath.ListSeparator) + os.Getenv("PATH")
-	return preparedRun{repo: repo, uid: os.Geteuid(), env: env}, nil
+	run := preparedRun{repo: repo, uid: os.Geteuid(), env: env}
+	if withJS {
+		run.jsNote = "uses the installed " + jsInstalled + " in place, as CI's job installs it before its tests"
+	}
+	return run, nil
 }
 
 func (w workspace) goTest(args []string, stdout, stderr io.Writer) int {

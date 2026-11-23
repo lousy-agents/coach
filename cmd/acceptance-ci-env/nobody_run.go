@@ -12,7 +12,7 @@ import (
 // nobodysRun prepares a root run: the repository, the unreadable toolchain
 // directories on PATH and the module cache are copied where `nobody` can read
 // them, and the tests are wrapped in setpriv.
-func nobodysRun(base, runDir, gitPath string) (preparedRun, error) {
+func nobodysRun(base, runDir, gitPath string, withJS bool) (preparedRun, error) {
 	uid, gid, err := nobody()
 	if err != nil {
 		return preparedRun{}, err
@@ -24,6 +24,13 @@ func nobodysRun(base, runDir, gitPath string) (preparedRun, error) {
 	repo := filepath.Join(runDir, "repo")
 	if err := copyRepository(repo); err != nil {
 		return preparedRun{}, err
+	}
+	var jsNote string
+	if withJS {
+		if err := copyJSInstalled(repo); err != nil {
+			return preparedRun{}, err
+		}
+		jsNote = "copied the installed " + jsInstalled + " from this tree, as CI's job installs it before its tests"
 	}
 	path, err := reachablePath(base, os.Getenv("PATH"), filepath.Dir(gitPath), gid)
 	if err != nil {
@@ -38,7 +45,7 @@ func nobodysRun(base, runDir, gitPath string) (preparedRun, error) {
 		return preparedRun{}, err
 	}
 	wrap := []string{setpriv, "--reuid=" + strconv.Itoa(uid), "--regid=" + strconv.Itoa(gid), "--clear-groups", "--"}
-	return preparedRun{repo: repo, uid: uid, wrap: wrap, env: env}, nil
+	return preparedRun{repo: repo, uid: uid, wrap: wrap, env: env, jsNote: jsNote}, nil
 }
 
 func nobody() (uid, gid int, err error) {
