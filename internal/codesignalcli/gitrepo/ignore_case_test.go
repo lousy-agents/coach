@@ -50,7 +50,7 @@ func TestIgnoresCaseAsksGitToReadTheSettingAsABoolean(t *testing.T) {
 
 	_, _ = IgnoresCase(run, "repo")
 
-	want := []string{"config", "--type=bool", "--get", "core.ignorecase"}
+	want := []string{"config", "--bool", "--get", "core.ignorecase"}
 	if len(asked) != len(want) {
 		t.Fatalf("asked %q; want %q", asked, want)
 	}
