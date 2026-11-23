@@ -42,7 +42,7 @@ func sparseCheckoutEnabled(run gitrepo.Runner, dir string, staged []gitrepo.Inde
 	if !skippedBySparseCheckout(staged) {
 		return false, nil
 	}
-	out, err := run(dir, "config", "--type=bool", "--get", "core.sparseCheckout")
+	out, err := run(dir, "config", "--bool", "--get", "core.sparseCheckout")
 	if err != nil {
 		if gitrepo.ConfigHasNoValue(err) {
 			return false, nil
