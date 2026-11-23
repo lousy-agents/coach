@@ -56,19 +56,8 @@ var _ = Describe("whether a git before 2.44 may compare staged deletions with st
 var _ = Describe("a probe that did not answer in time, on a git before 2.44 (#737)", func() {
 	It("#737: is refused, naming why, even when git then says at once that the revision names nothing", func() {
 		repository := fakeRepository{version: oldGit, probes: map[string]probeAnswer{"HEAD": {err: &BoundError{Kind: BoundTimeout, message: "git execution timed out after 2m0s"}}}}
-		resolutions := 0
-		run := func(dir string, args ...string) ([]byte, error) {
-			if args[0] != "rev-parse" {
-				return repository.run(dir, args...)
-			}
-			resolutions++
-			if resolutions == 1 {
-				return []byte(firstMissing + "\n"), nil
-			}
-			return nil, exitStatusOne
-		}
 
-		err := RefuseMissingObjects(run, "repo", "")
+		err := RefuseMissingObjects(headResolvesThen(exitStatusOne, repository.run), "repo", "")
 
 		Expect(refusalText(err)).To(ContainSubstring("could not tell whether this repository has the objects Coach reads"))
 		Expect(refusalText(err)).To(ContainSubstring("timed out after 2m0s"))

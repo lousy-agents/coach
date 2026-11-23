@@ -71,16 +71,7 @@ func answerSlowly(pipe, content string, delay time.Duration) {
 	finished := make(chan struct{})
 	go func() {
 		defer close(finished)
-		for !done.Load() {
-			writer, err := os.OpenFile(pipe, os.O_WRONLY, 0)
-			if err != nil {
-				return
-			}
-			time.Sleep(delay)
-			_, _ = writer.WriteString(content)
-			_ = writer.Close()
-			// git reads the ref to its end, which it sees only while no writer has the pipe open.
-			time.Sleep(200 * time.Millisecond)
+		for !done.Load() && answerOnce(pipe, content, delay) {
 		}
 	}()
 	DeferCleanup(func() {
@@ -90,6 +81,20 @@ func answerSlowly(pipe, content string, delay time.Duration) {
 			_ = unblock.Close()
 		}
 	})
+}
+
+// answerOnce waits for a reader to open the pipe, writes content to it after delay, and reports whether a reader came.
+func answerOnce(pipe, content string, delay time.Duration) bool {
+	writer, err := os.OpenFile(pipe, os.O_WRONLY, 0)
+	if err != nil {
+		return false
+	}
+	time.Sleep(delay)
+	_, _ = writer.WriteString(content)
+	_ = writer.Close()
+	// git reads the ref to its end, which it sees only while no writer has the pipe open.
+	time.Sleep(200 * time.Millisecond)
+	return true
 }
 
 // guardWithin runs the old-git branch of the guard, and fails the spec if it has not returned by limit.
