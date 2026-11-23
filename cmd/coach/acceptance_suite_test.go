@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -14,12 +15,43 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var commitEnv = environmentNamingNoRepository(
+var commitEnv = environmentNamingNoRepository(append(suiteGitConfig,
 	"GIT_AUTHOR_NAME=coach-acceptance",
 	"GIT_AUTHOR_EMAIL=coach-acceptance@example.com",
 	"GIT_COMMITTER_NAME=coach-acceptance",
 	"GIT_COMMITTER_EMAIL=coach-acceptance@example.com",
-)
+)...)
+
+// suiteGitConfig turns off git's automatic maintenance and gc, and their
+// detached background runs, for every git child the suite starts, whichever
+// helper built its repository. A newer git runs `git maintenance run --auto`
+// detached after a commit, and that child can still be writing .git/objects
+// when a spec removes the repository (#733). It is appended after any
+// GIT_CONFIG_COUNT entries the caller already set, so theirs still apply.
+var suiteGitConfig = maintenanceOffConfig(os.Getenv("GIT_CONFIG_COUNT"))
+
+func maintenanceOffConfig(existingCount string) []string {
+	first, err := strconv.Atoi(existingCount)
+	if err != nil || first < 0 {
+		first = 0
+	}
+	settings := [][2]string{{"maintenance.auto", "false"}, {"maintenance.autoDetach", "false"}, {"gc.auto", "0"}, {"gc.autoDetach", "false"}}
+	env := []string{"GIT_CONFIG_COUNT=" + strconv.Itoa(first+len(settings))}
+	for i, setting := range settings {
+		index := strconv.Itoa(first + i)
+		env = append(env, "GIT_CONFIG_KEY_"+index+"="+setting[0], "GIT_CONFIG_VALUE_"+index+"="+setting[1])
+	}
+	return env
+}
+
+func init() {
+	for _, entry := range suiteGitConfig {
+		name, value, _ := strings.Cut(entry, "=")
+		if err := os.Setenv(name, value); err != nil {
+			panic(err)
+		}
+	}
+}
 
 var commandPath string
 
@@ -75,6 +107,16 @@ func newTempGitRepo() string {
 	initCmd.Env = commitEnv
 	output, err := initCmd.CombinedOutput()
 	Expect(err).NotTo(HaveOccurred(), "git init: %s", output)
+
+	// A newer git runs `git maintenance run --auto` detached after a commit, and that child can still be writing
+	// .git/objects when DeferCleanup removes the repository, which failed specs on main (#733).
+	for _, setting := range [][]string{{"maintenance.auto", "false"}, {"maintenance.autoDetach", "false"}, {"gc.auto", "0"}, {"gc.autoDetach", "false"}} {
+		configCmd := exec.Command("git", "config", setting[0], setting[1])
+		configCmd.Dir = directory
+		configCmd.Env = commitEnv
+		output, err := configCmd.CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), "git config %s: %s", setting[0], output)
+	}
 
 	return directory
 }

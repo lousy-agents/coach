@@ -49,7 +49,7 @@ var _ = Describe("coach codesignal --worktree classifies what it finds on disk",
 	When("a changed file cannot be read because its permissions deny it", func() {
 		It("names the cause in the diagnostic", func() {
 			if os.Geteuid() == 0 {
-				Skip("root reads files regardless of their mode")
+				Skip("root reads files regardless of their mode; `mise run acceptance-ci-env` runs it as non-root")
 			}
 			repo := goOverlayRepo()
 			overwriteOnDisk(repo, "pkg/handlers/handlers.go", handlersWithoutImport+"\n// edited\n")

@@ -12,6 +12,7 @@ import (
 var _ = Describe("coach codesignal --check-project: a git failure while judging an explicit policy is an operational failure", func() {
 	When("the policy is gone from disk and the object that holds its committed content is gone from the repository", func() {
 		It("exits 1 naming the path and writes no readiness result, instead of reporting a clean-looking policy_missing", func() {
+			skipUnlessGitCanRefuseLazyFetch()
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 			commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")

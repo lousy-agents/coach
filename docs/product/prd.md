@@ -34,7 +34,7 @@ Current tools do not close this gap for a private, local workflow.
 - Linters enforce style and local rules. They do not report change lifecycle.
 - Continuous integration gates pass or fail. They do not explain structural risk.
 
-The engineer needs a private report over recent committed work. The current product reports deterministic rule results only.
+The engineer needs a private report over recent committed work. A coding agent that works for the engineer needs a report of the same kind over its own uncommitted work before it commits: agent self-review. The current product reports deterministic rule results only.
 
 Behavioral test gaps remain a real problem. This era does not claim to detect them.
 
@@ -42,7 +42,7 @@ Behavioral test gaps remain a real problem. This era does not claim to detect th
 
 The user is the project owner or a small set of engineers who scan their own Git checkout.
 
-The user runs Coach on a repository they already have on disk. The default command path does not call GitHub. The default command path does not call a model.
+The user runs Coach on a repository they already have on disk, directly or through a harness hook in a coding agent the user runs. The default command path does not call GitHub. The default command path does not call a model.
 
 This era has no manager view. This era has no team rollout. This era has no anonymous audience.
 
@@ -59,7 +59,7 @@ Those workarounds leak privacy, mix opinion with evidence, or miss structural de
 
 ## 4. Desired outcome
 
-Desired outcome: a pilot user who did not write Coach runs a second scan after the first report, without a request from the product owner.
+Desired outcome: a pilot user who did not write Coach runs a second scan after the first report, without a request from the product owner. Only a scan a person starts counts; a hook's scans do not.
 
 The outcome is not a count of rules. The outcome is not a hosted service. The outcome is not a merge gate.
 
@@ -76,15 +76,16 @@ In scope:
 - local `coach codesignal` on a Git checkout
 - Go, TypeScript, and TSX source: committed, or uncommitted when the user passes `--worktree`; and the project policy file as it is on disk
 - file-local structural signals
-- project policy that the user writes and commits; a policy file that is only in the working tree is reported or refused, not read; file-local analysis when none is selected
+- project policy that the user writes, read from disk as ESLint and Biome read their configuration, and disclosed when it differs from the policy at `HEAD` (section 9 records what has shipped); file-local analysis when none is selected
 - consented setup for a missing TypeScript compiler when a terminal is present
 - an honest report when analysis is incomplete
+- agent self-review before commit: a coding agent runs `coach codesignal --worktree` from a harness hook (Claude Code first) to review its own uncommitted work; Coach ships the CLI behaviour and documents an example hook, not a hosted hook service
 
 Out of scope in this era:
 
 - a hosted Coach service as the default product
 - a web user interface
-- harness hooks as a supported product
+- a Coach-maintained hook package or plugin for each harness (the hook stays user-owned, with an example in the docs)
 - AWS or other cloud deployment
 - new analysis languages
 - a review-readiness verdict
@@ -115,7 +116,7 @@ These limits do not expire with this era unless a later document replaces them.
 - Absence of an architecture signal is not compliance.
 - Stability. Coach is not yet stable. Its JSON schema, fingerprints, rule versions, and policy schema may change between releases. The owner decides case by case whether a change is announced in release notes.
 - Source: a committed scan reads committed source. The project policy is read from disk, as ESLint and Biome read their configuration. The comparison with `HEAD` is Coach's own addition, not parity with those tools.
-- Policy disclosure: every scan reports the policy path and digest it used, and whether the policy selected from disk matches the one selected at `HEAD` (section 8.4). The report does not compare with an older analyzed revision. JSON `scope.policy` is always present. A text line appears when a policy is selected or the two differ. A difference appears as a WARNING, and it qualifies any clean result. JSON `scope.policy` also states the cause of the comparison, one of `same_as_head`, `differs_from_head`, `not_committed`, `missing_on_disk` and `unusable_on_disk` (section 8.4).
+- Policy disclosure: every scan reports the policy path and digest it used, and whether the policy selected from disk matches the one selected at `HEAD` (section 8.4). The report does not compare with an older analyzed revision. JSON `scope.policy` is always present. A text line appears when a policy is selected or the two differ. A difference appears as a WARNING, and it qualifies any clean result. JSON `scope.policy` also states the cause of the comparison, one of `same_as_head`, `differs_from_head`, `not_committed`, `missing_on_disk` and `head_unreadable` (section 8.4).
 
 ## 8. Requirements
 
@@ -293,7 +294,7 @@ WHILE the project policy is read from the commit, the analyzed revision judges t
 
 WHILE the project policy is read from the commit, WHERE the analyzed revision does not commit a policy path as written but commits the same path in another case, THE Coach CLI shall exit with status `2`, name `project_config_invalid` and the cause `name_case_differs`, offer no guided policy authoring or `--suggest-project-config` command, and describe the rename in words: it shall name the committed spelling and the path Coach reads, and say to make git record the policy at that path, then commit and run again. It shall print no `git mv`, `git rm` or other shell command, shall always warn that a file already at the destination is to be moved aside first because git can overwrite it when `core.ignorecase` is set, and shall tell a rename that is already staged the same as one that is not. WHERE the analyzed revision commits the policy under several spellings, it shall list them, up to 16, and say to keep one at that path and remove the others, and past 16 it shall choose none to keep. The message shall be the same for a policy named with `--project-config` and a policy Coach finds, on a file system that folds case and one that does not, except that for a policy named with `--project-config` it shall first offer passing the committed spelling, or one of them when several are committed, because the name may be a slip. WHERE the rename changes the case of a directory's name, it shall add that git cannot do that in one step on a file system that folds case, and say to rename the directory to another name first. Policy-from-disk removes this requirement.
 
-IN EVERY SCAN, THE Coach CLI shall report the policy path and digest it used, and whether the policy selected from disk matches the policy selected at `HEAD`, as section 7 requires. Two policies match when they have the same path and either the same digest, or the file on disk is the blob selected at `HEAD` once git's own checkout conversion is applied: line endings per `core.autocrlf` and the `text` and `eol` attributes, `$Id$` expansion, and `working-tree-encoding`. A path with a `filter` attribute is never treated as converted, and no program runs. The report also states the cause, one of `same_as_head`, `differs_from_head`, `not_committed`, `missing_on_disk` and `unusable_on_disk`: `same_as_head` when the policy on disk is the policy selected at `HEAD`; `differs_from_head` when it is at the same path with different content; `not_committed` when the policy selected from disk is not at the path selected at `HEAD`; and `missing_on_disk` or `unusable_on_disk` where the scan falls back to the committed copy because the policy on disk is missing or unusable. `matches_head` is `true` exactly when the cause is `same_as_head`. When neither the disk nor `HEAD` selects a policy, JSON `scope.policy` is `null`. When only one of them selects a policy, `matches_head` is `false` and the text prints a WARNING.
+IN EVERY SCAN, THE Coach CLI shall report the policy path and digest it used, and whether the policy selected from disk matches the policy selected at `HEAD`, as section 7 requires. Two policies match when they have the same path and either the same digest, or the file on disk is the blob selected at `HEAD` once git's own checkout conversion is applied: line endings per `core.autocrlf` and the `text` and `eol` attributes, `$Id$` expansion, and `working-tree-encoding`. A path with a `filter` attribute is never treated as converted, and no program runs. The report also states the cause, one of `same_as_head`, `differs_from_head`, `not_committed`, `missing_on_disk` and `head_unreadable`: `same_as_head` when the policy on disk is the policy selected at `HEAD`; `differs_from_head` when `HEAD` holds something else at that path, whether a policy with different content, a document that is not a valid policy, or an entry that is not a regular file; `not_committed` when the policy selected from disk is not at the path selected at `HEAD`; `head_unreadable` when `HEAD` holds a regular file at that path that cannot be read; and `missing_on_disk` where the scan falls back to the committed copy because the policy on disk is missing. A policy on disk that is unusable is not a cause: the scan refuses it. `matches_head` is `true` exactly when the cause is `same_as_head`. When neither the disk nor `HEAD` selects a policy, JSON `scope.policy` is `null`. When only one of them selects a policy, `matches_head` is `false` and the text prints a WARNING.
 
 WHEN the user passes `--project-config <path>` and the path is unusable on disk, THE Coach CLI shall exit with status `2`, write no report to standard output, and name `project_config_invalid`, the path and the reason on standard error. A path is unusable when it is not a regular file that this process can open, or cannot be reached: a symbolic link, dangling or not; a directory, FIFO or other entry that is not a regular file; a file that cannot be read; a path that runs through a symbolic link; or a path whose parent directory cannot be searched. A dangling symbolic link at the path is reported as `project_config_invalid`, not as `project_config_missing`. The committed copy never stands in for an unusable path.
 
@@ -405,12 +406,14 @@ Known remaining risks from the evaluation and the epic:
 - A committed scan's result depends on the project policy file on disk, as with ESLint and Biome configuration. The JSON report's `scope.policy` names the policy the scan used (`path`, `digest`), and its `matches_head` says whether the policy selected from disk is that one, and its `cause` says how the two relate; `scope.policy` is `null` when the scan used no policy. Text output prints a `policy:` line and, when the policy used is not the committed one, a WARNING and a qualified verdict. A local edit can change a local run's result. CI enforces the policy committed in the change under test. A change that edits the policy is reviewed like an ESLint configuration change.
 - A worktree scan is a local, pre-commit check. It is not a pull-request check.
 - `--worktree` reads the project policy from the working tree, as every scan does. An uncommitted policy file, whether edited or untracked, is applied, disclosed in `scope.policy` and the text WARNING, and qualifies the verdict.
+- Agent self-review before commit (section 5) is a bet. No example hook is documented yet.
+- An agent that edits the policy can hide its own violations, because the scan reads the policy on disk. The example hook shall treat `scope.policy.matches_head: false` as not reviewed-clean: it tells the agent and surfaces it to the user. The mechanics belong in the hook documentation.
 - `project_provenance.package_manager` is read from `HEAD`, even when a listed `package.json` is read from disk. Threading the overlay through the package-manager read is a follow-up ([#608](https://github.com/lousy-agents/coach/issues/608)).
 - Under `--worktree`, the in-process line diff can mark a different line as changed than git does on repetitive text, about 7% on a repetitive corpus. `changed` is a field on each signal, and the diff may mark a neighbouring signal `changed` when a function is inserted between two others. It over-marks only, and never under-marks, apart from line-ending-only changes ([#611](https://github.com/lousy-agents/coach/issues/611)).
 - `--worktree` must run from the repository root.
 - The flag is listed in `--help`, the README, and `docs/cli-codesignal.md`.
 - An unstaged `mv` shows as a deleted path plus an untracked new file.
-- On a git before 2.44, a rename staged with `git mv` is two paths under `--worktree`: the moved file's signals read `introduced` and the old name's read `resolved`, with no `continuity_not_determined` diagnostic. On git 2.44 or later the rename is selected as a committed rename is, and its signals read `unknown` with `continuity_not_determined`.
+- A rename staged with `git mv` is selected under `--worktree` as a committed rename is, and its signals read `unknown` with `continuity_not_determined`. On a git before 2.44 in a partial clone it is two paths: the moved file's signals read `introduced` and the old name's read `resolved`, with no `continuity_not_determined` diagnostic.
 - A tracked file under `node_modules` that is edited is not overlaid. It is named as unanalyzed and exits `3` under `--fail-on-incomplete-coverage`.
 - A change that only converts line endings is not marked changed when `core.autocrlf` is off. The scan compares line content, not line endings, because a CRLF checkout must not read as an edit of every line.
 - A repository's clean filter can still run when `git status` must compare same-size content. No flag disables it. The scan reads file bytes itself, not through git's content filters.
@@ -421,7 +424,7 @@ Parked on purpose:
 - Review-readiness digest with a readiness verdict. The verdict had no defensible decision rule.
 - Behavioral test-gap detection as a primary claim.
 - Model judgment, rubric scoring, and provenance split on a hosted path.
-- Harness hooks and a web user interface.
+- A web user interface.
 - Cycle detection between modules. Coach has no cycle rule. A cycle between two layers can be expressed as forbidden pairs in both directions, but a cycle inside one layer cannot. Revisit when the owner scopes a cycle rule.
 
 If a later path adds model judgments, each finding must stay tagged as deterministic or agent. Agent output must not hide a deterministic finding. A schema failure on the agent path must still return the deterministic report. That contract is not a requirement of the default CLI path.
@@ -432,7 +435,7 @@ Do not treat this table as a substitute for customer evidence. Each row is a tes
 
 | Risk | Question | Cheapest test that kills the bet |
 | --- | --- | --- |
-| Value | Will a pilot user choose this report over hand review or a chat paste? | After one report, the user does not run a second scan and cannot name one action they took. |
+| Value | Will a pilot user choose this report over hand review or a chat paste? | After one report, the user does not run a second scan (a scan a person starts, as section 4 counts it) and cannot name one action they took. |
 | Usability | Can a first-time TypeScript user complete readiness and a first scan from the README? | The user hits a hidden step, a prompt with no terminal, or a false clean result. |
 | Feasibility | Can the shipped analyzer examine the change the user asked about? | A requested path is skipped and the text still reads as complete and clean. |
 | Business viability | Does this stay a private advisory tool? | A GitHub write, a person score, or a merge block lands on the default path. |
@@ -443,9 +446,9 @@ Owner decision, 26 September 2026: the living evaluation's restamp against `HEAD
 
 Leave pilot only when all of these statements are true:
 
-- A new evaluation restamp against current `HEAD` agrees that a named audience can be told an honest job.
+- A new evaluation restamp against current `HEAD` agrees that a named audience can be told an honest job. The jobs it judges are a private report over recent committed work, and agent self-review before commit (section 5). Until the evaluation carries a claim for agent self-review, that job is not judged.
 - A first-time user can follow the published README and obtain either a report or a clear next action. The user does not receive a false all-clear.
-- A user who did not write Coach runs a second scan without a prompt from the owner.
+- A user who did not write Coach runs a second scan without a prompt from the owner. A hook's scans do not count (section 4).
 - Security-category claims have a recorded precision review on a named corpus. The review includes true positives, false positives, and known misses.
 - The default command path still writes nothing to GitHub and still scores no person.
 

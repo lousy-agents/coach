@@ -33,13 +33,6 @@ func projectSelectionDiagnostics(selection projectconfig.Selection) []codesignal
 			Message: deprecatedProjectConfigMessage,
 		})
 	}
-	if selection.UnusableCanonical != nil {
-		diags = append(diags, codesignal.Diagnostic{
-			Kind:    "project_config_unusable",
-			Path:    projectconfig.CanonicalPath,
-			Message: projectconfig.UnusableCanonicalMessage(selection.UnusableCanonical),
-		})
-	}
 	return diags
 }
 

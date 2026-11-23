@@ -23,7 +23,7 @@ mise use -g github:lousy-agents/coach
 echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc && eval "$(~/.local/bin/mise activate bash)"
 ```
 
-The first line changes your global mise config. Coach needs `git` 2.42 or later on your `PATH`. Other shells, pinned versions, release archives, building from source, and signed archives are in the [CLI contract](./docs/cli-codesignal.md#install).
+The first line changes your global mise config. Coach needs `git` 2.43 or later on your `PATH`. Other shells, pinned versions, release archives, building from source, and signed archives are in the [CLI contract](./docs/cli-codesignal.md#install).
 
 ## First run
 

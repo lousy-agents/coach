@@ -31,7 +31,7 @@ var _ = Describe("coach codesignal (Go): a committed invalid policy, in a checko
 		Expect(os.WriteFile(filepath.Join(repo, ".git", "info", "attributes"), []byte(attributes), 0o644)).To(Succeed())
 	}
 
-	DescribeTable("takes the file to have work in it, and runs no program of the filter's name",
+	DescribeTable("refuses the file as the disk holds it, offers no replacement, and runs no program of the filter's name",
 		func(driver, program string) {
 			repo := commitGoRepoWithPolicy(policy, invalidPolicy)
 			marks := GinkgoT().TempDir()
@@ -42,7 +42,7 @@ var _ = Describe("coach codesignal (Go): a committed invalid policy, in a checko
 			_, stderr := scanExpectingRefusal(repo, "--project-config", policy)
 
 			Expect(marksLeft(marks, "filter")).To(BeEmpty(), "the %s program of the filter named %q ran", program, driver)
-			Expect(string(stderr)).To(ContainSubstring("differs from the committed"), "stderr:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("cannot be used on disk"), "the file is judged as the disk holds it:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("replace the policy with it"), "stderr:\n%s", stderr)
 		},
 		Entry("a filter named unset, with a clean program", "unset", "clean"),
@@ -60,7 +60,8 @@ var _ = Describe("coach codesignal (Go): a committed invalid policy, in a checko
 
 		_, stderr := scanExpectingRefusal(repo, "--project-config", policy)
 
-		Expect(string(stderr)).To(ContainSubstring("differs from the committed"), "stderr:\n%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("cannot be used on disk"), "the file is judged as the disk holds it:\n%s", stderr)
+		Expect(string(stderr)).NotTo(ContainSubstring("replace the policy with it"), "stderr:\n%s", stderr)
 	})
 
 	// The control: a driver that is configured under those names but that no attribute selects is no filter at all, and the

@@ -59,7 +59,7 @@ var _ = Describe("coach codesignal: a policy the revision commits as something o
 			stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, "codesignal", "--baseline", "--project-config", spec.policy, "--format=json")
 
 			Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
-			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(spec.policy, singleRootPolicyJSON, diskCauseNotCommitted))))
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(spec.policy, singleRootPolicyJSON, diskCauseDiffersFromHead))))
 		},
 		Entry("a symbolic link, with a regular file on disk", notAFileSpec{commitLinkThenWriteFile, "cfg/p.json", "symbolic link", "committed_as_link"}),
 		Entry("a directory, with a regular file on disk", notAFileSpec{commitDirectoryThenWriteFile, "cfg", "directory", "directory"}),

@@ -16,17 +16,21 @@ import (
 
 func expectBudgetStopKeepsCompletedPackFindings() {
 	root := multiHiddenMutationFixtureRoot()
-	recGW := newRecordingJudgeGateway(modelgateway.NewStubGateway())
-	// Each pack Judge sleeps long enough that a short judgment wall
-	// allows only the first pack (or first few) before ErrBudgetExceeded.
-	recGW.delay = 80 * time.Millisecond
+	clock := newSteppedClock()
+	gateway := &clockAdvancingGateway{
+		inner: newRecordingJudgeGateway(modelgateway.NewStubGateway()),
+		clock: clock,
+		after: 1,
+		by:    2 * time.Minute,
+	}
 
 	h := baseline.NewScanHandler(baseline.ScanConfig{
 		SmokeFixturePath:    root,
 		SmokeRepoOwner:      "pack-owner",
 		SmokeRepoName:       "pack-repo",
-		Gateway:             recGW,
-		JudgmentMaxWallTime: 100 * time.Millisecond,
+		Gateway:             gateway,
+		JudgmentMaxWallTime: time.Minute,
+		JudgmentClock:       clock,
 		// Small packs → more round-trips so wall trips mid-phase.
 		PackConfig: rubrics.PackConfig{MaxFindingsPerJudgmentPack: 2},
 	})

@@ -9,7 +9,7 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 )
 
-var _ = Describe("coach codesignal reads the project policy from disk: a policy that cannot be used (#168 A2a)", func() {
+var _ = Describe("coach codesignal reads the project policy from disk: a policy that cannot be used (#168 A2a, A2b)", func() {
 	const customPolicyPath = "policies/custom.json"
 
 	oversized := strings.Repeat(" ", int(projectconfig.MaxBytes)+1)
@@ -26,17 +26,15 @@ var _ = Describe("coach codesignal reads the project policy from disk: a policy 
 
 	for _, mode := range scopePolicyModes {
 		for _, content := range contents {
-			It("#168 PRD 8.4: a discovered untracked policy that is "+content.description+" is not used and the scan goes on without a policy under "+mode.name, func() {
+			It("#168 A2b: a discovered untracked policy that is "+content.description+" exits 2 as project_config_invalid under "+mode.name+", with no scan and no fall-through", func() {
 				repo, base := diskPolicyRepo()
 				overwriteOnDiskCreatingParents(repo, coachConfigPath, content.body)
 
-				report, jsonOut := diskPolicyJSONScan(mode, repo, base)
+				stdout, stderr, exitCode := mode.run(repo, base, "--format=json")
 
-				Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", BeNil()))
-				unusable := diagnosticsOfKind(report.Diagnostics, "project_policy_unusable_on_disk")
-				Expect(unusable).To(HaveLen(1))
-				Expect(unusable[0].Path).To(Equal(coachConfigPath))
-				Expect(unusable[0].Message).To(ContainSubstring(content.reason))
+				expectDiskJudgedRefusal(stdout, stderr, exitCode, coachConfigPath, content.reason)
+				Expect(string(stderr)).NotTo(ContainSubstring(" at revision "), "the bytes are the disk's, so the words are not the revision's")
+				Expect(string(stderr)).NotTo(ContainSubstring("merge conflict"), "nothing is unmerged, so no advice to resolve a conflict")
 			})
 
 			It("#168 PRD 8.4: the same untracked policy that is "+content.description+", named with --project-config, exits 2 as project_config_invalid under "+mode.name, func() {
@@ -50,20 +48,19 @@ var _ = Describe("coach codesignal reads the project policy from disk: a policy 
 				Expect(string(stderr)).To(ContainSubstring("project_config_invalid"))
 				Expect(string(stderr)).To(ContainSubstring(coachConfigPath))
 				Expect(string(stderr)).To(ContainSubstring(content.reason))
+				Expect(string(stderr)).NotTo(ContainSubstring(" at revision "), "the bytes are the disk's, so the words are not the revision's")
+				Expect(string(stderr)).NotTo(ContainSubstring("merge conflict"), "nothing is unmerged, so no advice to resolve a conflict")
 			})
 
-			It("#168 item 11 (interim until A3): a named policy committed valid and overwritten on disk so that it is "+content.description+" still scans with the committed copy under "+mode.name+", disclosed with the reason", func() {
+			It("#168 A2b: a named policy committed valid and overwritten on disk so that it is "+content.description+" exits 2 as project_config_invalid under "+mode.name+", and the committed copy does not stand in", func() {
 				repo, base := diskPolicyRepo(scopePolicyFile{customPolicyPath, goLayerPolicyConfigJSON})
 				overwriteOnDisk(repo, customPolicyPath, content.body)
 
-				report, jsonOut := diskPolicyJSONScan(mode, repo, base, "--project-config", customPolicyPath)
+				stdout, stderr, exitCode := mode.run(repo, base, "--project-config", customPolicyPath, "--format=json")
 
-				Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the committed copy must be used")
-				Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(customPolicyPath, goLayerPolicyConfigJSON, diskCauseUnusableOnDisk))))
-				text := diskPolicyTextScan(mode, repo, base, "--project-config", customPolicyPath)
-				expectDiskPolicyDisclosure(mode, text,
-					diskPolicyLine(customPolicyPath, goLayerPolicyConfigJSON, "differs from HEAD."),
-					"WARNING: the project policy on disk cannot be used ("+content.reason+"); this scan used the committed copy.")
+				expectDiskJudgedRefusal(stdout, stderr, exitCode, customPolicyPath, content.reason)
+				Expect(string(stderr)).NotTo(ContainSubstring(" at revision "), "the bytes are the disk's, so the words are not the revision's")
+				Expect(string(stderr)).NotTo(ContainSubstring("merge conflict"), "nothing is unmerged, so no advice to resolve a conflict")
 			})
 		}
 	}

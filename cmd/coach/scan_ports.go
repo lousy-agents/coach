@@ -19,6 +19,9 @@ type scanPorts struct {
 	discover       func(dir, revision string) (projectconfig.Selection, error)
 	loadExplicit   func(dir, revision, repoPath string) (json.RawMessage, error)
 	loadDiscovered func(dir, revision, repoPath string) (json.RawMessage, error)
+	// readCommitted says what the revision holds at a path as data, never as a refusal: it is how the scan compares
+	// the policy on disk with HEAD's copy.
+	readCommitted func(dir, revision, repoPath string) (projectconfig.CommittedCopy, error)
 	// An empty namedPath selects by discovery.
 	selectOnDisk   func(dir, namedPath string) (projectconfig.DiskSelection, error)
 	resolveBackend func(language string) error
@@ -37,6 +40,7 @@ func defaultScanPorts() scanPorts {
 		discover:            projectconfig.Discover,
 		loadExplicit:        projectconfig.LoadExplicit,
 		loadDiscovered:      projectconfig.Load,
+		readCommitted:       projectconfig.ReadCommittedCopy,
 		selectOnDisk:        projectconfig.SelectOnDisk,
 		resolveBackend:      codesignalcli.ResolveProjectBackend,
 		lookupBackend:       lookupRegisteredBackend,

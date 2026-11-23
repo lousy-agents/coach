@@ -7,7 +7,7 @@ This documents shipped behavior. It is not a gate and not a 1.0 promise.
 
 ## Install
 
-Coach needs `git` 2.42 or later on `PATH`. [Git version](#git-version) lists what older versions lack.
+Coach needs `git` 2.43 or later on `PATH`. [Git version](#git-version) lists what older versions lack.
 
 Install [mise](https://mise.jdx.dev/) if you do not have it, then pin the CLI from [GitHub Releases](https://github.com/lousy-agents/coach/releases):
 
@@ -528,17 +528,19 @@ The hook needs `coach` on `PATH` (see [Install](#install)) and uses `CLAUDE_PROJ
 
 ## Git version
 
-Coach runs git for every read, and passes options that only a recent git knows. Git 2.42 or later is the version to use.
+Coach runs git for every read, and passes options that only a recent git knows. Git 2.43 or later is the version to use. It is the oldest git that CI runs the acceptance specs on: Ubuntu 24.04's own git, in the `distro-git` job. That job runs the Go tests; the specs that need git 2.44 or later skip under it, and so do the TypeScript project-backend ones (`ts-project-backend`). Both run in other jobs, under the runner image's newer git. The table below gives the oldest git each option needs. A git that is older than 2.43 and newer than every row that applies may work, but CI does not test it.
 
 | git | what Coach uses | on an older git |
 | --- | --- | --- |
 | 2.15 | `--no-optional-locks`, passed to every git call so that a read never takes the index lock | every scan exits 1 at once, whatever the repository, because a git that does not know the option fails the question of its own version too: `could not determine the version of git (exit status 129: "unknown option: --no-optional-locks\nusage: git [--version] [--help] [-C <path>] [-c <name>=<value>]"); Coach needs git 2.16 or later` |
 | 2.16 | `rev-list --missing=print` and `--filter=blob:none`, asked of every repository on a git older than 2.44 (see [what repository configuration can run](#what-repository-configuration-can-run)) | every scan on a git older than 2.44 exits 1: `could not tell whether this repository has the objects Coach reads (`, what git said about the option, and `)`; git's words differ by version, so none are quoted here |
-| 2.18 | `git config --type=bool`, and `git status --no-renames`, so that the status of the working tree never compares a staged deletion with a staged addition (that reads the blob of each, and a git before 2.44 fetches one that only the index names) | the question whether a sparse checkout is on is not answered, and a policy that is off disk says that Coach could not check it; the status is run without the flag; the exit code is the same |
+| 2.18 | `git status --no-renames`. Coach's config reads use `--bool`, not `--type=bool`, which came in 2.18, so they need no newer git. The status a `--worktree` scan reads follows renames, except on a git before 2.44 in a partial clone: there it never compares a staged deletion with a staged addition, which reads the blob of each, and such a git fetches one that only the index names. Every other status Coach reads passes the flag | the status is run without the flag; the exit code is the same |
 | 2.42 | `git cat-file --batch -Z`, with which `--baseline` reads each file it analyzes | a `--baseline` scan exits 0 and analyzes nothing: every file gets a `head_read_failed` diagnostic |
 | 2.44 | `GIT_NO_LAZY_FETCH`, so that a read never fetches a missing object of a partial clone | a partial clone is scanned only when every object the scan reads is already there |
 
-Under `--worktree`, git 2.44 is also the line for a staged rename (`git mv`): before it the status is run with `--no-renames` and the rename is two paths, `introduced` for the new name and `resolved` for the old one, with no continuity diagnostic; from 2.44 the rename is detected and reads `unknown` with `continuity_not_determined`.
+Under `--worktree`, a staged rename (`git mv`) is detected as a committed rename is: its signals read `unknown` with `continuity_not_determined`. The exception is a git before 2.44 in a partial clone, which runs the status with `--no-renames` so that it fetches no blob: there the rename is two paths, `introduced` for the new name and `resolved` for the old one, with no continuity diagnostic.
+
+On a git before 2.44, every mode first asks git to resolve `HEAD`, held to the 30 seconds of any such read, before it reads anything else. A `HEAD` that does not resolve in time (a named pipe at the branch's ref, say) is refused with exit 1, naming `git rev-parse`, because a later read that did resolve it could reach an object such a git fetches. `--suggest-project-config` therefore exits 1 there, where on a later git it reports the same read as `project_config_suggestion_snapshot_unavailable` and exits 3.
 
 Of these, v0.11.0 passed only `cat-file -Z` (in `--baseline`), so the 2.42 line is not new. The 2.15, 2.16 and 2.18 lines are: v0.11.0 passed none of those options, and this release needs them on every scan.
 
@@ -560,7 +562,7 @@ What it reads:
 
 - Supported-language source and project configuration files (for example `go.mod`, `go.work`, `package.json`, `tsconfig*.json`) come from the working tree. New and untracked files that git does not ignore are included. A deleted file is absent, not empty.
 - A symbolic link is not followed. `worktree_symlink_skipped` names it.
-- A rename staged with `git mv` depends on the git version. On a git before 2.44 the status runs with `--no-renames`, so the rename is two paths: the moved file's signals are `introduced`, the old name's signals are `resolved`, and there is no `continuity_not_determined` diagnostic. On git 2.44 or later the status detects the rename and it is selected as a committed rename is: its signals are `unknown`, with `continuity_not_determined`.
+- A rename staged with `git mv` is selected as a committed rename is: its signals are `unknown`, with `continuity_not_determined`. The exception is a git before 2.44 in a partial clone, where the status runs with `--no-renames`: the rename is two paths, the moved file's signals are `introduced`, the old name's signals are `resolved`, and there is no `continuity_not_determined` diagnostic.
 - A changed file that cannot be read, or that changes while it is read, is named by `worktree_changes_not_analyzed`. The message gives the cause: permission denied, not a regular file, over the size limit, a failed read, or a name on disk that differs from the name git records.
 - `--scope`, `unsupported_language` and `coverage.unsupported` apply as they do without `--worktree`.
 - `git status` can run a repository's clean filter when it must compare same-size content. No flag disables it. Coach reads file bytes itself, not through git's content filters.
@@ -582,10 +584,10 @@ The project policy is read from the working tree under `--worktree`, as in every
 Every scan reports which project policy it used, and not only under `--worktree`:
 
 - JSON `scope.policy` holds `path`, `digest`, `matches_head` and `cause`. It is `null` when neither the disk nor `HEAD` selects a policy.
-- `cause` is a closed enum that says why the policy used is or is not the one at `HEAD`. It is present whenever `scope.policy` is an object. The human reason that a policy on disk was unusable is text-only and is not in the JSON.
+- `cause` is a closed enum that says why the policy used is or is not the one at `HEAD`. It is present whenever `scope.policy` is an object. A policy on disk that cannot be used (over the size bound, unreadable, invalid, or not a regular file) is refused: the scan exits `2` with `project_config_invalid`, and prints no report, so no `cause` names it.
 - `matches_head` is `true` when the policy selected from disk and the policy selected at `HEAD` have the same path and the same digest.
 - When only one of the disk and `HEAD` selects a policy, `matches_head` is `false` and the text prints a WARNING. A difference qualifies a clean result.
-- Not implemented: no `scope.policy.cause` reports a committed copy that cannot be read at `HEAD` within git's time or stderr bound, and there is no `head_unreadable` value. The intended behavior is that Coach uses the policy on disk, `matches_head` is `false`, and the WARNING says the committed copy could not be read and names the bound that tripped, not that the content differs. <!-- TODO(#168 A2b-1): add the `head_unreadable` cause and its WARNING; until then this bullet describes no shipped behavior. -->
+- `head_unreadable` means the scan used a usable policy on disk and HEAD's copy at its path could not be read to compare: the copy was over the size budget, or git stopped the read at its time or stderr bound. `matches_head` is `false`, the text policy line says the policy is not compared with HEAD, and the WARNING says HEAD's copy could not be read, naming the bound (git's time bound or git's stderr bound) when one stopped the read, instead of saying the content differs.
 - Text prints a policy line when a policy is selected or the two differ.
 
 | `cause` | `matches_head` | Meaning |
@@ -594,7 +596,7 @@ Every scan reports which project policy it used, and not only under `--worktree`
 | `differs_from_head` | `false` | The policy on disk differs from the committed policy at the same path. The scan used the bytes on disk. |
 | `not_committed` | `false` | The policy on disk has no committed copy at that path at `HEAD`. The scan used the bytes on disk. |
 | `missing_on_disk` | `false` | The policy is committed at `HEAD` and absent on disk. The scan used the committed copy. <!-- TODO(#168 A2b/A3): interim until A3 (discovery fallbacks when the canonical policy is deleted); remove this row's interim status when A3 merges. --> |
-| `unusable_on_disk` | `false` | The policy on disk cannot be used: over the size bound, unreadable, invalid, or not a regular file. The scan used the committed copy. <!-- TODO(#168 A2b/A3): interim until A2b-1 (an unusable policy on disk exits `2` `project_config_invalid` with no fall-through); remove this row's interim status when A2b-1 merges. --> |
+| `head_unreadable` | `false` | The policy on disk is usable and HEAD's copy at its path could not be read. The scan used the bytes on disk. |
 
 A report from a version that predates `cause` has no `cause` key. A consumer reads `matches_head` alone for it.
 
