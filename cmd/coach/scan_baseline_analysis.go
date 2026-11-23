@@ -34,5 +34,5 @@ func runBaselineAnalysis(dir string, f codesignalFlags, stdin, stderr *os.File, 
 	if err != nil {
 		return nil, wrapScanAnalysisError(err, dir, revisionSHA, f.namedPolicy, stderr)
 	}
-	return withProjectDiagnostic(report, nil, diags...), nil
+	return withScopePolicy(withProjectDiagnostic(report, nil, diags...), dir, revisionSHA, project), nil
 }

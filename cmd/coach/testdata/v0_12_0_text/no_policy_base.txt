@@ -1,0 +1,2 @@
+scope: production, filtered: 0, files analyzed: 1, active signals: 0, diagnostics: 0
+No active CodeSignal findings.
