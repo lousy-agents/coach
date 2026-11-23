@@ -306,6 +306,18 @@ jobs:
           install_args: go pnpm bun
           experimental: true
 
+      - name: report whether a non-root user can create a user namespace
+        continue-on-error: true
+        run: |
+          for f in /proc/sys/kernel/apparmor_restrict_unprivileged_userns /proc/sys/kernel/unprivileged_userns_clone /proc/sys/user/max_user_namespaces; do
+            echo "$f: $(cat "$f" 2>&1)"
+          done
+          grep -E '^(Cap(Eff|Bnd)|Seccomp):' /proc/self/status
+          cat /proc/self/attr/current 2>&1 || true
+          setpriv --reuid=65534 --regid=65534 --clear-groups -- unshare -rn -- true && echo "nobody: unshare -rn ok"
+          unshare -rn -- true && echo "root: unshare -rn ok"
+          unshare -n -- true && echo "root: unshare -n ok"
+
       - name: Go tests under git 2.43, as a non-root user
         run: mise exec -- go run ./cmd/acceptance-ci-env ./...
 
