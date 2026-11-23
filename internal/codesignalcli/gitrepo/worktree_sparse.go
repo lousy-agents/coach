@@ -5,11 +5,13 @@ import "strings"
 // SparseState says which tracked paths a working-tree status listing cannot
 // see: git omits skip-worktree and assume-unchanged paths from `git status`,
 // whether the user set the bit or a sparse checkout did, so an edit to one is
-// invisible to it.
+// invisible to it. Tracked is every path in the index, so a caller can tell a
+// directory git hides entirely from one it hides in part.
 type SparseState struct {
 	SparseCheckout  bool
-	SkipWorktree    bool
-	AssumeUnchanged bool
+	Tracked         []string
+	SkipWorktree    []string
+	AssumeUnchanged []string
 }
 
 // WorktreeSparseState reads core.sparseCheckout and the index's skip-worktree
@@ -23,31 +25,27 @@ func WorktreeSparseState(dir string) (SparseState, error) {
 	if err != nil {
 		return SparseState{}, err
 	}
-	return SparseState{
-		SparseCheckout:  strings.TrimSpace(string(config)) == "true",
-		SkipWorktree:    HasSkipWorktreeEntry(tags),
-		AssumeUnchanged: HasAssumeUnchangedEntry(tags),
-	}, nil
+	state := ParseIndexTags(tags)
+	state.SparseCheckout = strings.TrimSpace(string(config)) == "true"
+	return state, nil
 }
 
-// HasSkipWorktreeEntry reports whether `git ls-files -v -z` output tags any
-// entry S, the skip-worktree tag.
-func HasSkipWorktreeEntry(output []byte) bool {
+// ParseIndexTags sorts the paths of `git ls-files -v -z` output by tag. S is the
+// skip-worktree tag; -v spells assume-unchanged as a lowercase letter.
+func ParseIndexTags(output []byte) SparseState {
+	var state SparseState
 	for _, record := range SplitNULPaths(output) {
-		if strings.HasPrefix(record, "S ") {
-			return true
+		if len(record) <= 2 || record[1] != ' ' {
+			continue
+		}
+		path := record[2:]
+		state.Tracked = append(state.Tracked, path)
+		switch tag := record[0]; {
+		case tag == 'S':
+			state.SkipWorktree = append(state.SkipWorktree, path)
+		case tag >= 'a' && tag <= 'z':
+			state.AssumeUnchanged = append(state.AssumeUnchanged, path)
 		}
 	}
-	return false
-}
-
-// HasAssumeUnchangedEntry reports whether `git ls-files -v -z` output tags any
-// entry with a lowercase letter, which -v uses for assume-unchanged paths.
-func HasAssumeUnchangedEntry(output []byte) bool {
-	for _, record := range SplitNULPaths(output) {
-		if len(record) > 2 && record[1] == ' ' && record[0] >= 'a' && record[0] <= 'z' {
-			return true
-		}
-	}
-	return false
+	return state
 }
