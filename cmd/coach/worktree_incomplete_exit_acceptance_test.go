@@ -12,7 +12,7 @@ var _ = Describe("coach codesignal --worktree exits 3 when part of the working t
 	When("a path the scan could not read is qualified in the verdict", func() {
 		It("exits 3 under --fail-on-incomplete-coverage for an unreadable file", func() {
 			if os.Geteuid() == 0 {
-				Skip("root reads files regardless of their mode")
+				Skip("root reads files regardless of their mode; `mise run acceptance-ci-env` runs it as non-root")
 			}
 			repo := goOverlayRepo()
 			overwriteOnDisk(repo, "pkg/handlers/handlers.go", handlersWithoutImport+"\n// edited\n")
@@ -40,7 +40,7 @@ var _ = Describe("coach codesignal --worktree exits 3 when part of the working t
 
 		It("exits 3 for an unreadable file when no project policy is configured", func() {
 			if os.Geteuid() == 0 {
-				Skip("root reads files regardless of their mode")
+				Skip("root reads files regardless of their mode; `mise run acceptance-ci-env` runs it as non-root")
 			}
 			repo := newTempGitRepo()
 			commitFile(repo, "go.mod", goModuleFile)

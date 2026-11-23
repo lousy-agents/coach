@@ -101,7 +101,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config", func() 
 	When("--output points into a directory without write permission", func() {
 		It("exits 2 with project_config_suggestion_output_invalid instead of the defensive failed code", func() {
 			if os.Geteuid() == 0 {
-				Skip("cannot exercise a permission-denied write while running as root")
+				Skip("cannot exercise a permission-denied write while running as root; `mise run acceptance-ci-env` runs it as non-root")
 			}
 			repo := newTempGitRepo()
 			commitFile(repo, "go.mod", "module example.com/readonlydir\n\ngo 1.25\n")

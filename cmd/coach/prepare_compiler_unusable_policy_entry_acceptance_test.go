@@ -16,7 +16,7 @@ var _ = Describe("coach codesignal --prepare-compiler: what the refusal says abo
 
 	It("says to fix the file, once, and offers no authoring, when a file on disk cannot be read", func() {
 		if os.Geteuid() == 0 {
-			Skip("a file mode does not keep root out")
+			Skip("a file mode does not keep root out; `mise run acceptance-ci-env` runs it as non-root")
 		}
 		repo := typescriptRepoWithoutPolicy()
 		writeWorktreeFile(repo, policy, singleRootPolicyJSON)

@@ -32,7 +32,13 @@ func pasteWhatCoachPrints(repo string, stderr []byte) {
 	}
 }
 
+// theUsersWorkEntries is every state of work in the file that --check-project reports. A scan uses a valid fix on disk
+// whatever is committed (ADR-009), so only theUsersWorkTheScanRefusesEntries is refused by it.
 func theUsersWorkEntries() []TableEntry {
+	return append(theUsersFixEntries(), theUsersWorkTheScanRefusesEntries()...)
+}
+
+func theUsersFixEntries() []TableEntry {
 	return []TableEntry{
 		Entry("a fix on disk that is not committed", usersWork{func(repo, policy string) string {
 			writeWorktreeFile(repo, policy, validPolicyWithLayers)
@@ -53,6 +59,11 @@ func theUsersWorkEntries() []TableEntry {
 			writeWorktreeFile(repo, policy, validPolicyWithLayers)
 			return validPolicyWithLayers
 		}, []string{"differs from the committed", "git diff"}, "changed_on_disk"}),
+	}
+}
+
+func theUsersWorkTheScanRefusesEntries() []TableEntry {
+	return []TableEntry{
 		Entry("an unresolved conflict", usersWork{func(repo, policy string) string {
 			stageConflicting(repo, policy, 2, 3)
 			writeWorktreeFile(repo, policy, conflictedMarkers)
@@ -64,7 +75,7 @@ func theUsersWorkEntries() []TableEntry {
 var _ = Describe("coach codesignal (Go): a committed policy that is invalid, with work in the file", func() {
 	const policy = "cfg/p.json"
 
-	DescribeTable("says to review the file, and keeps the user's bytes whatever is pasted",
+	DescribeTable("says to review the file, and keeps the user's bytes whatever is pasted, where the work is not a policy the scan can use",
 		func(work usersWork) {
 			repo := commitGoRepoWithPolicy(policy, invalidPolicy)
 			onDisk := work.arrange(repo, policy)
@@ -83,7 +94,26 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid, wit
 			Expect(string(content)).To(Equal(onDisk), "the user's bytes survive what Coach printed")
 			Expect(gitIn(repo, "ls-files", "--stage", "--", policy)).To(Equal(index), "the index is untouched")
 		},
-		theUsersWorkEntries(),
+		theUsersWorkTheScanRefusesEntries(),
+	)
+
+	DescribeTable("uses a valid fix on disk and offers no replacement, whatever the index and git's marks say of it (ADR-009, #168 A2b)",
+		func(work usersWork) {
+			repo := commitGoRepoWithPolicy(policy, invalidPolicy)
+			onDisk := work.arrange(repo, policy)
+			index := gitIn(repo, "ls-files", "--stage", "--", policy)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json", "--project-config", policy)
+
+			Expect(exitCode).To(Equal(0), "stdout: %s stderr: %s", stdout, stderr)
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policy, onDisk, diskCauseDiffersFromHead))))
+			Expect(string(stderr)).NotTo(ContainSubstring("replace the policy with it"))
+			content, err := os.ReadFile(filepath.Join(repo, policy))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(content)).To(Equal(onDisk), "the user's bytes survive")
+			Expect(gitIn(repo, "ls-files", "--stage", "--", policy)).To(Equal(index), "the index is untouched")
+		},
+		theUsersFixEntries(),
 	)
 
 	It("does not tell the user to replace the candidate that Coach's own advice for a deleted policy produced", func() {
@@ -96,10 +126,10 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid, wit
 		Expect(exitCode).To(Equal(0), "command: %s\noutput: %s", suggest, output)
 		writeWorktreeFile(repo, policy, validPolicyWithLayers)
 
-		_, second := scanExpectingRefusal(repo, "--project-config", policy)
-		pasteWhatCoachPrints(repo, second)
+		stdout, second, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json", "--project-config", policy)
 
-		expectNoRunnableCommand(string(second))
+		Expect(exitCode).To(Equal(0), "the valid policy the user added is used (ADR-009): stdout: %s stderr: %s", stdout, second)
+		Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(policy, validPolicyWithLayers, diskCauseDiffersFromHead))))
 		Expect(string(second)).NotTo(ContainSubstring("replace the policy with it"), "a replacement would discard the layers the user added:\n%s", second)
 		content, err := os.ReadFile(filepath.Join(repo, policy))
 		Expect(err).NotTo(HaveOccurred())
@@ -186,6 +216,6 @@ var _ = Describe("coach codesignal (TypeScript, no terminal): a committed policy
 				Expect(string(stderr)).To(ContainSubstring(words), "stderr:\n%s", stderr)
 			}
 		},
-		theUsersWorkEntries(),
+		theUsersWorkTheScanRefusesEntries(),
 	)
 })

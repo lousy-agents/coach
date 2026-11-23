@@ -75,14 +75,14 @@ type WorktreeStatusRead struct {
 // `git status --porcelain=v1 --untracked-files=all -z`, with git's warnings.
 func ReadWorktreeStatus(dir string) (WorktreeStatusRead, error) {
 	supported, version := noLazyFetchSupported(worktreeStatusGit(), dir)
-	return readWorktreeStatusBy(worktreeGitCommand, dir, supported, version)
+	return readWorktreeStatusBy(worktreeGitCommand, dir, supported, mayBeAPartialClone(worktreeStatusGit(), dir, supported), version)
 }
 
 // readWorktreeStatusBy is ReadWorktreeStatus with the git that answers, and the version it is, given by the caller,
 // so that a test can run the status as a git that cannot be told not to fetch runs it.
-func readWorktreeStatusBy(build childBuilder, dir string, canBeToldNotToFetch bool, version string) (WorktreeStatusRead, error) {
+func readWorktreeStatusBy(build childBuilder, dir string, canBeToldNotToFetch, partialClone bool, version string) (WorktreeStatusRead, error) {
 	stdout, stderr, err := RunBytesBoundedWithStderr(build, dir, maxWorktreeStatusBytes, maxWorktreeStatusStderr, WorktreeStatusTimeout,
-		worktreeScanStatusArguments(canBeToldNotToFetch, version)...)
+		worktreeScanStatusArguments(canBeToldNotToFetch, partialClone, version)...)
 	if err != nil {
 		return WorktreeStatusRead{}, err
 	}
@@ -96,12 +96,16 @@ func readWorktreeStatusBy(build childBuilder, dir string, canBeToldNotToFetch bo
 // worktreeScanStatusArguments are the arguments of the status a --worktree scan reads. A git that can be told not to
 // fetch inspects every submodule, whatever the repository's .gitmodules says: its ignore setting would otherwise let
 // a hostile repository hide a dirty submodule from the scan, and renames are detected, because the scan follows a
-// renamed file to its source. A git that cannot be told not to fetch is given the arguments every other status gets
-// (see worktreeStatusArguments), because a nested status in a submodule that is a partial clone, and a comparison
-// of a staged deletion with a staged addition, run the remote's transport there.
-func worktreeScanStatusArguments(canBeToldNotToFetch bool, version string) []string {
-	if !canBeToldNotToFetch {
+// renamed file to its source. A git that cannot be told not to fetch does not go into submodules, where a nested
+// status in one that is a partial clone runs the remote's transport. It detects renames only outside a partial
+// clone: comparing a staged deletion with a staged addition reads the blob of each, and only a partial clone lacks
+// a blob that the comparison would fetch (#737).
+func worktreeScanStatusArguments(canBeToldNotToFetch, partialClone bool, version string) []string {
+	if !canBeToldNotToFetch && partialClone {
 		return worktreeStatusArguments(false, version)
+	}
+	if !canBeToldNotToFetch {
+		return []string{"status", "--porcelain=v1", "--untracked-files=all", "-z", "--ignore-submodules=all"}
 	}
 	return []string{"status", "--porcelain=v1", "--untracked-files=all", "-z", "--ignore-submodules=none"}
 }

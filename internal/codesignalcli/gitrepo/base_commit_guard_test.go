@@ -70,7 +70,7 @@ func TestOnAnOldGitAQuestionAboutTheBaseThatIsNotAnswered(t *testing.T) {
 		name       string
 		repository fakeRepository
 	}{
-		{"the base cannot be resolved in time", fakeRepository{revParseErr: timedOut}},
+		{"the base cannot be resolved in time", fakeRepository{revParseErr: timedOut, headResolves: true}},
 		{"git prints what is not an object id for the base", fakeRepository{revParseOutput: "not an id\n"}},
 		{"the base's commit cannot be looked for", fakeRepository{probes: map[string]probeAnswer{firstMissing: {err: timedOut}}}},
 	}

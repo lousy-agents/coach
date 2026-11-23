@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // DiskSelection is the policy the working tree holds: the bytes read and the digest of those same bytes. The zero
@@ -18,13 +18,27 @@ type DiskSelection struct {
 }
 
 // SelectOnDisk is the policy file the working tree selects for a scan, with the digest of the bytes it holds now.
-// An empty namedPath means the policy was discovered: the canonical file if that is a regular file, else project.json
-// if that is. A non-empty namedPath, the --project-config value, is that path alone. A path that is absent, a link, or not a regular file is not selected,
-// and a regular file that cannot be read in full within MaxBytes is an error with nothing selected. It asks git only
-// for the repository root, so it changes neither the index nor the working tree. The error is for deciding, not for
-// display: a refusal's wording can name --project-config even when the policy was discovered.
+// An empty namedPath means the policy was discovered: the canonical file if something is there, else project.json.
+// A non-empty namedPath, the --project-config value, is that path alone. A path with nothing at it selects nothing and
+// the next candidate is tried. An entry that cannot be the policy (a link, a directory, a pipe, a path below a file, a
+// file that cannot be read or is over MaxBytes) is a *DiskPolicyRefusal that stops the search with nothing selected, so
+// project.json never stands in for a canonical path that is there and unusable. Which refusals matter is for the
+// caller, which knows what the revision commits: an uncommitted project.json is not a policy to refuse. It asks git only
+// for the repository root, so it changes neither the index nor the working tree. Any other error is a failure of the
+// environment and not a verdict about the file.
 func SelectOnDisk(dir, namedPath string) (DiskSelection, error) {
-	rootDir, err := gitrepo.RepositoryRootWith(NewGitRunner(), dir)
+	return selectOnDiskThrough(NewGitRunner(), dir, namedPath)
+}
+
+func selectOnDiskThrough(run gitrepo.Runner, dir, namedPath string) (DiskSelection, error) {
+	return selectCandidates(run, dir, namedPath, refusalOfEntry)
+}
+
+// entryRefusal decides what a path the disk check stopped at means for the selection: nil selects nothing and moves on.
+type entryRefusal func(root *os.Root, repoPath string, err error) error
+
+func selectCandidates(run gitrepo.Runner, dir, namedPath string, refuse entryRefusal) (DiskSelection, error) {
+	rootDir, err := gitrepo.RepositoryRootWith(run, dir)
 	if err != nil {
 		return DiskSelection{}, err
 	}
@@ -34,7 +48,7 @@ func SelectOnDisk(dir, namedPath string) (DiskSelection, error) {
 	}
 	defer func() { _ = root.Close() }()
 	for _, candidate := range onDiskCandidates(namedPath) {
-		selection, found, err := selectRegularFile(root, candidate)
+		selection, found, err := selectRegularFile(root, candidate, refuse)
 		if err != nil || found {
 			return selection, err
 		}
@@ -49,30 +63,44 @@ func onDiskCandidates(namedPath string) []string {
 	return []string{CanonicalPath, DefaultPath}
 }
 
-func selectRegularFile(root *os.Root, repoPath string) (DiskSelection, bool, error) {
+func selectRegularFile(root *os.Root, repoPath string, refuse entryRefusal) (DiskSelection, bool, error) {
 	if err := checkRegularFileThrough(osDiskRoot{root}, repoPath); err != nil {
-		if cannotBeThePolicy(err) {
-			return DiskSelection{}, false, nil
-		}
-		return DiskSelection{}, false, err
+		return DiskSelection{}, false, refuse(root, repoPath, err)
 	}
 	content, err := readBounded(root, repoPath)
 	if err != nil {
-		return DiskSelection{}, false, err
+		return DiskSelection{}, false, refusalOfRead(repoPath, err)
 	}
 	return DiskSelection{Path: repoPath, Digest: Digest(content), Content: content}, true, nil
 }
 
-// cannotBeThePolicy is whether the check found nothing usable at the path (absent, a link, or not a file), as
-// opposed to a path it could not judge, which is an error and not a different policy.
-func cannotBeThePolicy(err error) bool {
-	var refusal *ConfigError
-	if !errors.As(err, &refusal) {
-		return false
+// refusalOfEntry is the refusal for a path the disk check stopped at, or nil for a path with nothing at it, which
+// selects nothing without refusing. A failure of the check that is no verdict about the path is returned as it is.
+func refusalOfEntry(root *os.Root, repoPath string, err error) error {
+	var verdict *ConfigError
+	switch {
+	case !errors.As(err, &verdict):
+		return err
+	case verdict.AbsentFromDisk():
+		return nil
 	}
-	switch refusal.PolicyCause {
-	case projectreadiness.CauseSymbolicLink, projectreadiness.CauseNotARegularFile, projectreadiness.CauseParentNotDirectory:
-		return true
+	reason, known := entryRefusalReasons[verdict.PolicyCause]
+	if !known {
+		reason = refusalUnreadable
 	}
-	return refusal.AbsentFromDisk()
+	return &DiskPolicyRefusal{Path: repoPath, Reason: reason, Directory: reason == refusalNotRegular && isDirectory(root, repoPath)}
+}
+
+func isDirectory(root *os.Root, repoPath string) bool {
+	info, err := root.Lstat(filepath.FromSlash(repoPath))
+	return err == nil && info.IsDir()
+}
+
+// refusalOfRead is the refusal for a file that passed the check and then could not be read in full within the budget.
+func refusalOfRead(repoPath string, err error) error {
+	var oversize *oversizePolicyError
+	if errors.As(err, &oversize) {
+		return &DiskPolicyRefusal{Path: repoPath, Reason: refusalOversize}
+	}
+	return &DiskPolicyRefusal{Path: repoPath, Reason: refusalUnreadable}
 }

@@ -14,9 +14,8 @@ import (
 )
 
 const (
-	linuxConfinementElsewhereSkip = "linux file-syscall and network-namespace controls run only on linux; they Fail, not Skip, in the ts-project-backend CI job"
+	linuxConfinementElsewhereSkip = "linux file-syscall controls run only on linux; they Fail, not Skip, in the ts-project-backend CI job"
 	fileSyscallTracerUnavailable  = "file-syscall tracer unavailable; file-syscall control must Fail, not Skip, inside Label(\"ts-project-backend\")"
-	unshareUnavailable            = "unshare -rn and privileged unshare -n both unavailable; network-namespace control must Fail, not Skip, inside Label(\"ts-project-backend\")"
 	unconfinedArgvHook            = "--coach-test-unconfined"
 	compilerModuleArgPrefix       = "--compiler-module="
 	nativePackageArgPrefix        = "--native-package="

@@ -11,39 +11,34 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("coach codesignal reads the project policy from disk: a committed root project.json whose path holds an entry that cannot be used (#168 A2a, interim until A3)", func() {
+var _ = Describe("coach codesignal reads the project policy from disk: a committed root project.json whose path holds an entry that cannot be used (#168 A2b)", func() {
 	type entryInPlace struct {
 		description string
-		reason      string
+		cause       string
 		make        func(path string)
 	}
 	entries := []entryInPlace{
-		{"a directory", "not a regular file", func(path string) { Expect(os.Mkdir(path, 0o755)).To(Succeed()) }},
-		{"a symbolic link", "a symbolic link", func(path string) { Expect(os.Symlink("/etc/hostname", path)).To(Succeed()) }},
-		{"a named pipe", "not a regular file", func(path string) { Expect(syscall.Mkfifo(path, 0o644)).To(Succeed()) }},
+		{"a directory", "not_a_regular_file", func(path string) { Expect(os.Mkdir(path, 0o755)).To(Succeed()) }},
+		{"a symbolic link", "symbolic_link", func(path string) { Expect(os.Symlink("/etc/hostname", path)).To(Succeed()) }},
+		{"a named pipe", "not_a_regular_file", func(path string) { Expect(syscall.Mkfifo(path, 0o644)).To(Succeed()) }},
 	}
 
 	for _, mode := range scopePolicyModes {
 		for _, entry := range entries {
-			It("#168 item 11 (interim until A3): a committed root project.json replaced on disk by "+entry.description+" is replaced by the committed copy under "+mode.name+", disclosed with the reason and not as missing", func() {
+			It("#168 A2b: a committed root project.json replaced on disk by "+entry.description+" exits 2 as project_config_invalid under "+mode.name+", and the committed copy does not stand in", func() {
 				repo, base := diskPolicyRepo(scopePolicyFile{legacyConfigPath, goLayerPolicyConfigJSON})
 				path := filepath.Join(repo, legacyConfigPath)
 				Expect(os.Remove(path)).To(Succeed())
 				entry.make(path)
 
-				report, jsonOut := diskPolicyJSONScan(mode, repo, base)
+				stdout, stderr, exitCode := mode.run(repo, base, "--format=json")
 
-				Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "the committed copy must be used")
-				Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope(legacyConfigPath, goLayerPolicyConfigJSON, diskCauseUnusableOnDisk))))
-				text := diskPolicyTextScan(mode, repo, base)
-				expectDiskPolicyDisclosure(mode, text,
-					diskPolicyLine(legacyConfigPath, goLayerPolicyConfigJSON, "differs from HEAD."),
-					"WARNING: the project policy on disk cannot be used ("+entry.reason+"); this scan used the committed copy.")
-				Expect(diagnosticsOfKind(report.Diagnostics, "project_policy_unusable_on_disk")).To(BeEmpty())
+				expectDiskJudgedRefusal(stdout, stderr, exitCode, legacyConfigPath, entry.cause)
+				Expect(string(stderr)).NotTo(ContainSubstring("unusable_on_disk"))
 			})
 		}
 
-		It("#168 item 11: a root project.json that is not committed and is a named pipe on disk keeps its behavior under "+mode.name+": no policy is used and none is reported", func() {
+		It("#168 A2b: a root project.json that is not committed and is a named pipe on disk keeps its behavior under "+mode.name+": no policy is used and none is reported", func() {
 			repo, base := diskPolicyRepo()
 			Expect(syscall.Mkfifo(filepath.Join(repo, legacyConfigPath), 0o644)).To(Succeed())
 

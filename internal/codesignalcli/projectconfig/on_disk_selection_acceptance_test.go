@@ -1,11 +1,13 @@
 package projectconfig
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -25,6 +27,11 @@ var _ = Describe("the policy the working tree selects", func() {
 		Expect(os.WriteFile(target, []byte(contents), 0o644)).To(Succeed())
 	}
 	digestOf := func(contents string) string { return Digest([]byte(contents)) }
+	refusalOf := func(err error) DiskPolicyRefusal {
+		var refusal *DiskPolicyRefusal
+		ExpectWithOffset(1, errors.As(err, &refusal)).To(BeTrue(), "error: %v", err)
+		return *refusal
+	}
 
 	BeforeEach(func() {
 		repo = gitfixture.Init(GinkgoT())
@@ -53,7 +60,7 @@ var _ = Describe("the policy the working tree selects", func() {
 			Expect(selected).To(Equal(DiskSelection{Path: DefaultPath, Digest: digestOf(legacyBytes), Content: []byte(legacyBytes)}))
 		})
 
-		It("selects project.json when the canonical path is a symbolic link", func() {
+		It("refuses the canonical symbolic link as a symbolic_link and does not fall through to project.json", func() {
 			put(DefaultPath, legacyBytes)
 			put("elsewhere.json", canonicalBytes)
 			Expect(os.MkdirAll(filepath.Join(repo, ".lousy-agents"), 0o755)).To(Succeed())
@@ -61,8 +68,9 @@ var _ = Describe("the policy the working tree selects", func() {
 
 			selected, err := SelectOnDisk(repo, discovered)
 
-			Expect(err).NotTo(HaveOccurred())
-			Expect(selected).To(Equal(DiskSelection{Path: DefaultPath, Digest: digestOf(legacyBytes), Content: []byte(legacyBytes)}))
+			Expect(refusalOf(err)).To(Equal(DiskPolicyRefusal{Path: CanonicalPath, Reason: "a symbolic link"}))
+			Expect(refusalOf(err).Cause()).To(Equal(projectreadiness.CauseSymbolicLink))
+			Expect(selected).To(Equal(DiskSelection{}))
 		})
 
 		It("selects nothing when neither spelling is on disk", func() {
@@ -72,12 +80,13 @@ var _ = Describe("the policy the working tree selects", func() {
 			Expect(selected).To(Equal(DiskSelection{}))
 		})
 
-		It("selects nothing when project.json is a directory", func() {
+		It("refuses project.json as a not_a_regular_file when it is a directory, and the caller decides whether that path matters", func() {
 			Expect(os.MkdirAll(filepath.Join(repo, DefaultPath), 0o755)).To(Succeed())
 
 			selected, err := SelectOnDisk(repo, discovered)
 
-			Expect(err).NotTo(HaveOccurred())
+			Expect(refusalOf(err)).To(Equal(DiskPolicyRefusal{Path: DefaultPath, Reason: "not a regular file", Directory: true}))
+			Expect(refusalOf(err).Cause()).To(Equal(projectreadiness.CauseNotARegularFile))
 			Expect(selected).To(Equal(DiskSelection{}))
 		})
 
@@ -122,31 +131,32 @@ var _ = Describe("the policy the working tree selects", func() {
 
 			selected, err := SelectOnDisk(repo, discovered)
 
-			Expect(err).To(HaveOccurred())
+			Expect(refusalOf(err)).To(Equal(DiskPolicyRefusal{Path: CanonicalPath, Reason: "larger than the policy size limit"}))
 			Expect(selected).To(Equal(DiskSelection{}))
 		})
 
-		It("refuses a canonical file the process cannot read and selects nothing", func() {
+		It("refuses a canonical file the process cannot read as unreadable_on_disk and selects nothing", func() {
 			if os.Geteuid() == 0 {
-				Skip("root can read any file")
+				Skip("root can read any file; `mise run acceptance-ci-env` runs it as non-root")
 			}
 			put(CanonicalPath, canonicalBytes)
 			Expect(os.Chmod(filepath.Join(repo, CanonicalPath), 0o000)).To(Succeed())
 
 			selected, err := SelectOnDisk(repo, discovered)
 
-			Expect(err).To(HaveOccurred())
+			Expect(refusalOf(err).Cause()).To(Equal(projectreadiness.CauseUnreadableOnDisk))
 			Expect(selected).To(Equal(DiskSelection{}))
 		})
 
-		It("selects project.json when a regular file stands where the canonical parent directory should be", func() {
+		It("refuses the canonical path as a parent_not_directory when a regular file stands where its directory should be", func() {
 			put(".lousy-agents", "x")
 			put(DefaultPath, legacyBytes)
 
 			selected, err := SelectOnDisk(repo, discovered)
 
-			Expect(err).NotTo(HaveOccurred())
-			Expect(selected).To(Equal(DiskSelection{Path: DefaultPath, Digest: digestOf(legacyBytes), Content: []byte(legacyBytes)}))
+			Expect(refusalOf(err).Path).To(Equal(CanonicalPath))
+			Expect(refusalOf(err).Cause()).To(Equal(projectreadiness.CauseParentNotDirectory))
+			Expect(selected).To(Equal(DiskSelection{}))
 		})
 	})
 
@@ -172,33 +182,34 @@ var _ = Describe("the policy the working tree selects", func() {
 			Expect(selected).To(Equal(DiskSelection{}))
 		})
 
-		It("selects nothing when the named file is a symbolic link", func() {
+		It("refuses the named file as a symbolic_link when it is one", func() {
 			put("real.json", legacyBytes)
 			Expect(os.MkdirAll(filepath.Join(repo, "policies"), 0o755)).To(Succeed())
 			Expect(os.Symlink("../real.json", filepath.Join(repo, namedPath))).To(Succeed())
 
 			selected, err := SelectOnDisk(repo, named)
 
-			Expect(err).NotTo(HaveOccurred())
+			Expect(refusalOf(err).Path).To(Equal(namedPath))
+			Expect(refusalOf(err).Cause()).To(Equal(projectreadiness.CauseSymbolicLink))
 			Expect(selected).To(Equal(DiskSelection{}))
 		})
 
-		It("selects nothing when the named file is reached through a symbolic link to a directory", func() {
+		It("refuses the named file as a symbolic_link when it is reached through a symbolic link to a directory", func() {
 			put("real/team.json", legacyBytes)
 			Expect(os.Symlink("real", filepath.Join(repo, "policies"))).To(Succeed())
 
 			selected, err := SelectOnDisk(repo, named)
 
-			Expect(err).NotTo(HaveOccurred())
+			Expect(refusalOf(err).Cause()).To(Equal(projectreadiness.CauseSymbolicLink))
 			Expect(selected).To(Equal(DiskSelection{}))
 		})
 
-		It("selects nothing when a regular file stands where the named file's parent directory should be", func() {
+		It("refuses the named file as a parent_not_directory when a regular file stands where its parent directory should be", func() {
 			put("policies", "x")
 
 			selected, err := SelectOnDisk(repo, named)
 
-			Expect(err).NotTo(HaveOccurred())
+			Expect(refusalOf(err).Cause()).To(Equal(projectreadiness.CauseParentNotDirectory))
 			Expect(selected).To(Equal(DiskSelection{}))
 		})
 

@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -190,7 +195,7 @@ var _ = Describe("coach codesignal: an explicit --project-config entry of anothe
 
 	It("refuses a path whose parent directory cannot be searched", func() {
 		if os.Geteuid() == 0 {
-			Skip("root can search any directory")
+			Skip("root can search any directory; `mise run acceptance-ci-env` runs it as non-root")
 		}
 		repo := commitExplicitPolicyRepo()
 		parent := filepath.Join(repo, "policies")
@@ -199,21 +204,65 @@ var _ = Describe("coach codesignal: an explicit --project-config entry of anothe
 
 		expectRefusedWith(repo, explicitPolicyPath, "project_config_invalid", "cannot be checked on disk: permission denied")
 	})
+})
 
-	DescribeTable("the bytes on disk are never what is read: a committed policy still decides the scan",
-		func(onDisk func() []byte) {
+const (
+	hostileScanBound = 10 * time.Second
+	invalidJSONWord  = `(?i)json`
+	oversizeWord     = `(?i)budget|too large|exceed`
+)
+
+// runScanWithin fails the spec if the scan has not finished within bound, which is how a read that waits on or
+// drains what the path holds shows itself.
+func runScanWithin(repo string, bound time.Duration, args ...string) (stdout, stderr []byte, exitCode int) {
+	ctx, cancel := context.WithTimeout(context.Background(), bound)
+	defer cancel()
+	command := exec.CommandContext(ctx, commandPath, append([]string{"codesignal", "--baseline", "--format=json"}, args...)...)
+	command.Dir = repo
+	var outBuf, errBuf bytes.Buffer
+	command.Stdout, command.Stderr = &outBuf, &errBuf
+	err := command.Run()
+	ExpectWithOffset(1, ctx.Err()).NotTo(HaveOccurred(), "the scan did not finish within %s; stderr: %s", bound, errBuf.String())
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return outBuf.Bytes(), errBuf.Bytes(), exitErr.ExitCode()
+	}
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	return outBuf.Bytes(), errBuf.Bytes(), 0
+}
+
+func expectHostilePolicyOnDiskRefusedWithin(repo, reason string) {
+	stdout, stderr, exitCode := runScanWithin(repo, hostileScanBound, "--project-config", explicitPolicyPath)
+
+	ExpectWithOffset(1, exitCode).To(Equal(2), "the bytes on disk are judged, not the valid committed copy; stdout=%s stderr=%s", stdout, stderr)
+	ExpectWithOffset(1, stdout).To(BeEmpty(), "no report on a refused policy")
+	ExpectWithOffset(1, string(stderr)).To(ContainSubstring("project_config_invalid"))
+	ExpectWithOffset(1, string(stderr)).To(ContainSubstring(explicitPolicyPath))
+	ExpectWithOffset(1, string(stderr)).To(MatchRegexp(reason), "the reason")
+}
+
+var _ = Describe("coach codesignal: the bytes on disk are judged, whatever a valid committed policy says (#168 A2b)", func() {
+	DescribeTable("hostile bytes at an explicit --project-config path are refused with a reason, promptly",
+		func(onDisk func() []byte, reason string) {
 			repo := commitExplicitPolicyRepo()
 			Expect(os.WriteFile(filepath.Join(repo, explicitPolicyPath), onDisk(), 0o644)).To(Succeed())
 
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json", "--project-config", explicitPolicyPath)
-
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-			Expect(stdout).NotTo(BeEmpty())
+			expectHostilePolicyOnDiskRefusedWithin(repo, reason)
 		},
-		Entry("an empty file", func() []byte { return nil }),
-		Entry("random-looking binary", func() []byte { return []byte("\x00\xff\xfe\x80binary\x00\x01") }),
-		Entry("a byte-order mark before the JSON", func() []byte { return append([]byte("\xef\xbb\xbf"), singleRootPolicyJSON...) }),
-		Entry("200000 levels of nesting", func() []byte { return []byte(strings.Repeat("[", 200000) + strings.Repeat("]", 200000)) }),
-		Entry("a 5 MiB file", func() []byte { return []byte(strings.Repeat(" ", 5<<20) + singleRootPolicyJSON) }),
+		Entry("an empty file", func() []byte { return nil }, invalidJSONWord),
+		Entry("random-looking binary", func() []byte { return []byte("\x00\xff\xfe\x80binary\x00\x01") }, invalidJSONWord),
+		Entry("a byte-order mark before the JSON", func() []byte { return append([]byte("\xef\xbb\xbf"), singleRootPolicyJSON...) }, invalidJSONWord),
+		Entry("200000 levels of nesting", func() []byte { return []byte(strings.Repeat("[", 200000) + strings.Repeat("]", 200000)) }, invalidJSONWord),
+		Entry("a 5 MiB file", func() []byte { return []byte(strings.Repeat(" ", 5<<20) + singleRootPolicyJSON) }, oversizeWord),
 	)
+
+	It("refuses a sparse 300 MiB file at the path without reading it through", func() {
+		repo := commitExplicitPolicyRepo()
+		file, err := os.OpenFile(filepath.Join(repo, explicitPolicyPath), os.O_WRONLY|os.O_TRUNC, 0o644)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(file.Truncate(300 << 20)).To(Succeed())
+		Expect(file.Close()).To(Succeed())
+
+		expectHostilePolicyOnDiskRefusedWithin(repo, oversizeWord)
+	})
 })

@@ -92,7 +92,7 @@ func linkAt(t *testing.T, repo, path string) {
 func commitDirectoryBehindAParentThatCannotBeSearched(t *testing.T, repo string) {
 	t.Helper()
 	if os.Geteuid() == 0 {
-		t.Skip("root can search any directory")
+		t.Skip("root can search any directory; `mise run acceptance-ci-env` runs it as non-root")
 	}
 	gitfixture.CommitFile(t, repo, "cfg/sub/x.json", "{}")
 	parent := filepath.Join(repo, "cfg")

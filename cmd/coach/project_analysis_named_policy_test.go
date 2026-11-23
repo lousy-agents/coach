@@ -28,7 +28,7 @@ var _ = Describe("loading the project for a TypeScript scan whose policy cannot 
 			ports.loadExplicit = failingLoad
 			ports.loadDiscovered = failingLoad
 
-			_, loadErr := loadPreparedProject(repo, revision, source, "typescript", nil, ports)
+			_, loadErr := loadPreparedProject(repo, revision, source, "typescript", nil, projectconfig.DiskSelection{}, ports)
 
 			var withReadiness *tssetup.ProjectConfigErrorWithReadiness
 			Expect(errors.As(loadErr, &withReadiness)).To(BeTrue(), "the failure carries the readiness snapshot: %v", loadErr)
@@ -50,7 +50,7 @@ var _ = Describe("loading the project when no backend can run the policy", func(
 		}
 		earlier := codesignal.Diagnostic{Kind: "project_config_deprecated", Path: "project.json"}
 
-		prepared, err := loadPreparedProject(GinkgoT().TempDir(), "rev", policyref.Discovered("project.json"), "go", []codesignal.Diagnostic{earlier}, ports)
+		prepared, err := loadPreparedProject(GinkgoT().TempDir(), "rev", policyref.Discovered("project.json"), "go", []codesignal.Diagnostic{earlier}, projectconfig.DiskSelection{}, ports)
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prepared.analysis).To(BeNil())

@@ -51,6 +51,14 @@ run = "go run ./cmd/acceptance-style-guard"
 description = "Fail if any Go file or identifier is named by position or hash (main_part2.go, body_*, *_sigfix1_test.go) instead of responsibility (ADR-007)"
 run = "go run ./cmd/source-layout-guard"
 
+# CI's runner git floats with ubuntu-latest (2.55.0, then 2.56.0, then 2.56.1);
+# this pin is the one place the task's expected git is stated. Bump it when CI's
+# git moves (#733).
+[tasks.acceptance-ci-env]
+description = "Run Go tests (default ./...; pass packages after --) under CI's conditions: non-root, empty HOME, no user-level git config, CI's PATH and pinned git. Set COACH_CI_GIT to name a git; COACH_CI_GIT_ALLOW_MISMATCH=1 runs only the user and HOME legs (see docs/development/validation-and-ci.md)"
+env = { COACH_CI_GIT_VERSION = "2.56.1" }
+run = "go run ./cmd/acceptance-ci-env"
+
 [tasks.test-acceptance-fast]
 description = "Run the fast, in-process Ginkgo/Gomega acceptance suites (public Go/CLI-boundary tests, offline, no real credentials) -- Feature Zero's runnable acceptance layer (see docs/architecture/acceptance-harness.md)"
 run = [

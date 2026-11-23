@@ -10,13 +10,11 @@ import (
 )
 
 // A policy Coach would discover that is on disk is judged by the scan and by the project check with the same question
-// about the path, so they name the same cause. The scan reads a regular file from disk and says nothing about the path;
-// for a path it cannot read it continues without a policy and says so in a diagnostic, and the check reports the gap.
-// For each state of the path the cause the scan's diagnostic names is the cause the check's gap carries.
+// about the path, so they name the same cause. The scan refuses a path it cannot read with exit 2 and the cause on
+// standard error; the check reports the same cause as a gap.
 type canonicalState struct {
 	arrange   func(repo string)
 	wantCause string // "" when nothing is on disk
-	wantKind  string // the scan's diagnostic, "" when it says nothing
 }
 
 var causeInTheDiagnostic = regexp.MustCompile(`cause=([a-z_]+)`)
@@ -45,19 +43,6 @@ func causeOfThePolicyGap(repo string) string {
 	return "no policy gap"
 }
 
-func requireTheScanToNameTheCause(diagnostics []string, s canonicalState) {
-	if s.wantKind == "" {
-		ExpectWithOffset(1, diagnostics).To(BeEmpty(), "the scan has nothing to say about a path that holds nothing or a regular file it read")
-		return
-	}
-	ExpectWithOffset(1, diagnostics).To(HaveLen(1), "diagnostics: %v", diagnostics)
-	ExpectWithOffset(1, diagnostics[0]).To(HavePrefix(s.wantKind+" "), "the scan's diagnostic kind")
-	if s.wantKind == "project_config_unusable" {
-		ExpectWithOffset(1, causeInTheDiagnostic.FindStringSubmatch(diagnostics[0])).To(Equal([]string{"cause=" + s.wantCause, s.wantCause}),
-			"the scan names the cause the check names: %s", diagnostics[0])
-	}
-}
-
 func writeTheCanonicalFile(repo string) {
 	writeWorktreeFile(repo, coachConfigPath, singleRootPolicyJSON)
 }
@@ -77,7 +62,7 @@ func putAFileInPlaceOfTheDirectory(repo string) {
 
 func makeTheParentUnsearchable(repo string) {
 	if os.Geteuid() == 0 {
-		Skip("root can search any directory, so this state cannot be built")
+		Skip("root can search any directory, so this state cannot be built; `mise run acceptance-ci-env` runs it as non-root")
 	}
 	writeTheCanonicalFile(repo)
 	parent := filepath.Join(repo, ".lousy-agents")
@@ -85,24 +70,53 @@ func makeTheParentUnsearchable(repo string) {
 	DeferCleanup(func() { _ = os.Chmod(parent, 0o755) })
 }
 
-func requireOneCauseInBothModes(s canonicalState) {
+func requireTheScanToRefuseWithTheCause(s canonicalState) {
 	repo := commitScannableGoRepo()
 	s.arrange(repo)
 
-	diagnostics := scanDiagnosticsAtTheCanonicalPath(repo)
-	gotCause := causeOfThePolicyGap(repo)
+	stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json")
 
-	Expect(gotCause).To(Equal(s.wantCause), "the check's cause for the path")
-	requireTheScanToNameTheCause(diagnostics, s)
+	Expect(exitCode).To(Equal(2), "the policy entry on disk cannot be read, so the scan refuses; stdout=%s stderr=%s", stdout, stderr)
+	Expect(stdout).To(BeEmpty(), "no report on a refused policy")
+	Expect(string(stderr)).To(ContainSubstring("project_config_invalid"))
+	Expect(string(stderr)).To(ContainSubstring(coachConfigPath))
+	Expect(string(stderr)).To(ContainSubstring(s.wantCause), "the cause the check names")
+	Expect(string(stderr)).NotTo(ContainSubstring("project_config_unusable"), "no continuing without the policy")
 }
 
-var _ = Describe("coach codesignal: a discovered policy on disk that is not committed, in the scan and in --check-project", func() {
-	DescribeTable("names one cause in both", requireOneCauseInBothModes,
-		Entry("a regular file, not committed: the check passes and has no policy gap", canonicalState{writeTheCanonicalFile, "no policy gap", ""}),
-		Entry("a directory", canonicalState{makeTheCanonicalDirectory, "not_a_regular_file", "project_config_unusable"}),
-		Entry("a symbolic link", canonicalState{linkTheCanonicalPath, "symbolic_link", "project_config_unusable"}),
-		Entry("a file where the directory should be", canonicalState{putAFileInPlaceOfTheDirectory, "parent_not_directory", "project_config_unusable"}),
-		Entry("a parent the process cannot search", canonicalState{makeTheParentUnsearchable, "unreadable_on_disk", "project_config_unusable"}),
-		Entry("nothing at the path", canonicalState{func(repo string) {}, "", ""}),
+func requireTheScanToSayNothingAboutThePath(s canonicalState) {
+	repo := commitScannableGoRepo()
+	s.arrange(repo)
+
+	Expect(scanDiagnosticsAtTheCanonicalPath(repo)).To(BeEmpty(), "the scan has nothing to say about a path that holds nothing or a regular file it read")
+}
+
+func requireTheCheckToNameTheCause(s canonicalState) {
+	repo := commitScannableGoRepo()
+	s.arrange(repo)
+
+	Expect(causeOfThePolicyGap(repo)).To(Equal(s.wantCause), "the check's cause for the path")
+}
+
+var _ = Describe("coach codesignal: a discovered policy on disk that is not committed, in the scan and in --check-project (#168 A2b)", func() {
+	DescribeTable("the scan refuses an entry it cannot read, naming the cause the check names", requireTheScanToRefuseWithTheCause,
+		Entry("a directory", canonicalState{makeTheCanonicalDirectory, "not_a_regular_file"}),
+		Entry("a symbolic link", canonicalState{linkTheCanonicalPath, "symbolic_link"}),
+		Entry("a file where the directory should be", canonicalState{putAFileInPlaceOfTheDirectory, "parent_not_directory"}),
+		Entry("a parent the process cannot search", canonicalState{makeTheParentUnsearchable, "unreadable_on_disk"}),
+	)
+
+	DescribeTable("the scan says nothing about a path it reads or that holds nothing", requireTheScanToSayNothingAboutThePath,
+		Entry("a regular file, not committed", canonicalState{writeTheCanonicalFile, "not_committed"}),
+		Entry("nothing at the path", canonicalState{func(repo string) {}, ""}),
+	)
+
+	DescribeTable("--check-project names the cause for the path", requireTheCheckToNameTheCause,
+		Entry("a regular file, not committed: the check passes and has no policy gap", canonicalState{writeTheCanonicalFile, "no policy gap"}),
+		Entry("a directory", canonicalState{makeTheCanonicalDirectory, "not_a_regular_file"}),
+		Entry("a symbolic link", canonicalState{linkTheCanonicalPath, "symbolic_link"}),
+		Entry("a file where the directory should be", canonicalState{putAFileInPlaceOfTheDirectory, "parent_not_directory"}),
+		Entry("a parent the process cannot search", canonicalState{makeTheParentUnsearchable, "unreadable_on_disk"}),
+		Entry("nothing at the path", canonicalState{func(repo string) {}, ""}),
 	)
 })

@@ -48,7 +48,7 @@ func TestWorktreeGitCommandLeavesTheArgumentsOfTheReadAsTheyAre(t *testing.T) {
 // A git that can be told not to fetch looks into every submodule, whatever the repository's .gitmodules asks, so that
 // a repository cannot hide a dirty submodule, and follows renames.
 func TestTheStatusOfAScanOfAGitThatCanBeToldNotToFetchLooksIntoEverySubmoduleAndFollowsRenames(t *testing.T) {
-	got := worktreeScanStatusArguments(true, "2.54.0")
+	got := worktreeScanStatusArguments(true, false, "2.54.0")
 
 	if !slices.Contains(got, "--ignore-submodules=none") {
 		t.Errorf("git %v does not inspect every submodule", got)
@@ -58,10 +58,10 @@ func TestTheStatusOfAScanOfAGitThatCanBeToldNotToFetchLooksIntoEverySubmoduleAnd
 	}
 }
 
-// A git before 2.44 ignores the instruction not to fetch, so the status it runs is the one every other status gets: it
-// does not go into submodules, where a partial clone's transport would run, and does not compare a staged deletion
-// with a staged addition, which reads the blob of each.
-func TestTheStatusOfAScanOfAGitThatCannotBeToldNotToFetchIsTheStatusOfEveryOtherScan(t *testing.T) {
+// A git before 2.44 ignores the instruction not to fetch, so in a partial clone the status it runs is the one every
+// other status gets: it does not go into submodules, where a partial clone's transport would run, and does not compare
+// a staged deletion with a staged addition, which reads the blob of each.
+func TestTheStatusOfAScanOfAGitThatCannotBeToldNotToFetchInAPartialCloneIsTheStatusOfEveryOtherScan(t *testing.T) {
 	assertEveryOtherStatus(t, "2.43.0", true)
 	assertEveryOtherStatus(t, "2.17.1", false)
 	assertEveryOtherStatus(t, "unknown", false)
@@ -69,7 +69,7 @@ func TestTheStatusOfAScanOfAGitThatCannotBeToldNotToFetchIsTheStatusOfEveryOther
 
 func assertEveryOtherStatus(t *testing.T, version string, wantNoRenames bool) {
 	t.Helper()
-	got := worktreeScanStatusArguments(false, version)
+	got := worktreeScanStatusArguments(false, true, version)
 
 	if want := worktreeStatusArguments(false, version); !slices.Equal(got, want) {
 		t.Errorf("git %s: worktreeScanStatusArguments = %v, want the arguments of every other status, %v", version, got, want)
@@ -79,5 +79,18 @@ func assertEveryOtherStatus(t *testing.T, version string, wantNoRenames bool) {
 	}
 	if slices.Contains(got, "--no-renames") != wantNoRenames {
 		t.Errorf("git %s: %v, want --no-renames = %v", version, got, wantNoRenames)
+	}
+}
+
+// Outside a partial clone no object is missing for a comparison to fetch, so a git before 2.44 follows renames there,
+// as a current git does, and still stays out of submodules, any of which may be a partial clone (#737).
+func TestTheStatusOfAScanOfAGitThatCannotBeToldNotToFetchFollowsRenamesOutsideAPartialClone(t *testing.T) {
+	got := worktreeScanStatusArguments(false, false, "2.43.0")
+
+	if slices.Contains(got, "--no-renames") {
+		t.Errorf("git %v does not follow renames outside a partial clone", got)
+	}
+	if !slices.Contains(got, "--ignore-submodules=all") {
+		t.Errorf("git %v goes into submodules", got)
 	}
 }

@@ -53,7 +53,6 @@ const (
 	diskCauseDiffersFromHead = "differs_from_head"
 	diskCauseNotCommitted    = "not_committed"
 	diskCauseMissingOnDisk   = "missing_on_disk"
-	diskCauseUnusableOnDisk  = "unusable_on_disk"
 )
 
 func diskPolicyScope(path, body, cause string) map[string]any {
