@@ -57,6 +57,8 @@ func answerSlowly(pipe, content string, delay time.Duration) {
 			time.Sleep(delay)
 			_, _ = writer.WriteString(content)
 			_ = writer.Close()
+			// git reads the ref to its end, which it sees only while no writer has the pipe open.
+			time.Sleep(200 * time.Millisecond)
 		}
 	}()
 	DeferCleanup(func() {
