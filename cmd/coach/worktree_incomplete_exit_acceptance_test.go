@@ -141,7 +141,7 @@ var _ = Describe("coach codesignal --worktree exits 3 when part of the working t
 	})
 
 	When("a user reads the help text of --fail-on-incomplete-coverage", func() {
-		It("also documents the working-tree rule now that --worktree has graduated (#168 worktree graduation)", func() {
+		It("states the working-tree rule after the exit-3 sentence (#168 worktree graduation)", func() {
 			stdout, stderr, exitCode := runCoachRaw("codesignal", "--help")
 
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)

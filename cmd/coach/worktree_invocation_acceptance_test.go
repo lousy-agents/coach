@@ -148,7 +148,7 @@ var _ = Describe("coach codesignal --worktree invocation", func() {
 	})
 
 	When("a flag is misused and the flag package prints its usage", func() {
-		It("lists the graduated flag (#168 worktree graduation)", func() {
+		It("lists -worktree in the usage listing (#168 worktree graduation)", func() {
 			_, stderr, exitCode := runCoachRaw("codesignal", "--worktree", "--base")
 
 			Expect(exitCode).To(Equal(2))
@@ -168,7 +168,7 @@ var _ = Describe("coach codesignal --worktree invocation", func() {
 	})
 
 	When("a user reads the help text", func() {
-		It("lists the graduated flag without calling it experimental, and still accepts it (#168 worktree graduation)", func() {
+		It("lists -worktree with a description, without calling it experimental, and still accepts it (#168 worktree graduation)", func() {
 			stdout, stderr, exitCode := runCoachRaw("codesignal", "--help")
 			Expect(exitCode).To(Equal(0))
 			help := string(stdout) + string(stderr)

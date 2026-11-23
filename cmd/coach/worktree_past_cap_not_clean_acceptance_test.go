@@ -46,12 +46,8 @@ var _ = Describe("coach codesignal --worktree reports a nested repository past t
 
 			messages := notCleanMessages(run)
 			Expect(messages).To(ConsistOf(ContainSubstring(dirtyPath)), "the dirty path keeps the diagnostic non-empty")
-			for _, root := range unlistedRoots {
-				Expect(messages).NotTo(ContainElement(ContainSubstring(root)))
-			}
-			for _, diagnostic := range run.ofKind("worktree_not_clean") {
-				Expect(diagnostic).NotTo(HaveKey("root"))
-			}
+			expectNoMessageNaming(messages, unlistedRoots, "")
+			expectNoRootKey(run.ofKind("worktree_not_clean"))
 		})
 
 		It("keeps the 20 listed roots out of worktree_not_clean, which their own entries own (#168 item 22)", func() {
@@ -59,9 +55,7 @@ var _ = Describe("coach codesignal --worktree reports a nested repository past t
 
 			messages := notCleanMessages(run)
 			Expect(messages).To(ConsistOf(ContainSubstring(dirtyPath)))
-			for _, root := range listedRoots {
-				Expect(messages).NotTo(ContainElement(ContainSubstring(root + "/")))
-			}
+			expectNoMessageNaming(messages, listedRoots, "/")
 		})
 
 		It("does not name an unlisted root in the text output beyond the count, and exits 0 (#168 item 22)", func() {
@@ -72,13 +66,29 @@ var _ = Describe("coach codesignal --worktree reports a nested repository past t
 			for _, root := range unlistedRoots {
 				Expect(text).NotTo(ContainSubstring(root))
 			}
-			notCleanLines := []string{}
-			for line := range strings.SplitSeq(text, "\n") {
-				if strings.Contains(line, "worktree_not_clean") {
-					notCleanLines = append(notCleanLines, line)
-				}
-			}
-			Expect(notCleanLines).To(ConsistOf(ContainSubstring(dirtyPath)))
+			Expect(linesNaming(text, "worktree_not_clean")).To(ConsistOf(ContainSubstring(dirtyPath)))
 		})
 	})
 })
+
+func linesNaming(text, marker string) []string {
+	named := []string{}
+	for line := range strings.SplitSeq(text, "\n") {
+		if strings.Contains(line, marker) {
+			named = append(named, line)
+		}
+	}
+	return named
+}
+
+func expectNoMessageNaming(messages, roots []string, suffix string) {
+	for _, root := range roots {
+		Expect(messages).NotTo(ContainElement(ContainSubstring(root + suffix)))
+	}
+}
+
+func expectNoRootKey(diagnostics []map[string]any) {
+	for _, diagnostic := range diagnostics {
+		Expect(diagnostic).NotTo(HaveKey("root"))
+	}
+}
