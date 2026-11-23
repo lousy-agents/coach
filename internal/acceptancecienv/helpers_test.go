@@ -26,6 +26,8 @@ type probeRecord struct {
 	GlobalConfigError bool     `json:"global_config_error"`
 	GitVersion        string   `json:"git_version"`
 	GoOnPath          bool     `json:"go_on_path"`
+	ConfigFromEnv     []string `json:"config_from_env"`
+	IdentityFromEnv   []string `json:"identity_from_env"`
 }
 
 type taskRun struct {

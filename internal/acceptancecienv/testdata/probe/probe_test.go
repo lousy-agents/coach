@@ -25,6 +25,19 @@ func TestRecordTheConditions(t *testing.T) {
 	globalConfig, globalErr := exec.Command("git", "config", "--global", "--list").CombinedOutput()
 	version, _ := exec.Command("git", "version").Output()
 	_, goErr := exec.LookPath("go")
+	listed, _ := exec.Command("git", "config", "--list", "--show-origin").Output()
+	var fromEnvironment []string
+	for _, line := range strings.Split(string(listed), "\n") {
+		if strings.HasPrefix(line, "command line:") {
+			fromEnvironment = append(fromEnvironment, line)
+		}
+	}
+	var gitIdentity []string
+	for _, name := range []string{"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"} {
+		if _, set := os.LookupEnv(name); set {
+			gitIdentity = append(gitIdentity, name)
+		}
+	}
 	record := map[string]any{
 		"uid":                 os.Getuid(),
 		"home":                home,
@@ -33,6 +46,8 @@ func TestRecordTheConditions(t *testing.T) {
 		"global_config_error": globalErr != nil,
 		"git_version":         strings.TrimSpace(string(version)),
 		"go_on_path":          goErr == nil,
+		"config_from_env":     fromEnvironment,
+		"identity_from_env":   gitIdentity,
 	}
 	data, err := json.Marshal(record)
 	if err != nil {

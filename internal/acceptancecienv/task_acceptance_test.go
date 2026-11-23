@@ -29,10 +29,12 @@ var _ = Describe("mise run acceptance-ci-env runs Go tests under CI's conditions
 	})
 
 	It("#733 AC1: runs the tests as a non-root user, with an empty HOME, no user-level git config and CI's PATH, and prints the git version it used", func() {
-		run := runTask(hostGitVersion())
+		run := runTask(hostGitVersion(), "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.name", "GIT_CONFIG_VALUE_0=from-the-environment", "GIT_AUTHOR_NAME=from-the-environment")
 
 		Expect(run.exitCode).To(Equal(0), "output:\n%s", run.output())
 		Expect(run.probe).NotTo(BeNil(), "the probe test must have run; output:\n%s", run.output())
+		Expect(run.probe.ConfigFromEnv).To(BeEmpty(), "git config carried in the environment must not reach the tests: CI sets none")
+		Expect(run.probe.IdentityFromEnv).To(BeEmpty(), "a git identity carried in the environment must not reach the tests: CI sets none")
 		Expect(run.probe.UID).NotTo(Equal(0), "the tests must not run as root")
 		Expect(run.probe.HomeEntries).To(BeEmpty(), "HOME must start empty: %+v", run.probe)
 		Expect(run.probe.GlobalConfig).To(BeEmpty(), "no user-level git config may reach the tests: %+v", run.probe)
