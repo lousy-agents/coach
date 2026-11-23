@@ -22,7 +22,7 @@ func TestARefusalOfTheCommittedCanonicalPolicyGivesWayOnlyToAUsableCanonicalPoli
 		{"a refusal of the copy, and the canonical policy on disk", invalid, canonicalOnDisk, true},
 		{"a refusal of the copy, and only the root project.json on disk", invalid, legacyOnDisk, false},
 		{"a refusal of the copy, and nothing on disk", invalid, projectconfig.DiskSelection{}, false},
-		{"a policy committed in another case", wrongCase, canonicalOnDisk, false},
+		{"a policy committed in another case, and the canonical policy usable on disk", wrongCase, canonicalOnDisk, true},
 		{"an operational failure, which is no refusal of the copy", errors.New("git: could not run"), canonicalOnDisk, false},
 	}
 	for _, tt := range tests {

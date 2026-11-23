@@ -30,7 +30,7 @@ func skipUnlessInstalled(shell string) {
 // The paths Coach names are repository-relative, as --project-config is, and the rename is described in words, so a
 // subdirectory changes nothing about the advice: it is the same message from src/ as from the root.
 var _ = Describe("coach codesignal: the rename a refusal describes names repository-relative paths from a subdirectory", func() {
-	It("describes a policy committed in the wrong case the same from src/ as from the root", func() {
+	It("describes a policy on disk in the wrong case the same from src/ as from the root", func() {
 		repo := commitScannableGoRepo()
 		commitFile(repo, "src/keep.go", minimalGoSource)
 		commitFile(repo, ".Lousy-Agents/Coach.json", singleRootPolicyJSON)
@@ -43,11 +43,11 @@ var _ = Describe("coach codesignal: the rename a refusal describes names reposit
 		fromSubdirectory := scan(filepath.Join(repo, "src"))
 
 		Expect(fromSubdirectory).To(Equal(scan(repo)))
-		Expect(fromSubdirectory).To(ContainSubstring(makeGitRecordIt(".lousy-agents/coach.json")))
-		expectNoRunnableCommand(fromSubdirectory)
+		expectTheDiskSpellingRefusal(fromSubdirectory)
+		Expect(fromSubdirectory).To(ContainSubstring(`the policy is on disk as ".Lousy-Agents/Coach.json", but Coach reads ".lousy-agents/coach.json"`))
 	})
 
-	It("describes a named policy committed in the wrong case the same from src/ as from the root", func() {
+	It("describes a named policy on disk in the wrong case the same from src/ as from the root", func() {
 		repo := commitScannableGoRepo()
 		commitFile(repo, "src/keep.go", minimalGoSource)
 		commitFile(repo, "policies/p.json", singleRootPolicyJSON)
@@ -60,8 +60,8 @@ var _ = Describe("coach codesignal: the rename a refusal describes names reposit
 		fromSubdirectory := scan(filepath.Join(repo, "src"))
 
 		Expect(fromSubdirectory).To(Equal(scan(repo)))
-		Expect(fromSubdirectory).To(ContainSubstring(makeGitRecordIt("policies/P.json")))
-		expectNoRunnableCommand(fromSubdirectory)
+		expectTheDiskSpellingRefusal(fromSubdirectory)
+		Expect(fromSubdirectory).To(ContainSubstring(`the policy is on disk as "policies/p.json", but Coach reads "policies/P.json"`))
 	})
 })
 
