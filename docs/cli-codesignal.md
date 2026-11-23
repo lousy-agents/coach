@@ -305,7 +305,7 @@ terminal is what opens the combined setup offer above.
 Opt into cross-file layer checks with a committed JSON config. Coach does not guess your architecture: you declare layers and forbidden import edges.
 
 ```sh
-# Go: discover module/workspace roots (candidate only. Review, add layers, commit)
+# Go: discover module/workspace roots (candidate only; review, add layers, commit)
 coach codesignal --baseline --suggest-project-config
 
 # after the file is committed at the analyzed revision
