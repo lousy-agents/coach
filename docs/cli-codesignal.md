@@ -209,15 +209,17 @@ terminal is what opens the combined setup offer above.
 
 ## Git version
 
-Coach runs git for every read, and passes options that only a recent git knows. Git 2.42 or later is the version to use.
+Coach runs git for every read, and passes options that only a recent git knows. Git 2.43 or later is the version to use. It is the oldest git that CI runs the acceptance specs on: Ubuntu 24.04's own git, in the `distro-git` job. That job runs the Go tests; the specs that need git 2.44 or later skip under it, and so do the TypeScript project-backend ones (`ts-project-backend`). Both run in other jobs, under the runner image's newer git. The table below gives the oldest git each option needs. A git that is older than 2.43 and newer than every row that applies may work, but CI does not test it.
 
 | git | what Coach uses | on an older git |
 | --- | --- | --- |
 | 2.15 | `--no-optional-locks`, passed to every git call so that a read never takes the index lock | every scan exits 1 at once, whatever the repository, because a git that does not know the option fails the question of its own version too: `could not determine the version of git (exit status 129: "unknown option: --no-optional-locks\nusage: git [--version] [--help] [-C <path>] [-c <name>=<value>]"); Coach needs git 2.16 or later` |
 | 2.16 | `rev-list --missing=print` and `--filter=blob:none`, asked of every repository on a git older than 2.44 (see [what repository configuration can run](#what-repository-configuration-can-run)) | every scan on a git older than 2.44 exits 1: `could not tell whether this repository has the objects Coach reads (`, what git said about the option, and `)`; git's words differ by version, so none are quoted here |
-| 2.18 | `git config --type=bool`, and `git status --no-renames`, so that the status of the working tree never compares a staged deletion with a staged addition (that reads the blob of each, and a git before 2.44 fetches one that only the index names) | the question whether a sparse checkout is on is not answered, and a policy that is off disk says that Coach could not check it; the status is run without the flag; the exit code is the same |
+| 2.18 | `git status --no-renames`. Coach's config reads use `--bool`, not `--type=bool`, which came in 2.18, so they need no newer git. The status a `--worktree` scan reads follows renames, except on a git before 2.44 in a partial clone: there it never compares a staged deletion with a staged addition, which reads the blob of each, and such a git fetches one that only the index names. Every other status Coach reads passes the flag | the status is run without the flag; the exit code is the same |
 | 2.42 | `git cat-file --batch -Z`, with which `--baseline` reads each file it analyzes | a `--baseline` scan exits 0 and analyzes nothing: every file gets a `head_read_failed` diagnostic |
 | 2.44 | `GIT_NO_LAZY_FETCH`, so that a read never fetches a missing object of a partial clone | a partial clone is scanned only when every object the scan reads is already there |
+
+On a git before 2.44, every mode first asks git to resolve `HEAD`, held to the 30 seconds of any such read, before it reads anything else. A `HEAD` that does not resolve in time (a named pipe at the branch's ref, say) is refused with exit 1, naming `git rev-parse`, because a later read that did resolve it could reach an object such a git fetches. `--suggest-project-config` therefore exits 1 there, where on a later git it reports the same read as `project_config_suggestion_snapshot_unavailable` and exits 3.
 
 Of these, v0.11.0 passed only `cat-file -Z` (in `--baseline`), so the 2.42 line is not new. The 2.15, 2.16 and 2.18 lines are: v0.11.0 passed none of those options, and this release needs them on every scan.
 

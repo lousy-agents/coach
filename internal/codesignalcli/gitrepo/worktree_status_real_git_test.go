@@ -65,7 +65,7 @@ func TestTheStatusOfAGitThatCannotBeToldNotToFetchSaysItSkippedTheSubmodules(t *
 	dir := gitfixture.Init(t)
 	gitfixture.CommitFile(t, dir, "a.go", "package a\n")
 
-	read, err := readWorktreeStatusBy(worktreeChildOf(commandTold(nil)), dir, false, "2.43.0")
+	read, err := readWorktreeStatusBy(worktreeChildOf(commandTold(nil)), dir, false, true, "2.43.0")
 
 	if err != nil || read.SubmodulesSkippedBy != "2.43.0" {
 		t.Errorf("readWorktreeStatusBy = %+v, %v; want SubmodulesSkippedBy 2.43.0", read, err)
@@ -73,6 +73,7 @@ func TestTheStatusOfAGitThatCannotBeToldNotToFetchSaysItSkippedTheSubmodules(t *
 }
 
 func TestTheStatusOfAGitThatCanBeToldNotToFetchSaysNothingWasSkipped(t *testing.T) {
+	skipUnlessTheRunningGitCanBeToldNotToFetch(t)
 	dir := gitfixture.Init(t)
 	gitfixture.CommitFile(t, dir, "a.go", "package a\n")
 

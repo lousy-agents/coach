@@ -1,117 +1,131 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
     "code-tidy": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/code-tidy/SKILL.md",
-      "computedHash": "b0b9697aa1e987ce1a65c89a00c4ffbe9d30a565dcfcb495be4a88c1237fc632"
+      "computedHash": "ce777bb4230ab7307e1fb48cc3c149108fcc5791e3ba2a67286ed92ab6cca7c7"
     },
     "curate-release": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/curate-release/SKILL.md",
-      "computedHash": "cca7e4baeb909ca39dddeff0ae64396318a67a8ec34baeba403224df30ea5060"
+      "computedHash": "939210a6e790be7fb1258a8b017e83d89b00f89074cff1c50d36e791810faef0"
     },
     "customer-strategy-forge": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/customer-strategy-forge/SKILL.md",
-      "computedHash": "d4cf1bb010bec1b9da88c6e3059278cc516df8ef1a12f1de2a8d1370677dfdd7"
+      "computedHash": "964fb77028b0a57b409018f457e6d74e1eda1b4b6c617a647460442e977d8603"
     },
     "designing-for-intent": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/designing-for-intent/SKILL.md",
-      "computedHash": "237586117baf56595f461ab59662120e1d71ae3e84e122fb92d9d293fa0e4c1a"
+      "computedHash": "48e90f0c78889e3738d7e8b96f358f20c1bc9dedf82c719160047c4de4b0a829"
     },
     "feature-to-plan": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/feature-to-plan/SKILL.md",
-      "computedHash": "a8575f21a12df28da3f7304784196f779daac766b4f822b9ef9fe5740bbf0805"
+      "computedHash": "ca96a47a3603b5514717a67441857ae9135828964d52db823509a2012b0c10b4"
     },
     "go-testable-design": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/go-testable-design/SKILL.md",
-      "computedHash": "d7ee7268e96c6f1bac5b9fbd67c9de4e3b165e37eeb5e8b8c4485a6602508300"
+      "computedHash": "7744d71116317219f7ef00abdfdf51d3bd7c6c40055f263a9bb43a0855acd30a"
     },
     "instruction-style": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/instruction-style/SKILL.md",
-      "computedHash": "b0a5f1f17a34377d7b21eb74ae6e2659dbef11b0a191df0c36b6049fe991c4c7"
+      "computedHash": "a1c9b7fed7f2d4c658f21c194dd4d655091b1385f0c14530b3ff6221c8f8f631"
     },
     "issue-refine-loop": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/issue-refine-loop/SKILL.md",
-      "computedHash": "4859da37f337ed03e20738e53c7226cb53a6777d7666ac7bf425a3222b8fda4f"
+      "computedHash": "16a1bf31d429c36e699db039f485a025787e1ece6f13a8b96037bfab752177b5"
     },
     "mutation-hunter": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/mutation-hunter/SKILL.md",
-      "computedHash": "14777d56ddeedb9788490d2c30cc344c9c7901faebf68dd73bbc6ad85b38b0ca"
+      "computedHash": "c041f5938ccbf9070eee1493e91754499a1a9ad1b278d77be02beb961fa474a6"
     },
     "optimize-prompt-loop": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/optimize-prompt-loop/SKILL.md",
-      "computedHash": "1ae8c05e0d81d254965855c874b7b0bb780c9b4d1bc240137d7137723e67b5b6"
+      "computedHash": "dbba353215d4bb30c1847ac79d3abe78e9f71d73a0d938632db9550fa31dff88"
     },
     "plan-to-graph": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/plan-to-graph/SKILL.md",
-      "computedHash": "b9cd05acf1ee01ed1e24f28bd216dce98214d5c104bcbce097cf7d7abbeeefba"
+      "computedHash": "cb887ce91f136ead125a43af9bd0b8a6743f524a139e845fa1404bbc0080a54a"
     },
     "rugged-evil-tester": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/rugged-evil-tester/SKILL.md",
-      "computedHash": "6a5e425f3a6712d5c041cb04f3f0bfdfd1181b7c9fa622e591ca6a83ec3924ec"
+      "computedHash": "068c237bdea7b32af993a651d2c930b1287dd51825c78a4de2bc8d2a1a18eb43"
     },
     "skill-reviewer": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/skill-reviewer/SKILL.md",
-      "computedHash": "c511cf3da5fddc6ec4bce74b003579af5413c6e3025ae615e00b327e4cf46de9"
+      "computedHash": "519ee352747f5bf4bc3b991d1789b306f23660219839fa426d3434ad18cd8fa1"
     },
     "spec-auditor": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/spec-auditor/SKILL.md",
-      "computedHash": "8d9f21b7518334110302b93f6b84de7e3fc7f64cf19e73493ded6a95e24f545c"
+      "computedHash": "678329948993557a51a369551426c4b32b6b71a75a8c73be14fd648760a48a42"
+    },
+    "technical-writing": {
+      "source": "cursor/plugins",
+      "commit": "7a583913eb1b8d1a0ee76753d1a2cf072e7b54f9",
+      "sourceType": "github",
+      "skillPath": "harness/pstack/claude-code/skills/technical-writing/SKILL.md",
+      "computedHash": "4a8b50628c064dc9cd1c6e7d4e7325c21ffd3572f52775d3a0381fd8a69259f7"
     },
     "to-ears": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/to-ears/SKILL.md",
-      "computedHash": "bc149f3540763adf6ec5e7d4abc4c6174f0a05c6a5a60b27a39927971c46e89c"
+      "computedHash": "de9f0f5fcda5ecaf0bf7fa89c7cb90fc1a40cfe441e202264f6dba14c8b8c78e"
     },
     "triaging-pr-reviews": {
       "source": "lousy-agents/skills",
       "ref": "v1.2.0",
       "sourceType": "github",
       "skillPath": "skills/triaging-pr-reviews/SKILL.md",
-      "computedHash": "35c15e095772de29fc5b6791fa45c33b3eca515093b79a9e8cdca1ead3417b71"
+      "computedHash": "b03d278d926128ce52c435ec71c16ff6b799b027521c49a4722dc22d169b9029"
+    },
+    "unslop": {
+      "source": "cursor/plugins",
+      "commit": "7a583913eb1b8d1a0ee76753d1a2cf072e7b54f9",
+      "sourceType": "github",
+      "skillPath": "harness/pstack/claude-code/skills/unslop/SKILL.md",
+      "computedHash": "4bbcb6719a8f0f6f7fb46752e1c360791d7758a837708e300a06fc7d6907938c"
     }
   }
 }

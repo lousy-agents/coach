@@ -86,7 +86,7 @@ var _ = Describe("coach codesignal: an explicit --project-config whose entry at 
 
 	It("fails closed when the path cannot be checked, naming the error", func() {
 		if os.Geteuid() == 0 {
-			Skip("root can search a mode 000 directory, so this state cannot be built")
+			Skip("root can search a mode 000 directory, so this state cannot be built; `mise run acceptance-ci-env` runs it as non-root")
 		}
 		repo := commitExplicitPolicyRepo()
 		locked := filepath.Join(repo, "policies")
@@ -100,7 +100,7 @@ var _ = Describe("coach codesignal: an explicit --project-config whose entry at 
 
 	It("prints only the cause when the path cannot be checked, never the file-system error's own text", func() {
 		if os.Geteuid() == 0 {
-			Skip("root can search a mode 000 directory, so this state cannot be built")
+			Skip("root can search a mode 000 directory, so this state cannot be built; `mise run acceptance-ci-env` runs it as non-root")
 		}
 		repo := commitScannableGoRepo()
 		locked := filepath.Join(repo, "ev\x1b[31mRED")
@@ -142,7 +142,7 @@ var _ = Describe("coach codesignal: an explicit --project-config the disk decide
 	for _, entry := range unusableEntries {
 		prepare := func() string {
 			if entry.needsNonRoot && os.Geteuid() == 0 {
-				Skip("root can read a mode 000 file, so this state cannot be built")
+				Skip("root can read a mode 000 file, so this state cannot be built; `mise run acceptance-ci-env` runs it as non-root")
 			}
 			repo := commitExplicitPolicyRepo()
 			full := filepath.Join(repo, explicitPolicyPath)
@@ -174,7 +174,7 @@ var _ = Describe("coach codesignal: an explicit --project-config the disk decide
 var _ = Describe("coach codesignal: an explicit --project-config that exists but cannot be read is refused on disk, committed or not", func() {
 	unreadablePolicy := func(repo string) {
 		if os.Geteuid() == 0 {
-			Skip("root can read a mode 000 file, so this state cannot be built")
+			Skip("root can read a mode 000 file, so this state cannot be built; `mise run acceptance-ci-env` runs it as non-root")
 		}
 		full := filepath.Join(repo, explicitPolicyPath)
 		Expect(os.MkdirAll(filepath.Dir(full), 0o755)).To(Succeed())
@@ -198,7 +198,7 @@ var _ = Describe("coach codesignal: an explicit --project-config that exists but
 		Expect(os.Chmod(filepath.Join(repo, explicitPolicyPath), 0o000)).To(Succeed())
 		DeferCleanup(func() { _ = os.Chmod(filepath.Join(repo, explicitPolicyPath), 0o644) })
 		if os.Geteuid() == 0 {
-			Skip("root can read a mode 000 file, so this state cannot be built")
+			Skip("root can read a mode 000 file, so this state cannot be built; `mise run acceptance-ci-env` runs it as non-root")
 		}
 
 		stderr := expectExplicitPolicyRefused(repo, explicitPolicyPath, "project_config_invalid")

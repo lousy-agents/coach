@@ -34,7 +34,7 @@ var _ = Describe("coach codesignal reads the project policy from disk: a discove
 	}
 	unreadableOnDisk := func(repo string) {
 		if os.Geteuid() == 0 {
-			Skip("root can read any file, so this state cannot be built")
+			Skip("root can read any file, so this state cannot be built; `mise run acceptance-ci-env` runs it as non-root")
 		}
 		path := filepath.Join(repo, coachConfigPath)
 		Expect(os.Chmod(path, 0o000)).To(Succeed())

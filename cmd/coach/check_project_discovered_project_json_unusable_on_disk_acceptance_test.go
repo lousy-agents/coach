@@ -39,7 +39,7 @@ var _ = Describe("coach codesignal --check-project: a root project.json that the
 		}, "undetermined"),
 		Entry("a file the process cannot read", func(repo string) {
 			if os.Geteuid() == 0 {
-				Skip("root reads a file whatever its mode")
+				Skip("root reads a file whatever its mode; `mise run acceptance-ci-env` runs it as non-root")
 			}
 			path := filepath.Join(repo, legacyConfigPath)
 			Expect(os.Chmod(path, 0o000)).To(Succeed())

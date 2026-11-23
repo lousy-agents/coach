@@ -85,7 +85,7 @@ var causeRows = []causeRow{
 	}},
 	{"a policy file the process cannot read", "locked.json", "policy_invalid", "unreadable_on_disk", func(repo string) {
 		if os.Geteuid() == 0 {
-			Skip("root can read a mode 000 file, so this state cannot be built")
+			Skip("root can read a mode 000 file, so this state cannot be built; `mise run acceptance-ci-env` runs it as non-root")
 		}
 		writeWorktreeFile(repo, "locked.json", singleRootPolicyJSON)
 		Expect(os.Chmod(filepath.Join(repo, "locked.json"), 0o000)).To(Succeed())

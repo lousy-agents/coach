@@ -11,6 +11,9 @@ import (
 // on a guess.
 
 func refuseWhenReadRevisionsLackObjects(run Runner, dir, base, version string) error {
+	if _, err := run(dir, headResolution...); BoundFailure(err) != nil {
+		return cannotTellWhatIsMissing(version, err)
+	}
 	if err := refuseWhenTheBaseCommitIsNotHere(run, dir, base, version); err != nil {
 		return err
 	}
@@ -27,12 +30,19 @@ func refuseWhenReadRevisionsLackObjects(run Runner, dir, base, version string) e
 	return nil
 }
 
+// headResolution resolves HEAD, reading HEAD and the ref it names and no object, before the probes that read the ref
+// again. One that does not answer within its limit (a named pipe at the branch's ref, say) is refused, naming the
+// question, rather than waited out again by a two-minute probe, and the scan is not let through: a read of HEAD
+// that answers later could reach objects that such a git fetches (#737).
+var headResolution = []string{"rev-parse", "--verify", "--quiet", "HEAD"}
+
 // unansweredProbe is a refusal only for a revision that exists. One that does not resolve (a HEAD with no commit
 // behind it, a directory that is no repository) is a read the scan never makes: it ends on the revision and says
 // why in its own words, as it does on a git that can be told not to fetch, and a message about the version of git
-// would send the reader to upgrade it for a failure an upgrade does not touch.
+// would send the reader to upgrade it for a failure an upgrade does not touch. A probe that did not answer in time
+// is refused without asking git again, because the same read would wait out the same limit (#737).
 func unansweredProbe(run Runner, dir, version string, revision readRevision, cause error) error {
-	if gitSaysItNamesNothing(run, dir, revision.name) {
+	if BoundFailure(cause) == nil && gitSaysItNamesNothing(run, dir, revision.name) {
 		return nil
 	}
 	return cannotTellWhatIsMissing(version, cause)
