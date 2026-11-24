@@ -59,29 +59,6 @@ func selectCandidates(run gitrepo.Runner, dir, namedPath string, refuse entryRef
 	return DiskSelection{}, nil
 }
 
-// wrongCaseOfCandidate is the case refusal for a candidate the disk lists only in another case. Discovery reads the
-// policy only at the canonical path, so a root project.json in another case is no policy to refuse.
-func wrongCaseOfCandidate(rootDir, candidate, namedPath string, tracked func(spelling string) bool) error {
-	switch {
-	case namedPath != "":
-		if refusal := wrongCaseUnder(rootDir, candidate, chosenByTheUser, tracked); refusal != nil {
-			return refusal
-		}
-	case candidate == CanonicalPath:
-		if refusal := wrongCaseUnder(rootDir, candidate, chosenByCoach, tracked); refusal != nil {
-			return refusal
-		}
-	}
-	return nil
-}
-
-func onDiskCandidates(namedPath string) []string {
-	if namedPath != "" {
-		return []string{namedPath}
-	}
-	return []string{CanonicalPath, DefaultPath}
-}
-
 func selectRegularFile(root *os.Root, repoPath string, refuse entryRefusal) (DiskSelection, bool, error) {
 	if err := checkRegularFileThrough(osDiskRoot{root}, repoPath); err != nil {
 		return DiskSelection{}, false, refuse(root, repoPath, err)
