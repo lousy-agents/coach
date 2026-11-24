@@ -21,12 +21,18 @@ verdict=$(jq -r '.last_assistant_message // empty' <<<"$input")
 # checking the whole (possibly multi-line) message would let PASS/FINDINGS
 # appearing after leading prose slip through. Anchor to the first non-empty
 # line instead.
-first_line=$(printf '%s\n' "$verdict" | sed -n '/[^[:space:]]/{p;q;}')
+#
+# No pipeline reads $verdict or $first_line: a reader that exits early (sed q)
+# makes the writer die of SIGPIPE, and under pipefail the hook then exits 141
+# instead of reaching the verdict logic. Here-strings and [[ =~ ]] keep the
+# verdict check independent of reply size and scheduling.
+first_line=$(sed -n '/[^[:space:]]/{p;q;}' <<<"$verdict")
 
-if echo "$first_line" | grep -qE '^PASS\b'; then
+# ([^[:alnum:]_]|$) after the token is grep's \b: PASSED and PASSWORD are not PASS.
+if [[ $first_line =~ ^PASS([^[:alnum:]_]|$) ]]; then
   exit 0
 fi
-if echo "$first_line" | grep -qE '^FINDINGS\b'; then
+if [[ $first_line =~ ^FINDINGS([^[:alnum:]_]|$) ]]; then
   exit 0
 fi
 
