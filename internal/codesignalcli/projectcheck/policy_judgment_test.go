@@ -1,8 +1,6 @@
 package projectcheck
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -84,19 +82,4 @@ func TestANamedRootProjectJSONIsNotWarnedAboutAsDeprecated(t *testing.T) {
 	if judgment.check.State != projectreadiness.Pass || judgment.warnings != nil {
 		t.Errorf("judgment = %+v; want a pass and no warning, because the user named it", judgment)
 	}
-}
-
-// The revision decides what a path names: a file on disk at the spelling Coach reads is refused while the revision holds
-// the policy only in another case.
-func TestAFileOnDiskIsRefusedForItsNameWhileTheRevisionHoldsThePolicyInAnotherCase(t *testing.T) {
-	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, "cfg/P.json", validPolicy)
-	writeWorktreeFile(t, repo, "cfg/p.json", validPolicy)
-	if entries, err := os.ReadDir(filepath.Join(repo, "cfg")); err != nil || len(entries) != 2 {
-		t.Skip("this file system folds case, so cfg/p.json and cfg/P.json are one file")
-	}
-
-	judgment := judged(t, repo, policyref.Named("cfg/p.json"))
-
-	requireNoWayOutAndTheCause(t, judgment.check, projectreadiness.GapPolicyInvalid, projectreadiness.CauseNameCaseDiffers)
 }

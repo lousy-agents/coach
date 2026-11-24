@@ -268,23 +268,18 @@ except for the policy-candidate document on the guided-authoring path.
   that runs through a symbolic link, a file that cannot be read, or a parent
   that cannot be searched: `project_config_invalid`, naming the reason, with no
   restore and no authoring.
-- A policy path that the analyzed revision does not commit as written, while it
-  commits the same path in another case (`CFG/p.json` named, `cfg/p.json`
-  committed; or `.Lousy-Agents/Coach.json` committed where Coach reads
+- A policy path that the disk lists in another case, with no entry spelled
+  exactly as the path (`CFG/p.json` named, `cfg/p.json` on disk; or
+  `.Lousy-Agents/Coach.json` on disk where Coach reads
   `.lousy-agents/coach.json`): `project_config_invalid`, and `--check-project`
-  names `name_case_differs` and offers no new policy. One message serves a
-  policy you name and one Coach finds, on any file system and whatever
-  `core.ignorecase` says: it names the committed spelling and the path Coach
-  reads and says in words to make git record the policy at that path, then
-  commit and run again. It prints no command, and it always warns that a file
-  already at that path is to be moved aside first, because git can overwrite it
-  with `core.ignorecase` set. A rename you have already staged is told the same
-  as one you have not, because the revision still holds the old spelling until
-  you commit. A policy you name is also told to pass the committed spelling,
-  which is the way out for a slip of the case, and a directory renamed in case
-  only is told to take two steps on a file system that folds case. A revision
-  that commits exactly the path as written is read
-  whatever spelling the disk shows. See the [CLI contract](./docs/cli-codesignal.md#commands).
+  names `name_case_differs` and offers no new policy. The disk decides the
+  spelling, compared case-folded on every file system, so the answer is the same
+  whatever the file system or `core.ignorecase`. The message names the spelling
+  on disk and the path Coach reads and says in words to rename the file on disk
+  or pass the spelling on disk; it prints no command. A spelling that differs
+  only from the one committed at `HEAD` is disclosed with a WARNING, not
+  refused, so a rename that fixes the case works before you record it. See the
+  [CLI contract](./docs/cli-codesignal.md#commands).
 - A policy inside a submodule checkout, or at a path the analyzed revision
   commits as a submodule, naming the submodule: `project_config_invalid` while
   the checkout is there (the file in it, or the submodule itself), and

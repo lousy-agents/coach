@@ -50,19 +50,15 @@ func selectCandidates(run gitrepo.Runner, dir, namedPath string, refuse entryRef
 	}
 	defer func() { _ = root.Close() }()
 	for _, candidate := range onDiskCandidates(namedPath) {
+		if respelled := wrongCaseOfCandidate(rootDir, candidate, namedPath, trackedBy(run, rootDir)); respelled != nil {
+			return DiskSelection{}, respelled
+		}
 		selection, found, err := selectRegularFile(root, candidate, refuse)
 		if err != nil || found {
 			return selection, err
 		}
 	}
 	return DiskSelection{}, nil
-}
-
-func onDiskCandidates(namedPath string) []string {
-	if namedPath != "" {
-		return []string{namedPath}
-	}
-	return []string{CanonicalPath, DefaultPath}
 }
 
 func selectRegularFile(root *os.Root, repoPath string, refuse entryRefusal) (DiskSelection, bool, error) {

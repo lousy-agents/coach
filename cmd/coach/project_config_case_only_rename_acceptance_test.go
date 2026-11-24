@@ -15,48 +15,39 @@ func renameInCaseOnly(from, to string) {
 	ExpectWithOffset(1, os.Rename(from+".tmp", to)).To(Succeed())
 }
 
-// What the disk shows for a name is not asked: a file system that ignores case resolves a policy renamed in case only
-// to the file the user means, and the analyzed revision, which still commits the old spelling, is what refuses it, in
-// the words it uses for a policy committed in another case on any disk.
-var _ = Describe("coach codesignal: a policy renamed in case only, on a file system that ignores case", func() {
+// The disk decides the spelling, on every file system: a policy renamed in case only is the file at the spelling the
+// disk now lists, and the revision, which still commits the old spelling, is disclosed and does not refuse it.
+var _ = Describe("coach codesignal: a policy renamed in case only on disk", func() {
 	var repo string
 
 	BeforeEach(func() {
-		skipUnlessFilesystemResolvesCase()
 		repo = commitScannableGoRepo()
 		commitFile(repo, "policies/p.json", singleRootPolicyJSON)
 	})
-
-	expectedToMakeGitRecord := func(stderr []byte, committed, read string) {
-		GinkgoHelper()
-		Expect(string(stderr)).To(ContainSubstring(`the policy is committed as "`+committed+`", but Coach reads "`+read+`", so it is not read: pass the committed spelling, "`+committed+`", or `+makeGitRecordIt(read)), "stderr:\n%s", stderr)
-		Expect(string(stderr)).To(ContainSubstring(moveWhatStandsThereAside(read)), "stderr:\n%s", stderr)
-		Expect(string(stderr)).NotTo(ContainSubstring("commit the file so it is readable"), "committing the file records nothing here:\n%s", stderr)
-		expectNoRunnableCommand(string(stderr))
-	}
 
 	When("the file was renamed on disk and nothing was recorded", func() {
 		BeforeEach(func() {
 			renameInCaseOnly(filepath.Join(repo, "policies", "p.json"), filepath.Join(repo, "policies", "P.json"))
 		})
 
-		It("says the revision holds the old spelling and to make git record the new one", func() {
-			expectedToMakeGitRecord(scanExplicitPolicy(repo, "policies/P.json"), "policies/p.json", "policies/P.json")
+		It("reads the policy at the spelling the disk lists and discloses that HEAD commits another", func() {
+			Expect(scanExplicitPolicyAccepted(repo, "policies/P.json")).To(ContainSubstring(`"cause":"not_committed"`))
 		})
 
-		It("names name_case_differs in --check-project, not not_committed, and offers no new policy", func() {
+		It("refuses the spelling HEAD commits, and says to rename the file on disk or to pass the spelling on disk", func() {
+			stderr := scanExplicitPolicy(repo, "policies/p.json")
+
+			expectTheDiskSpellingRefusal(string(stderr))
+			Expect(string(stderr)).To(ContainSubstring(`the policy is on disk as "policies/P.json", but Coach reads "policies/p.json"`), "stderr:\n%s", stderr)
+		})
+
+		It("passes --check-project for the spelling on disk, with the disclosure, and names name_case_differs for the committed one", func() {
 			doc := expectCheckProject(repo, "--project-config", "policies/P.json")
+			Expect(causeOfGap(doc, "policy_invalid")).To(Equal("no such gap"), "gaps: %+v", doc.Gaps)
+			Expect(policyDisclosureCodes(doc)).To(ConsistOf(notCommittedWarning))
 
-			Expect(causeOfGap(doc, "policy_invalid")).To(Equal("name_case_differs"), "gaps: %+v", doc.Gaps)
-			_, authors := nextActionOfKind(doc, "author_policy")
-			Expect(authors).To(BeFalse(), "next actions: %+v", doc.NextActions)
-		})
-
-		It("lets the scan read the policy once the rename the message describes has been made and committed", func() {
-			gitIn(repo, "mv", "--", "policies/p.json", "policies/P.json")
-			gitInWithIdentity(repo, "commit", "-q", "-m", "rename the policy")
-
-			Expect(scanExplicitPolicyAccepted(repo, "policies/P.json")).To(ContainSubstring(`"schema_version":"2"`))
+			refused := expectCheckProject(repo, "--project-config", "policies/p.json")
+			Expect(causeOfGap(refused, "policy_invalid")).To(Equal("name_case_differs"), "gaps: %+v", refused.Gaps)
 		})
 	})
 
@@ -65,11 +56,10 @@ var _ = Describe("coach codesignal: a policy renamed in case only, on a file sys
 			renameInCaseOnly(filepath.Join(repo, "policies"), filepath.Join(repo, "Policies"))
 		})
 
-		It("says the revision holds the old spelling and to make git record the new one, as for a file, with a note for the directory", func() {
-			stderr := scanExplicitPolicy(repo, "Policies/p.json")
+		It("reads the policy at the directory spelling the disk lists, and refuses the one HEAD commits", func() {
+			Expect(scanExplicitPolicyAccepted(repo, "Policies/p.json")).To(ContainSubstring(`"cause":"not_committed"`))
 
-			expectedToMakeGitRecord(stderr, "policies/p.json", "Policies/p.json")
-			Expect(string(stderr)).To(ContainSubstring(aDirectoryInCase), "stderr:\n%s", stderr)
+			expectTheDiskSpellingRefusal(string(scanExplicitPolicy(repo, "policies/p.json")))
 		})
 	})
 })

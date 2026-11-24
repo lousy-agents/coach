@@ -91,11 +91,8 @@ var causeRows = []causeRow{
 		Expect(os.Chmod(filepath.Join(repo, "locked.json"), 0o000)).To(Succeed())
 		DeferCleanup(func() { _ = os.Chmod(filepath.Join(repo, "locked.json"), 0o644) })
 	}},
-	{"a name spelled in another case than the revision holds, on a file system that folds case", "CFG/p.json", "policy_invalid", "name_case_differs", func(repo string) {
-		commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
-		if _, err := os.Lstat(filepath.Join(repo, "CFG")); err != nil {
-			Skip("this file system tells cfg and CFG apart, so the name does not resolve")
-		}
+	{"a name spelled in another case than the policy file on disk, whatever the revision holds", "CFG/p.json", "policy_invalid", "name_case_differs", func(repo string) {
+		writeWorktreeFile(repo, "cfg/p.json", singleRootPolicyJSON)
 	}},
 	{"a policy committed as a symbolic link, then removed", "cfg/p.json", "policy_missing", "undetermined", func(repo string) {
 		symlinkAt(repo, "cfg/p.json")
@@ -110,13 +107,6 @@ var causeRows = []causeRow{
 		symlinkAt(repo, "cfg/p.json")
 		gitIn(repo, "add", "cfg/p.json")
 		gitInWithIdentity(repo, "commit", "-q", "-m", "a policy as a link")
-	}},
-	{"a name spelled as on disk after a rename that changes only its case and is not committed", "cfg/P.json", "policy_invalid", "name_case_differs", func(repo string) {
-		commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
-		Expect(os.Rename(filepath.Join(repo, "cfg", "p.json"), filepath.Join(repo, "cfg", "P.json"))).To(Succeed())
-		if _, err := os.Lstat(filepath.Join(repo, "cfg", "p.json")); err != nil {
-			Skip("this file system tells cfg/p.json and cfg/P.json apart, so the rename leaves nothing under the committed name")
-		}
 	}},
 	{"a policy staged and never committed, then deleted", "cfg/p.json", "policy_missing", "undetermined", func(repo string) {
 		writeWorktreeFile(repo, "cfg/p.json", singleRootPolicyJSON)

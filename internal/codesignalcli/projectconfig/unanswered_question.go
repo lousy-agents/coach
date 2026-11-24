@@ -6,7 +6,8 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// unansweredQuestion is unansweredListing for any question git left unanswered.
+// unansweredQuestion is the refusal for a policy about which git left subject's question unanswered. It offers nothing
+// and carries the failure, so readiness reports an operational error and not a verdict about the policy.
 func unansweredQuestion(subject string, failure *gitFailure) *ConfigError {
 	return &ConfigError{Kind: KindUnreadable, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseGitUnreadable, Message: fmt.Sprintf("coach codesignal: %s (project_config_invalid): Coach could not check %s, so it gives no advice", subject, failure.describe()), GitFailure: failure}
 }
