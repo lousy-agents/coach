@@ -22,7 +22,7 @@ The PRD already states the rule (section 7): "The project policy is read from di
 3. **Discovery reads the disk too.** Without `--project-config`, the lookup order is unchanged and each step asks the working tree:
    - A schema-valid `.lousy-agents/coach.json` on disk is used.
    - `.lousy-agents/coach.json` is committed at `HEAD` and deleted on disk, and a schema-valid root `project.json` is on disk: `project.json` is used, with a WARNING that names the fallback.
-   - `.lousy-agents/coach.json` is committed at `HEAD` and deleted on disk, and no root `project.json` is on disk: the scan is file-local, with a WARNING that names the missing file.
+   - `.lousy-agents/coach.json` is committed at `HEAD` and deleted on disk, and no root `project.json` is on disk, or one is on disk that is not a usable policy (it is ignored, because it is often another tool's file): the scan is file-local, with a WARNING that names the missing file and, in the second case, says that `project.json` was found and is not a usable policy. `--fail-on-incomplete-coverage` exits `3` for it, because no project policy was read.
    - An invalid `.lousy-agents/coach.json` on disk: the scan exits `2` with `project_config_invalid`, and `project.json` is not read.
    - An unusable entry at `.lousy-agents/coach.json` on disk (a directory, a symbolic link, a file that cannot be read): the scan exits `2` with `project_config_invalid`, naming the path and the reason. It does not fall back to `project.json` or to file-local analysis.
    - The kind of entry is judged on disk. A usable regular file on disk is read whatever `HEAD` commits at the path, such as a symbolic link or a directory, with `matches_head: false` and a WARNING.
