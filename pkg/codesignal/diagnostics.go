@@ -89,6 +89,11 @@ const DiagKindProjectPolicyAbsentOnDisk = "project_policy_absent_on_disk"
 // that the JSON report gains no field.
 const AbsentPolicyFallbackIgnored = "project.json is on disk but is not a usable Coach policy"
 
+// AbsentPolicyInAnotherCase is the clause a project_policy_absent_on_disk message carries when HEAD commits the default
+// policy only in another case than the default path, which follows it. The text report reads it from the message so
+// that the JSON report gains no field.
+const AbsentPolicyInAnotherCase = "HEAD commits it in another case than"
+
 // DiagnosticOfKind is the first diagnostic of kind, and whether there is one.
 func DiagnosticOfKind(diagnostics []Diagnostic, kind string) (Diagnostic, bool) {
 	for _, diagnostic := range diagnostics {

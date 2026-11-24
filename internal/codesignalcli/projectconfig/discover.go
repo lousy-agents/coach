@@ -31,8 +31,8 @@ func discoverThrough(run gitrepo.Runner, dir, revision string) (Selection, error
 // selectWhereNoBlobIsCommitted is discovery for a canonical path that holds no blob at revision. A
 // directory or a submodule committed there is still what the revision holds at the policy's path, so
 // the scan refuses it as readiness does and does not fall back to a legacy policy or call the path
-// uncommitted. A spelling of the path in another case is the disk's to decide (WrongCaseOnDisk), so
-// it is not asked of the revision here.
+// uncommitted. Which spelling is read is the disk's to decide (WrongCaseOnDisk); a policy the revision commits only
+// in another case is still the one it selects, so a scan that lacks it on disk says so and a check restores it.
 func selectWhereNoBlobIsCommitted(run gitrepo.Runner, dir, root, revision string) (Selection, error) {
 	refusal, err := NonFileAtRevision(run, dir, revision, CanonicalPath)
 	if err != nil {
@@ -40,6 +40,13 @@ func selectWhereNoBlobIsCommitted(run gitrepo.Runner, dir, root, revision string
 	}
 	if refusal != nil {
 		return Selection{Fatal: asDefaultPolicyError(refusal, CanonicalPath)}, nil
+	}
+	spelling, err := committedInAnotherCase(run, dir, revision)
+	if err != nil {
+		return Selection{}, err
+	}
+	if spelling != "" {
+		return Selection{Path: spelling}, nil
 	}
 	return selectLegacy(run, dir, root, revision)
 }
