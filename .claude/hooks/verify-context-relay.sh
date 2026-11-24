@@ -13,8 +13,11 @@ if [ "$subagent_type" != "task-implementer" ]; then
   exit 0
 fi
 
-if echo "$prompt" | grep -qiE 'reviewer.{0,40}finding|re-?delegat|re-review'; then
-  if ! echo "$prompt" | grep -qF '## Reviewer Findings'; then
+# Here-strings, not `echo | grep -q`: grep -q exits at the first match, the
+# writer then dies of SIGPIPE, and under pipefail that reads as "no match" --
+# a large rework prompt would slip past this gate (fail-open).
+if grep -qiE 'reviewer.{0,40}finding|re-?delegat|re-review' <<<"$prompt"; then
+  if ! grep -qF '## Reviewer Findings' <<<"$prompt"; then
     jq -n '{
       hookSpecificOutput: {
         hookEventName: "PreToolUse",

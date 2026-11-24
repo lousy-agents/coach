@@ -108,3 +108,46 @@ func runVerifyReviewVerdict(t *testing.T, lastAssistantMessage string) string {
 	}
 	return stdout.String()
 }
+
+// TestVerifyReviewVerdict_TokenBoundary pins that PASSED, PASSWORD and PASS_X
+// do not count as PASS.
+func TestVerifyReviewVerdict_TokenBoundary(t *testing.T) {
+	cases := []struct {
+		name    string
+		message string
+		blocked bool
+	}{
+		{"PASS alone", "PASS", false},
+		{"PASS then newline", "PASS\nbody", false},
+		{"PASS then period", "PASS.", false},
+		{"PASS then colon", "PASS: verified", false},
+		{"PASS then space", "PASS -- ok", false},
+		{"PASS then tab", "PASS\tok", false},
+		{"FINDINGS alone", "FINDINGS", false},
+		{"FINDINGS then newline", "FINDINGS\n## Reviewer Findings", false},
+		{"FINDINGS then colon", "FINDINGS: 2", false},
+		{"PASS then CR", "PASS\r", false},
+		{"PASS then CRLF", "PASS\r\nbody", false},
+		{"FINDINGS then CR", "FINDINGS\r", false},
+		{"leading space", "  PASS", true},
+		{"PASSED", "PASSED", true},
+		{"PASSING", "PASSING", true},
+		{"PASSWORD", "PASSWORD", true},
+		{"PASS underscore suffix", "PASS_X", true},
+		{"PASS digit suffix", "PASS2", true},
+		{"FINDINGSX", "FINDINGSX", true},
+		{"FINDINGS underscore suffix", "FINDINGS_X", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout := runVerifyReviewVerdict(t, tc.message)
+			if tc.blocked {
+				assertBlockDecision(t, stdout)
+				return
+			}
+			if strings.TrimSpace(stdout) != "" {
+				t.Fatalf("expected %q to be allowed with no stdout; got: %q", tc.message, stdout)
+			}
+		})
+	}
+}
