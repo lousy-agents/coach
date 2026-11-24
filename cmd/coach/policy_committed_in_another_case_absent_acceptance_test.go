@@ -75,4 +75,20 @@ var _ = Describe("a policy HEAD commits only in another case and that is absent 
 		Expect(string(stderr)).NotTo(ContainSubstring("':(top,literal)"+coachConfigPath+"'"), "stderr=%s", stderr)
 		Expect(string(stderr)).NotTo(ContainSubstring("author_policy"), "stderr=%s", stderr)
 	})
+
+	It("#168: --prepare-compiler names the restore of a deleted discovered policy at the default spelling", func() {
+		repo := newTempGitRepo()
+		commitFile(repo, coachConfigPath, singleRootPolicyJSON)
+		Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
+
+		stdout, stderr, _, exitCode := runCoachBinaryWithControllingTerminal(
+			commandPath, repo, stubToolchainEnv(pathWithoutNode()), "",
+			"codesignal", "--baseline", "--prepare-compiler", "--project-language", "typescript",
+		)
+
+		Expect(exitCode).To(Equal(2), "stdout=%s stderr=%s", stdout, stderr)
+		Expect(string(stderr)).To(ContainSubstring("restore_policy"), "stderr=%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("':(top,literal)"+coachConfigPath+"'"), "stderr=%s", stderr)
+		Expect(string(stderr)).NotTo(ContainSubstring("not printed here"), "the name is printable; stderr=%s", stderr)
+	})
 })
