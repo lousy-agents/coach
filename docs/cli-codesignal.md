@@ -5,6 +5,95 @@ analyzer libraries. Customer onboarding lives in [README.md](../README.md).
 
 This documents shipped behavior. It is not a gate and not a 1.0 promise.
 
+## Install
+
+Coach needs `git` 2.43 or later on `PATH`. [Git version](#git-version) lists what older versions lack.
+
+Install [mise](https://mise.jdx.dev/) if you do not have it, then pin the CLI from [GitHub Releases](https://github.com/lousy-agents/coach/releases):
+
+```sh
+curl https://mise.run | sh
+~/.local/bin/mise use -g github:lousy-agents/coach
+```
+
+That mutates a **global** mise config. Hook mise into your shell so `coach` is on `PATH` (pick the one you use):
+
+```sh
+echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc && eval "$(~/.local/bin/mise activate bash)"
+# echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc && eval "$(~/.local/bin/mise activate zsh)"
+# ~/.local/bin/mise activate fish | source
+```
+
+Pin a release if you want a fixed binary. Replace `<tag>` with a release tag from the Releases page:
+
+```sh
+mise use -g github:lousy-agents/coach@<tag>
+```
+
+To run without changing a global toolchain, prefix the command with `mise exec`: `mise exec github:lousy-agents/coach -- coach codesignal --baseline`.
+
+Release archives exist for `darwin_arm64`, `darwin_x86_64`, `linux_x86_64`, and `windows_x86_64`. There is no `linux_arm64` build yet. The signed-archive procedure without mise is in [Signed archive without mise](#signed-archive-without-mise).
+
+### From source
+
+This path uses the repo's `mise.toml` to pin the **dev toolchain** (Go 1.27.1, Node 24). That is not the same as installing the published `coach` binary.
+
+```sh
+git clone https://github.com/lousy-agents/coach.git
+cd coach
+mise install
+mise exec -- go install ./cmd/coach
+```
+
+## Run
+
+From any Git worktree. Prefer a one-shot that does not mutate a global toolchain:
+
+```sh
+mise exec github:lousy-agents/coach -- coach codesignal --base main
+```
+
+```sh
+coach codesignal --base main          # diff HEAD against main
+coach codesignal --baseline           # every tracked Go/TS/TSX file at HEAD
+coach codesignal --base main --format json
+```
+
+`--base` can be any ref Git can resolve (branch, tag, or SHA). Default output is text. `--base` and `--baseline` are mutually exclusive.
+
+Signals are ranked, with `severity` and `rule_id` printed on each: lifecycle group first (with `--base`, introduced and changed findings come first), then severity, confidence, and path, with findings of the same metric rule (cognitive complexity, branch density, nesting depth) ordered by how far each exceeds its threshold. To read a long report, add `--min-severity high|medium|advisory|low` to hide lower severities (`--min-severity medium` also hides `advisory` layer-rule findings, and a `--top` cap can push them out because `advisory` ranks below every `medium` finding in the same lifecycle group. Only `complexity.cognitive_complexity` and `complexity.max_nesting_depth` findings can be `high`, so `--min-severity high` shows only those two rules. `security.toctou_check_then_act` and `state.hidden_input_mutation` are always `medium`, so a `high` floor withholds them) or `--top N` to keep the first `N` in that order (with `--base`, that order puts `resolved` findings ahead of `unknown` ones, so a cap can spend slots on findings already fixed. See [Report order](#report-order)). Both state how many signals they withheld (text also says how to show them all: the command, or a note to re-run without the narrowing flags you gave when an argument is unsafe to print. The printed command starts with `coach`, so if you launched through mise, run it as `mise exec github:lousy-agents/coach -- coach codesignal ...`), leave `summary` and `coverage` describing the full analysis, and never change the exit status. See [Narrowing the rendered report](#narrowing-the-rendered-report).
+
+Default `--scope` is `production`. `--build-target <pattern>` further limits Go production reachability. It is a no-op under `--scope all`.
+
+## What you should see
+
+A short text report per signal (`rule_id`, `severity`, `path`, `line`,
+`lifecycle`, `source_scope`, `changed`, `evidence`, why it matters,
+recommendation), or a quiet report if nothing matched. `lifecycle` is `introduced`, `existing`, `resolved`, or `unknown`
+(and `baseline` under `--baseline`). The text report also prints a `policy:` line when a project policy is selected. `--top` caps findings, not diagnostics: diagnostics still print after the findings, so on a large repository the text report can be long. Use `--format json` for machine reads.
+
+Diff-mode limits (do not treat these as a clean PR):
+
+- Diff mode runs `git diff --name-status` with `--find-renames` (git's
+  default 50% similarity) and `--find-copies-harder` (also considers
+  unmodified files as copy sources, more aggressive than git's defaults).
+  Rename (`R`) and copy (`C`) **new paths** are analyzed. A pure git
+  rename or copy without old-path continuity yields `lifecycle: unknown`
+  plus a `continuity_not_determined` path diagnostic. Coach does not
+  diff a rename against its old path, so a pure move is not classified
+  `existing` or `introduced`. Adopters who only watch
+  `introduced_signals` shall treat that path as incomplete, not green.
+- Statuses the CLI does not analyze (`T`, `U`, `X`, `B`) stay
+  `unsupported_change_type`. Those paths increment
+  `summary.files_unanalyzed` and `summary.files_with_diagnostics`, and the
+  text headline qualifies the all-clear with the numeric unanalyzed count.
+
+Text `line` is 1-based. JSON `location.start_row` is 0-based.
+
+Coach analyzes Go, TypeScript, and TSX. Other files get an `unsupported_language` diagnostic and are skipped.
+
+Lifecycle values and the counters that add them up are in [Lifecycle and counters](#lifecycle-and-counters).
+
 ## Commands
 
 ```text
@@ -16,14 +105,16 @@ coach --version
 The only subcommand is `codesignal`.
 
 ```text
-coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--min-severity high|medium|advisory|low] [--top N] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive] [--fail-on-incomplete-coverage]
+coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--min-severity high|medium|advisory|low] [--top N] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive] [--fail-on-incomplete-coverage] [--worktree]
+coach codesignal --worktree [--format text|json] [--scope production|all] [--min-severity high|medium|advisory|low] [--top N] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive] [--fail-on-incomplete-coverage]
 coach codesignal --baseline --suggest-project-config [--output <path>]
 coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>] [--no-interactive]
 coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]
 coach codesignal --baseline --prepare-compiler --project-language typescript [--project-config <path>] [--no-interactive]
 ```
 
-`--base` and `--baseline` are mutually exclusive. `--check-project`,
+`--base` and `--baseline` are mutually exclusive. `--worktree` composes with either, or
+stands alone and compares the working tree with `HEAD`. `--check-project`,
 `--suggest-project-config`, and `--prepare-compiler` are not scans (except
 that suggest/prepare still require `--baseline`).
 
@@ -31,6 +122,7 @@ that suggest/prepare still require `--baseline`).
 | --- | --- | --- |
 | `--base <ref>` | | Diff HEAD against any Git-resolvable ref. |
 | `--baseline` | | Scan every tracked Go/TS/TSX file at HEAD. |
+| `--worktree` | | Analyze uncommitted work: read supported-language source and project configuration files from the working tree. Alone, it compares the working tree with `HEAD`. Must run from the repository root. See [Uncommitted work](#uncommitted-work---worktree). |
 | `--format` | `text` | `text` or `json`. |
 | `--scope` | `production` | `production` or `all`. |
 | `--min-severity <level>` | none | Render only signals at or above `high`, `medium`, `advisory`, or `low` (ranked `high` > `medium` > `advisory` > `low`). `advisory` ranks below `medium`, so `--min-severity medium` also withholds `advisory` `architecture.layer_violation` and `architecture.layer_bypass` findings. Only `complexity.cognitive_complexity` and `complexity.max_nesting_depth` can be `high`, so `--min-severity high` shows only those two rules ([Severity](#severity)). No floor by default. Any other value is a usage error: exit `2`. See [Narrowing the rendered report](#narrowing-the-rendered-report). |
@@ -43,11 +135,12 @@ that suggest/prepare still require `--baseline`).
 | `--check-project` | | Read-only TypeScript readiness. Exits `0` on gaps. Not a scan. It reads the project policy from the working tree, as `--project-config` or the discovery order selects it: a usable regular file there is the policy, whatever the index and the analyzed revision hold at its path, and the roots the check uses come from its bytes. How that file differs from the analyzed revision is a warning, never a gap (see the paragraphs below the exit codes). A file on disk whose content is not a usable policy (invalid, over the size budget, or holding conflict markers) is `policy_invalid` with no next action and the cause `undetermined`: authoring refuses a path that exists, so the way out is to fix the file. A policy gap names one next action only where nothing is on disk: `author_policy` for a policy that was never committed and that the index holds nothing for, or for one whose committed copy is a regular file whose content is not a valid policy or is over the size budget (guided authoring writes only at a path with nothing at it, so a policy that exists and cannot be used is not authored over: for Go the scan names a candidate written beside the file with `--suggest-project-config --output`, with words that say to compare it with the file, replace the file with it, commit and rerun, and no command to paste; a TypeScript scan opens no session for a policy that exists, with or without a terminal, because the only session it has ends by asking the user to save a replacement over the file), or `restore_policy` for an explicit `--project-config` that is committed at the analyzed revision and gone from disk, unless a restore would overwrite or recreate something or git cannot run it (a staged edit, an unmerged entry, a symbolic link, a sparse checkout, a skip-worktree mark, or a question git could not answer) or the path lies under a file in the way (the message names the file, and the policy is restored after it is moved). Neither is executable (`executable: false`), and a gap that a new file or a restore cannot fix names neither: that includes a path with nothing on disk where the index holds a staged edit, a staged copy or a conflict, or the analyzed revision commits a symbolic link (the cause is `undetermined`), a path under which the index or the revision holds files (`directory`), and a path inside a submodule checkout or committed as a submodule (`in_submodule`, which wins over a file on disk). A usable file on disk is never a gap for what the index or the revision hold at its path: untracked, edited, staged, committed as a symbolic link or conflicted, it passes and carries a warning. An index entry that holds no content (`git add --intent-to-add`, or an empty file staged) counts as nothing: over a committed policy the restore still brings back the committed copy. |
 | `--prepare-compiler` | | Interactive consented **mise-only** TypeScript compiler setup. Requires a TTY and an attended session; refuses otherwise. It judges the project policy as `--check-project` does, from the working tree, refuses with `a project policy that passes --check-project is required before compiler setup (<gap code>)` while the policy has a gap, and prints the policy warnings before its prompt, with no extra confirmation. Also refuses, naming the gap, for a runtime-boundary gap (`node_missing`/`node_unsupported`) — the same restriction the scan path's own compiler-setup offer applies, so the two cannot disagree. It is narrower than the scan's offer, which also runs the project package manager: a repository whose only executable choice is `project_package` is never handed this command as remediation, because it would exit `0` reporting nothing to set up. |
 | `--no-interactive` | `false` | Treat the invocation as unattended even with a controlling terminal attached. On a scan, the interactive compiler-setup and guided-policy-authoring offers are skipped, falling through to the same message-only remediation a piped invocation gets; the TypeScript form of `--suggest-project-config`, and `--prepare-compiler`, refuse with exit `2` instead of prompting (the Go form of `--suggest-project-config` never prompts, and rejects the flag as a usage error). When a legacy root `project.json` would otherwise prompt for a copy, the unattended invocation skips that prompt and emits `project_config_migration_skipped` with `top="$(git rev-parse --show-toplevel)" && mkdir -p "$top"/.lousy-agents && git -C "$top" mv -- project.json .lousy-agents/coach.json`. Also triggered by a non-empty `CI` environment variable, so a pty-allocating runner cannot hang on an unanswered prompt. |
-| `--fail-on-incomplete-coverage` | `false` | Exit `3` when required project coverage (model or bypass phase, on any analyzed side) is incomplete — including when the project backend is unavailable. A Go report records no provenance, so for Go this reads `project_coverage.complete`, which folds the model and any `required_layer` bypass search, and, for the base side of a diff, the coverage diagnostics. Go cases that count as incomplete include a repository with more than 5,000 tracked files of any type (Go discovery counts every file), a `required_layer` prefix that matches no function, and no `go` on `PATH` when `required_layer` is set. A policy that `HEAD` selects and the working tree lacks, which a scan reports as `project_policy_absent_on_disk`, counts as incomplete in every scan mode, `--worktree` or not, when no project policy was read, because the scan then applied none of the rules the repository committed. When a root `project.json` on disk was read in its place, the diagnostic and the WARNING stay and the exit status does not change. The report is always written to stdout first. Valid only on scan modes (`--base` / `--baseline`). |
+| `--fail-on-incomplete-coverage` | `false` | Exit `3` when required project coverage (model or bypass phase, on any analyzed side) is incomplete — including when the project backend is unavailable. A Go report records no provenance, so for Go this reads `project_coverage.complete`, which folds the model and any `required_layer` bypass search, and, for the base side of a diff, the coverage diagnostics. Go cases that count as incomplete include a repository with more than 5,000 tracked files of any type (Go discovery counts every file), a `required_layer` prefix that matches no function, and no `go` on `PATH` when `required_layer` is set. A policy that `HEAD` selects and the working tree lacks, which a scan reports as `project_policy_absent_on_disk`, counts as incomplete in every scan mode, `--worktree` or not, when no project policy was read, because the scan then applied none of the rules the repository committed. When a root `project.json` on disk was read in its place, the diagnostic and the WARNING stay and the exit status does not change. The report is always written to stdout first. Valid only on scan modes (`--base`, `--baseline`, `--worktree`). |
 
 Requires `git` on `PATH`. Analyzes **committed Git objects**, not the dirty
-worktree. TypeScript project mode also inspects worktree `package.json` /
-`node_modules` / `mise.toml` for compiler and Node readiness.
+worktree, unless `--worktree` is passed; the project policy is the exception, read from the working tree. TypeScript project mode also inspects
+worktree `package.json` / `node_modules` / `mise.toml` for compiler and Node
+readiness.
 
 `coach codesignal` takes no positional operands. An unexpected positional
 argument is a usage error: exit 2, usage on stderr, and nothing on stdout.
@@ -59,7 +152,7 @@ argument is a usage error: exit 2, usage on stderr, and nothing on stdout.
 | `0` | Completed analysis, readiness report, successful suggest/prepare, or `--help` / `--version`. Signals, and narrowing the report with `--min-severity` or `--top`, do not change this. |
 | `1` | Operational: not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O. Also `--check-project` when no usable policy is on disk and git cannot answer a question the check needs for an explicit `--project-config` (whether it is committed at the analyzed revision, what the index holds for it, or whether the revision holds it in another case): stdout is empty and stderr names the question and what git said, because a verdict built on an unanswered question could name a restore or a new policy over work it never read. A usable policy on disk needs no such answer: it passes, with the warning `project_policy_head_unreadable` where git cannot say what the revision holds. Also, in a partial clone: with a git older than 2.44, which cannot be told not to fetch, a revision the scan reads that lacks objects is refused before anything else runs, and this does not depend on the repository's configuration, since git takes a remote with `remote.<name>.partialclonefilter` for a promisor whatever `remote.<name>.promisor` says (a repository that lacks nothing the scan reads is read as usual), and a scan or `--check-project` that needs an object the clone lacks fails, because Coach never fetches (see [What repository configuration can run](#what-repository-configuration-can-run)). |
 | `2` | Usage (including an invalid `--min-severity` or `--top` value), invalid `--project-config` (empty stdout, stderr names the path/revision), a `--project-config` that does not exist on disk (empty stdout, stderr names the path and `project_config_missing`, no fallback to another policy; a committed policy gets the one `git restore` command that brings it back unless a restore would overwrite or recreate something or git cannot run it (a staged edit, whose message names the restore from the index that keeps the edit and, as the labelled way to drop it, the restore from the revision; an unmerged entry, a symbolic link, a sparse checkout, a skip-worktree mark, or a question git could not answer); a policy that was never committed but that the index holds gets the command that restores the staged copy from the index when it is a staged regular file, and the reason with no command when it is unmerged, is not a regular file, or is marked skip-worktree or left out by a sparse checkout; a path under a regular file gets the cause and the file in the way with no restore command; and none of these is offered authoring) or that is unusable on disk: a symbolic link, a directory or other file that is not a regular file, a path under a symbolic link, a file that cannot be read, or a parent that cannot be searched (`project_config_invalid`, naming the reason), unsupported `--project-language`, or a TypeScript **scan** that cannot resolve a supported compiler or host Node (empty stdout except the policy-candidate document on the guided-authoring path; one or more stderr lines). |
-| `3` | Required project coverage (model or bypass, on any analyzed side) is incomplete, or the policy `HEAD` selects is absent on disk and no project policy was read (`project_policy_absent_on_disk`), **and** `--fail-on-incomplete-coverage` was supplied — the report is still written to stdout. Also: `--prepare-compiler` operational failure resolving the baseline revision or computing readiness (a deliberate exception to the scan contract's `1`, kept because the flag follows suggestion mode's table). |
+| `3` | Required project coverage (model or bypass, on any analyzed side) is incomplete, or the policy `HEAD` selects is absent on disk and no project policy was read (`project_policy_absent_on_disk`), **and** `--fail-on-incomplete-coverage` was supplied — the report is still written to stdout. Under `--worktree` it also covers part of the working tree that is in scope and was not read: a `worktree_scan_incomplete` entry whose `hides_in_scope` is `yes` or `unknown`, or a changed file that could not be read. An entry with `hides_in_scope` of `no` exits `0` ([Uncommitted work](#uncommitted-work---worktree)). Also: `--prepare-compiler` operational failure resolving the baseline revision or computing readiness (a deliberate exception to the scan contract's `1`, kept because the flag follows suggestion mode's table). |
 
 `--check-project` exits `0` so you inspect the payload; do not treat that
 status as a gate.
@@ -129,7 +222,7 @@ The words `not_committed`, `staged_edit`, `staged_copy`, `changed_on_disk`,
 `git_unreadable` say what the index or the analyzed revision holds at a path. A file on disk
 makes that a warning and not a gap, and where nothing is on disk the cause is `undetermined`,
 so `--check-project`, `--prepare-compiler` and the compiler setup of a scan never print
-them. The scan's own refusals of an explicit `--project-config` may still name some of them.
+them. A scan's refusal prints a `(cause=...)` only from the list above: `not_a_regular_file`, `symbolic_link`, `parent_not_directory`, `unreadable_on_disk` and, for a discovered policy inside a submodule, `in_submodule`. It never prints one of these.
 
 The disk decides the spelling of a policy path (ADR-009, decision 5), for a policy named with `--project-config` and for the one Coach finds alike, in every scan and in `--check-project`. Each component of the path is compared with the directory listing on disk, case-folded, on every file system, so a disk that folds case and one that tells cases apart give the same answer, whatever `core.ignorecase` says. An entry spelled exactly as the path wins over its case variants: with `cfg/p.json` on disk beside `cfg/P.json`, a scan that names `cfg/p.json` reads it. What the analyzed revision commits does not decide the spelling.
 
@@ -207,6 +300,228 @@ appends `on a terminal: coach codesignal --baseline --project-config <path>
 same scan invocation rather than a standalone subcommand: rerunning it on a
 terminal is what opens the combined setup offer above.
 
+## Project policy
+
+Opt into cross-file layer checks with a committed JSON config. Coach does not guess your architecture: you declare layers and forbidden import edges.
+
+```sh
+# Go: discover module/workspace roots (candidate only; review, add layers, commit)
+coach codesignal --baseline --suggest-project-config
+
+# after the file is committed at the analyzed revision
+coach codesignal --base main --project-config .lousy-agents/coach.json
+coach codesignal --baseline --project-config .lousy-agents/coach.json --project-language typescript
+```
+
+Move a root `project.json` to that path, from any directory of the repository:
+
+```sh
+top="$(git rev-parse --show-toplevel)" && mkdir -p "$top"/.lousy-agents && git -C "$top" mv -- project.json .lousy-agents/coach.json
+```
+
+An explicit `--project-config` still reads only that path. A schema-valid root `project.json` is still read with a deprecation diagnostic until the follow-up removal ([issue #511](https://github.com/lousy-agents/coach/issues/511)). The lookup is [`.lousy-agents` config](./conventions/lousy-agents-config.md).
+
+`--project-config` content is read from the working tree, and `scope.policy` discloses how it differs from `HEAD`. The path itself is checked on disk first, and what is there decides what Coach says. Every case below exits `2`, and stdout stays empty except for the policy-candidate document on the guided-authoring path.
+
+- Nothing is there, the policy was never committed, and the index holds nothing
+  for it: `project_config_missing`. A Go scan then prints
+  `--suggest-project-config`. A TypeScript scan on a controlling terminal opens
+  guided authoring, and `--check-project` names `author_policy`. An index entry
+  that holds no content, made with `git add --intent-to-add` or by staging an
+  empty file, counts as nothing, unless it is marked skip-worktree: git add
+  refuses a new file at a path the mark hides, so Coach calls it an empty entry,
+  names the mark (or the sparse checkout), and offers no new policy.
+- Nothing is there but the policy is committed at the analyzed revision:
+  `project_config_missing`, with the one command that brings it back,
+  `git restore --source=<revision> --staged --worktree -- ':(top,literal)<path>'`,
+  and no authoring. `--check-project` names it as the `restore_policy` next
+  action, with `executable: false`. Coach offers that command only when it
+  overwrites nothing and git can run it. If the index holds a staged edit to the
+  policy, the restore from the revision would discard the edit, so Coach does not
+  offer it as the default. It says why and offers no new policy, and it prints two
+  choices: the restore from the index, which keeps the edit, and, labelled as the
+  way to drop it, the restore from the revision, to drop it and bring back the
+  committed copy. If the index holds an unmerged entry for the policy, if the
+  policy is committed as a symbolic link, if a sparse checkout leaves it out of the
+  working tree or its index entry is marked skip-worktree, or if git cannot say
+  whether it is committed or what the index holds, Coach says why and offers
+  neither a restore nor a new policy.
+  An index entry that holds no content does not count as an edit: the restore
+  replaces it, and the message says that it brings back the committed copy,
+  unless the entry is marked skip-worktree, which stops a restore and is named
+  instead.
+- Nothing is there and the policy was never committed, but the index holds an
+  entry for it: `project_config_missing`, and no authoring, because a new policy
+  would replace staged work. A staged regular file gets the one command that
+  brings it back from the index, `git restore -- ':(top,literal)<path>'`. Coach
+  prints no command, and says why, when the entry is unmerged, is a symbolic link
+  or another entry that is not a regular file, or is marked skip-worktree or left
+  out by a sparse checkout, because the command would fail or would recreate what
+  the scan refuses. `--check-project` names neither next action.
+- A path under a regular file: `project_config_missing`. The message names the
+  file in the way. When the analyzed revision commits that file, the message says
+  it is a file the analyzed revision commits, so the path is probably wrong, and
+  gives no advice to move or remove it, because the file is the repository's and
+  the path is what is wrong. For a file nothing commits, the message says to move
+  or remove it, then to restore the policy from git when it is committed, unless
+  the index holds a staged edit to it, which the message names instead because a
+  restore would discard it, or it is committed as a symbolic link, which the
+  message says instead because a restore would recreate a link the scan refuses.
+  When the policy is only staged, never committed, it says to move the file and
+  then restore the staged copy from the index. When the index holds an unmerged
+  entry for the policy, the step that brings the conflicted file back
+  is described behind the step that moves the file, in words and with no command,
+  because bringing it back would delete that file as well. It prints no `git restore`
+  command and offers no authoring, because a restore would delete that file.
+- A symbolic link, a directory or other file that is not a regular file, a path
+  that runs through a symbolic link, a file that cannot be read, a parent
+  that cannot be searched, a file that is not a valid policy, or one over the
+  size limit: `project_config_invalid`, naming the reason, with no restore and
+  no authoring.
+- A policy path that the disk lists in another case, with no entry spelled
+  exactly as the path (`CFG/p.json` named, `cfg/p.json` on disk; or
+  `.Lousy-Agents/Coach.json` on disk where Coach reads
+  `.lousy-agents/coach.json`): `project_config_invalid`, and `--check-project`
+  names `name_case_differs` and offers no new policy. The disk decides the
+  spelling, compared case-folded on every file system, so the answer is the same
+  whatever the file system or `core.ignorecase`. The message names the spelling
+  on disk and the path Coach reads and says in words to rename the file on disk
+  or pass the spelling on disk; it prints no command. A spelling that differs
+  only from the one committed at `HEAD` is disclosed with a WARNING, not
+  refused, so a rename that fixes the case works before you record it. See the
+  [CLI contract](#commands).
+- A policy inside a submodule checkout, or at a path the analyzed revision
+  commits as a submodule, naming the submodule: `project_config_invalid` while
+  the checkout is there (the file in it, or the submodule itself), and
+  `project_config_missing` once it is gone (`git submodule deinit`).
+  `--check-project` names the cause `in_submodule` for all of them, and so for
+  a name below the submodule that differs in case from the checkout's: the
+  superproject holds no spelling of what is inside, so Coach does not report a
+  difference in case there. A name that spells the submodule's own path in
+  another case than the index records it, where git ignores case
+  (`core.ignorecase`), is inside it all the same, and the message names the
+  submodule as the index records it. The superproject records a submodule as one commit,
+  so the file can be neither restored nor committed here. Name a policy this
+  repository commits. See the
+  [CLI contract](#commands).
+
+An uncommitted policy file is read from disk like a committed one. It passes with a warning: `project_policy_not_committed` in `--check-project`, and `scope.policy.cause` `not_committed` in a scan (see [Policy disclosure](#policy-disclosure-scopepolicy)). A valid config switches the report to `schema_version: "2"` and can emit `architecture.layer_violation`. `required_layer` can also emit `architecture.layer_bypass` (Go and TypeScript) on a narrow handler→SQL registry.
+
+TypeScript `--project-config` uses Coach's embedded analyzer and a host-resolved
+compiler whose own `package.json` version is in the supported set (`7.0.2`
+today). Version ranges (`^`, `~`, `latest`) never count. If you previously
+vendored Coach's analyzer under the analyzed repository, you can delete that
+copy. `--suggest-project-config` never invents `layers` or `forbidden_imports`,
+and it never auto-applies a config.
+
+Go `--suggest-project-config` prints a candidate. TypeScript
+`--suggest-project-config --project-language typescript` is an **interactive
+TTY session** and writes nothing until you confirm. Do not run it unattended.
+
+## TypeScript project readiness
+
+```sh
+coach codesignal --baseline --check-project --project-language typescript
+coach codesignal --baseline --suggest-project-config --project-language typescript
+```
+
+Run `--check-project` first. It is read-only: it reports compiler, Node, and
+policy fit and exits `0` so you inspect the result instead of treating process
+status as a gate. It is not a scan. It reads the project policy from the working
+tree: a usable regular file at the policy's path is the policy, whatever the index and
+the analyzed revision hold there, and its roots come from that file. How the file
+differs from the analyzed revision is a warning, never a gap, and it does not change
+`status`: `project_policy_not_committed`, `project_policy_differs_from_head` or
+`project_policy_head_unreadable`, in the JSON `warnings` and the text `Warnings:`
+section. A file whose content is not a usable policy is `policy_invalid` with no new
+policy to author: fix the file. Where nothing is on disk and the index holds work for
+the path, the cause is `undetermined` and no restore from the revision is offered over
+that work. A **scan** that cannot resolve a supported
+compiler or host Node exits `2` with empty stdout except the policy-candidate
+document on the guided-authoring path, and one or more stderr lines. On a
+controlling terminal, a TypeScript scan whose `--project-config` names a
+policy that does not exist on disk and was never committed instead opens a
+guided-authoring session (a policy that is committed, or that the index holds, gets what the cases above describe instead).
+With `--format json` this session's exit-2 output is
+a JSON object carrying `"schema_version": "1"` and `roots`, not a CodeSignal
+report. The absent `scope`, `signals`, or `coverage` keys distinguish it.
+
+Coach's supported Node majors are exactly `24` and `26`. Any other major is the
+`node_unsupported` readiness gap. `@lousy-agents/coach-semantics` declares this
+as `engines.node: "^24 || ^26"`.
+
+`--prepare-compiler` is a consented, interactive mise TypeScript compiler-setup
+session (requires a TTY, and refuses otherwise). It prompts before installing. It
+also refuses, naming the gap without opening a menu, when the readiness gap is
+a runtime boundary (missing or unsupported host Node): Coach has no setup
+command for a Node version problem, and the flag shares that gate with the
+scan's own compiler-setup offer so the two paths cannot disagree on it. The
+flag judges the policy the same way as `--check-project`, refuses while it has a gap,
+and prints the policy warnings before its prompt, as the scan's offer does. The
+flag remains **mise-only**, so it is narrower than the scan's offer in what it
+can install. Coach never names it as remediation for a gap only the project
+package manager could resolve.
+
+A **scan** (`--baseline` or `--base` with `--project-config`, `--project-language
+typescript`, a policy that passes `--check-project`, and an unresolved compiler) offers a superset
+of that setup interactively when it runs on a controlling terminal: it names
+the failing check and what happens after a successful install, then shows a
+menu of up to four choices,
+`project_package` (run the project's own package-manager install, e.g. `npm
+ci --ignore-scripts`), `project_mise`/`global_mise` (run `mise install` for a
+project- or globally-pinned supported TypeScript version), and `cancel`. A
+choice that would open only to report nothing to do is withheld from the
+menu, and a gap with nothing installable never opens a prompt at all. Picking
+`project_package` shows a preview (exact executable, arguments, working
+directory, expected on-disk changes, network use, and a bounded 5-minute
+timeout) before a separate, single-use `confirm` or `install` answer is
+required to actually run it. Typing anything else, or a second leftover
+answer, cancels or is ignored rather than running twice. On cancel, nothing
+runs and the scan exits 2 with the original remediation. On failure, the scan
+exits 2, reports the failure, and never modifies the repository's tracked
+files. On success, Coach reruns the full readiness check and only continues
+the same scan through to a report if that rerun is clear. A rerun that still
+reports a gap still exits 2 with no report.
+
+Pass `--no-interactive`, or set a non-empty `CI` environment variable, to make
+Coach treat the run as unattended even when a real controlling terminal is
+attached, for example, a pty-allocating CI runner (`docker run -t`, `ssh -t`)
+with nobody at the keyboard. A scan then falls straight through to the same
+message-only remediation a piped invocation gets, and
+`--suggest-project-config` or `--prepare-compiler` refuse with exit `2` rather
+than opening a prompt nobody will answer.
+
+Still being built. Do not expect these to work yet: unattended package-manager
+setup for the scanned project, Bun as a project runtime, and a packaged
+foreign-repository TypeScript journey.
+
+## Agent self-review hook (preview)
+
+The hook in the [README](../README.md#agent-self-review-preview) runs `coach codesignal --worktree` when a Claude Code session is about to stop. It blocks the stop with a message when the review did not run or was not clean. `--worktree` is a documented flag, described in [Uncommitted work](#uncommitted-work---worktree). The PRD change that brought this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730).
+
+Each flag in the hook's command has a reason:
+
+- `--no-interactive` makes the run unattended. Without it, a TypeScript scan could open a setup prompt that no one answers. With it, the scan falls through to message-only remediation ([--no-interactive](#commands)).
+- `--fail-on-incomplete-coverage` turns incomplete coverage into exit `3`, so an unread part of the tree cannot read as clean ([Exit codes](#exit-codes)).
+- `--format json` lets the hook read `scope.policy.matches_head`.
+
+The hook's exit-code handling:
+
+| Exit | What the hook does |
+| --- | --- |
+| `0` | The review ran. It is clean unless `scope.policy.matches_head` is `false`. A report with no `scope.policy` key makes the hook block, because the policy check could not run. `"policy":null` (no policy read) passes, and a policy that `HEAD` selects and the working tree lacks is exit `3` below, not this row. |
+| `1`, `2`, `127` | The review did not run: an operational failure (`1`), a usage error such as running outside the repository root (`2`), or `coach` not on `PATH` (`127`). The hook says so and blocks. |
+| `3` | Required coverage is incomplete: a project-level gap, part of the in-scope working tree was not read, or the policy `HEAD` selects is absent on disk and no project policy was read. Not clean. |
+| any other | Not clean. |
+
+`matches_head: false` counts as not clean. The hook needs a coach build that reports `scope.policy`: the v0.12.0 release does not, so on that release the hook blocks with a message instead of passing without the check. The policy file is read from disk, so an uncommitted edit that loosens `.lousy-agents/coach.json` would otherwise be reviewed against itself and pass. The hook covers uncommitted work only: a policy or code change already committed is not flagged, so review it in the pull request. `scope.policy.cause` says why the policy differs: `differs_from_head` or `not_committed` ([Policy disclosure](#policy-disclosure-scopepolicy)).
+
+Clean does not mean no findings. The hook does not block on findings, which stay advisory, and it passes no findings to the agent: its message only says whether the review ran and was clean.
+
+Claude Code sets `stop_hook_active` to `true` in the hook's input when a Stop hook has already continued the session. On that second attempt the hook exits `0`, so it cannot block the same stop forever. It enforces one nudge per stop, not a guarantee. Claude Code does not pass stderr from a hook that exits `0` to the model, so the reason is not shown to Claude on that attempt. The first block carries it. Claude Code also caps consecutive stop-hook continuations, as described in the hooks reference.
+
+The hook needs `coach` on `PATH` (see [Install](#install)) and uses `CLAUDE_PROJECT_DIR` as the repository root. To test it by hand, pipe input to it, for example `echo '{}' | sh .claude/hooks/coach-self-review.sh`, because the hook reads its input from stdin.
+
 ## Git version
 
 Coach runs git for every read, and passes options that only a recent git knows. Git 2.43 or later is the version to use. It is the oldest git that CI runs the acceptance specs on: Ubuntu 24.04's own git, in the `distro-git` job. That job runs the Go tests; the specs that need git 2.44 or later skip under it, and so do the TypeScript project-backend ones (`ts-project-backend`). Both run in other jobs, under the runner image's newer git. The table below gives the oldest git each option needs. A git that is older than 2.43 and newer than every row that applies may work, but CI does not test it.
@@ -219,6 +534,8 @@ Coach runs git for every read, and passes options that only a recent git knows. 
 | 2.42 | `git cat-file --batch -Z`, with which `--baseline` reads each file it analyzes | a `--baseline` scan exits 0 and analyzes nothing: every file gets a `head_read_failed` diagnostic |
 | 2.44 | `GIT_NO_LAZY_FETCH`, so that a read never fetches a missing object of a partial clone | a partial clone is scanned only when every object the scan reads is already there |
 
+Under `--worktree`, a staged rename (`git mv`) is detected as a committed rename is: its signals read `unknown` with `continuity_not_determined`. The exception is a git before 2.44 in a partial clone, which runs the status with `--no-renames` so that it fetches no blob: there the rename is two paths, `introduced` for the new name and `resolved` for the old one, with no continuity diagnostic.
+
 On a git before 2.44, every mode first asks git to resolve `HEAD`, held to the 30 seconds of any such read, before it reads anything else. A `HEAD` that does not resolve in time (a named pipe at the branch's ref, say) is refused with exit 1, naming `git rev-parse`, because a later read that did resolve it could reach an object such a git fetches. `--suggest-project-config` therefore exits 1 there, where on a later git it reports the same read as `project_config_suggestion_snapshot_unavailable` and exits 3.
 
 Of these, v0.11.0 passed only `cat-file -Z` (in `--baseline`), so the 2.42 line is not new. The 2.15, 2.16 and 2.18 lines are: v0.11.0 passed none of those options, and this release needs them on every scan.
@@ -227,9 +544,102 @@ Of these, v0.11.0 passed only `cat-file -Z` (in `--baseline`), so the 2.42 line 
 
 A scan reads the repository through git with `core.fsmonitor` disabled and without taking the index lock, and it runs no hook, external diff, textconv, pager or askpass program. It also removes from git's environment the settings of the caller that change what the pathspecs it builds mean or which file `git config` reads: `GIT_LITERAL_PATHSPECS`, `GIT_GLOB_PATHSPECS`, `GIT_NOGLOB_PATHSPECS`, `GIT_ICASE_PATHSPECS` and `GIT_CONFIG`. Everything that says where the repository is stays as the caller set it, as in v0.11.0 (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_INDEX_FILE`, `GIT_NAMESPACE`, `GIT_CEILING_DIRECTORIES`, `GIT_DISCOVERY_ACROSS_FILESYSTEM`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`), so a work tree whose git directory is elsewhere is scanned through them, and so are the objects of a server-side hook, which arrive through a quarantine directory and the repository's own. Configuration the caller supplies through `GIT_CONFIG_COUNT` with its keys and values, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM` or `HOME` is left too: every git command reads it alike, Coach's partial-clone check included, and a container that sets `safe.directory` that way needs it. `GIT_CONFIG` is removed because it makes `git config` read a single file and no other git command honours it. `GIT_NO_REPLACE_OBJECTS` and `GIT_REPLACE_REF_BASE` are left as the caller set them. Git sets `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` for a hook, so a pre-commit hook that runs Coach scans the repository git gave it, and during a partial commit it reads git's temporary index and not the repository's own: that index is a lock file, which Coach reports as a locked index and so offers neither a restore nor a new policy, and a staged edit that the partial commit leaves out is not disclosed. It reads the source snapshot as the committed blobs, byte for byte, with `git ls-tree` and `git cat-file`, so no smudge filter runs (a git-lfs install defines one globally, and a committed `.gitattributes` can select it for every file) and no line-ending conversion, `$Format$` substitution or `export-ignore` changes what is analyzed; the snapshot used to be `git archive`, which applied all of them. Like `git archive`, it refuses a tree that holds a git directory (`.git` in any case, and the spellings that NTFS and HFS+ fold to it: `git~1`, trailing dots and spaces, and ignorable code points) or a path component that is empty, `.` or `..`, with an error that names the path. The scan stops and does not skip the entry, because a git directory in the snapshot is a repository whose config names programs git runs, and a skipped entry would be a report on a tree other than the one committed. The `go list` that finds the production files for `--build-target`, and the load of a Go project's packages, run with `-buildvcs=false` and `GOTOOLCHAIN=local`, so go neither runs git in the snapshot nor fetches a toolchain its `go.mod` names. A repository whose `go.mod` requires a newer Go than the `go` on `PATH` therefore fails, even when the caller sets `GOTOOLCHAIN`: `--build-target` exits 1 with go's own message (`go.mod requires go >= X (running go Y; GOTOOLCHAIN=local)`), and for a Go project `project_coverage.complete` is false, with the diagnostic `project_callgraph_build_failed` carrying the same message, so the call graph and the `required_layer` search are reported incomplete. To run it, install the Go version the `go.mod` names, or put it first on `PATH`; Coach does not download it. The Go project analysis refuses a tree with such a path in the same way before it writes the tree to a temporary directory for `go list`, so one rule holds everywhere a committed tree is written to disk. That read ends after 10 minutes if git stops answering, with an error that names the bound. The listing of the tree that names the files (`git ls-tree -r -z`) is read as a stream, a record at a time, for the snapshot and for the discovery of the tracked files alike, so it has no limit on its size and a repository of any number of files is scanned, as it was when the snapshot was `git archive`; it ends after 2 minutes if git stops answering, with an error that names the bound. A scan holds an entry per file, a path and an object id, and not the listing. An object that is in the object store and that git cannot read (a loose object that does not inflate, say) is told apart from one that is missing: `git cat-file --batch` answers "missing" for both, and Coach reads the error git printed beside the answer, so a damaged object ends the scan as damaged, quoting git's words and naming `git fsck`, and offers no fetch, which would not replace it. (Project analysis lists the tree for its model separately, and holds that listing to 64 MiB.) A committed file larger than 32 MiB is never held in memory. A source, a Go module file or a JSON file that large is written to the snapshot in full, a chunk at a time, because `go list` parses it (an empty file in its place would fail the scan with a parse error of its own), and it is reported as `file_too_large` with its path by the read that analyzes it, in a `--baseline` scan and in a `--base` scan alike (a `--base` scan reads each changed file with `git show`, which holds a file to the same 32 MiB; the base side of a modified file is reported as `base_analysis_failed`, as it is for a file past the analyzer's own limit); any other file that large is read past, and its path stays in the snapshot as an empty file, so the tree keeps its shape and a `//go:embed` of it still resolves. A Go project whose policy sets `required_layer` is the exception: its layer-bypass search copies every file of the revision to disk through that same `git show`, so one file past 32 MiB, of any type, ends the scan with exit 1 and an error that names the file and the budget (`git stdout exceeded 33554432-byte budget`). v0.11.0 ends the same way. The snapshot writes at most 4 GiB in all (a file counts once for every path that names it): the files an analyzer reads are written first, the rest become empty files once the total is spent, and the scan fails only when the files an analyzer reads pass 4 GiB by themselves. A `--baseline` scan reads the content of each file it analyzes from one `git cat-file --batch`; each request ends after 30 seconds, as an error that names `git cat-file`, and a file larger than 32 MiB is not held and gets a `file_too_large` diagnostic. It also fetches nothing: in a partial clone, an object that is not in the local object store (a blob left out by `--filter=blob:none` or `--no-checkout`, say) is reported as unavailable instead of being fetched from the promisor remote, so no `GIT_SSH_COMMAND`, `core.sshCommand` or credential helper runs and no object is written. A scan that needs such an object fails with Coach's own message, which says how many objects the snapshot lacks, names the first, and gives the batch below, and `--check-project`, where no usable policy is on disk (a usable one passes with `project_policy_head_unreadable`), reports that it could not check whether the policy is committed, says that the policy's content is not in the partial clone and that Coach does not fetch objects, and names the `git cat-file -e '<revision>:<path>'` command that fetches it, and the batch that fetches every file of the revision (shown only when the names can be printed safely). Any other file the check reads from the revision, `package.json` for example, is explained the same way, and a scan that stops at missing files says how many and names the first, with the batch; fetching only the policy is not always enough. To run again, bring the missing objects in yourself, in your own shell where git may fetch them. For `--check-project`, run the command the message names: it fetches the policy's blob. A scan reads every file of the revision it analyzes (`HEAD`, and with `--base` the merge base of the base and `HEAD` too), so fetch what the revisions list with one command, without running any file through a filter. The message prints it, `for pass in 1 2 3 4; do ids=$(git rev-list --objects --missing=print --no-walk <revision> | sed -n 's/^?//p'); [ -n "$ids" ] || break; printf '%s\n' "$ids" | git fetch origin --no-tags --no-write-fetch-head --filter=blob:none --stdin || break; done`, where `origin` is the promisor remote, and with `--base` it lists the merge base and `HEAD` together as `{ git rev-list ...; git rev-list ...; }`. It repeats until nothing is missing, because a clone made with `--filter=tree:0` lacks the trees as well: the first pass fetches the trees of the revision, and only then can the next list the blobs they name. A pass that finds nothing missing ends it without running `git fetch`, which would otherwise read the remote's refspecs and update refs. One paste is enough for a `tree:0` clone, a `blob:none` clone and a diff. `git backfill` is the alternative in a git new enough to have it (it is absent from git 2.47). A clone made with `--filter=tree:0` lacks the root tree of `HEAD`, which nothing can be listed without, so on a git that never fetches (2.44 and later) a scan or `--check-project` is refused before anything is read, with `HEAD` as the revision that lacks objects; a git before 2.44 refuses it with the rest of the revisions it reads. `--no-walk` matters: without it `rev-list` walks the whole history and the fetch brings in every blob that ever was, which is what a partial clone exists to avoid. A diff (`--base`) compares each changed file with its version at the merge base of the base and `HEAD`, which a partial clone checked out at `HEAD` usually lacks: on any git, the run then exits 1 before it analyzes anything, naming the merge base, how many objects it lacks and the batch for the merge base and `HEAD`, and never records the changed files as unreadable and exits 0; `--fail-on-incomplete-coverage` does not change that. `git fetch` and `git fetch --refetch` do not help: in a `--filter=blob:none` clone they bring commits and trees, not the blobs the filter leaves out, and the scan fails the same way afterwards. Not fetching rests on `GIT_NO_LAZY_FETCH`, which git reads from 2.44. An older git ignores it and would fetch, so on it Coach first asks, for every repository and whatever its configuration says, which objects of the revisions the scan reads are missing, with `git rev-list --objects --missing=print --no-walk --quiet`, which lists them and fetches nothing: `HEAD`, and with `--base` the merge base of the base and `HEAD`. With `--base` it asks first, with questions that read no object, whether the commit the base names is here, because finding the merge base reads commits and that git fetches one it does not have: a base commit that is not here is refused before the merge base is asked for. If none is missing there is nothing to fetch and the scan runs as usual. If any is missing, or git cannot answer, Coach runs nothing else and exits 1, naming the git version, the revision and how many objects it lacks, and offering git 2.44 or later or the batch above. The `git status` that lists the uncommitted paths does not go into submodules on such a git (`--ignore-submodules=all`), because it starts a nested status in each populated submodule, which fetches into one that is a partial clone and lacks objects; a change inside a submodule is therefore not listed there, and is on a git that can be told not to fetch. A revision that does not resolve (a `--base` that names nothing or has no merge base with `HEAD`, a directory that is no repository, a repository with no commits) is not asked about: the scan ends on it and says so in the words it uses on a current git, because a newer git would not change it. An ordinary clone has nothing missing, so the question costs it a walk of the trees and nothing else. The configuration is only the wording of the refusal, because git takes more for a promisor remote than the settings Coach reads (a remote with `remote.<name>.partialclonefilter` is one, with `promisor` unset or false), and a read of a missing object from it would fetch. On a git that can be told not to fetch, a `remote.<name>.promisor` setting counts as the git it is written for: a key with no value, or any non-zero number, is a promisor remote, and one git cannot read is an error. The one channel left is a clean filter, reached by one read: when `git status` has to hash a tracked file that a repository's `.gitattributes` gives a `filter.<name>.clean` program, git runs that program as defined in the repository's own configuration, and coach does not override it, because disabling filters would make every git-lfs file read as modified. A file that is modified is hashed, and so is one that is not modified but whose index entry is racily clean, which is the state of a file just after the commit that recorded it. v0.11.0 hashed such a file once and then rewrote the index, which ended the racy state. A scan does not write the index (`--no-optional-locks` is what keeps it from taking the lock and running the `post-index-change` hook), so the file is hashed, and the clean program runs, on every scan until something else refreshes the index, for example a `git status` of your own. The comparison of a policy named with `--project-config` that is committed but cannot be used (invalid or over the size budget) with its copy in the working tree is not a second channel for a clean filter: Coach reads the file through the repository root and compares its bytes with the committed blob's, and only when they differ asks git for the `filter` attribute of the path and, when none is set, to hash the file for its path with git's own conversions, which refreshes no index, takes no lock and runs no hook or program; a file with a `filter` attribute is taken to have work in it and no filter runs. A scan does not ask it for a policy that is usable or gone. `--check-project` and the compiler setup ask it for a usable policy on disk whose bytes differ from the committed blob, with the same conversion and the same refusal of a `filter` attribute, to tell a file that differs from one that does not. The repository's own configuration is the trust boundary, as it is for git itself.
 
+## Uncommitted work (`--worktree`)
+
+`--worktree` analyzes work that is not committed. It is a local, pre-commit check, not a pull-request check. It exits `2` with `coach: --worktree must run from the repository root` and the `cd` to run when the directory is not the repository root.
+
+| Invocation | Compares the working tree with |
+| --- | --- |
+| `--worktree` | `HEAD`. A signal absent at `HEAD` is `introduced`. |
+| `--worktree --base <ref>` | The merge base of `<ref>` and `HEAD`, by the rules of a committed diff. |
+| `--worktree --baseline` | Nothing. Every signal is `baseline`. |
+
+What it reads:
+
+- Supported-language source and project configuration files (for example `go.mod`, `go.work`, `package.json`, `tsconfig*.json`) come from the working tree. New and untracked files that git does not ignore are included. A deleted file is absent, not empty.
+- A symbolic link is not followed. `worktree_symlink_skipped` names it.
+- A rename staged with `git mv` is selected as a committed rename is: its signals are `unknown`, with `continuity_not_determined`. The exception is a git before 2.44 in a partial clone, where the status runs with `--no-renames`: the rename is two paths, the moved file's signals are `introduced`, the old name's signals are `resolved`, and there is no `continuity_not_determined` diagnostic.
+- A changed file that cannot be read, or that changes while it is read, is named by `worktree_changes_not_analyzed`. The message gives the cause: permission denied, not a regular file, over the size limit, a failed read, or a name on disk that differs from the name git records.
+- `--scope`, `unsupported_language` and `coverage.unsupported` apply as they do without `--worktree`.
+- `git status` can run a repository's clean filter when it must compare same-size content. No flag disables it. Coach reads file bytes itself, not through git's content filters.
+
+`scope.worktree` is present only under `--worktree`:
+
+| Field | Meaning |
+| --- | --- |
+| `revision` | The commit the working tree sits on. |
+| `modified`, `added`, `deleted`, `untracked` | Counts of distinct paths listed by `git status`. |
+| `config_files` | The project configuration files read from disk (always present, possibly empty). |
+
+Text prints one line under the scope summary: `worktree: <counts> on revision <sha>`, then `, compared with merge-base <sha>` for a diff (not for `--baseline`), then `; configuration read from disk: <files>`. The `<sha>` is the merge base of `<ref>` and `HEAD`; for `--worktree` alone and for `--worktree --base HEAD` the merge base is `HEAD` itself, so it equals the revision on the same line. When no counts are non-zero it says `no uncommitted changes`, or `git status reports no uncommitted changes` when a `worktree_scan_incomplete` entry is present, or `the uncommitted-change counts could not be read` when the counts are zero and a `worktree_status_check_failed` diagnostic is present.
+
+The project policy is read from the working tree under `--worktree`, as in every scan. An uncommitted change to the selected policy file, or an untracked policy file, is the policy the scan uses, and `worktree_changes_not_analyzed` does not name it. `scope.policy` reports it with `matches_head` `false` and `cause` `differs_from_head` or `not_committed`, the text prints a WARNING, and a clean verdict is qualified ([Policy disclosure](#policy-disclosure-scopepolicy)).
+
+### Policy disclosure (`scope.policy`)
+
+Every scan reports which project policy it used, and not only under `--worktree`:
+
+- JSON `scope.policy` holds `path`, `digest`, `matches_head` and `cause`. It is `null` when no policy was read: neither the disk nor `HEAD` selects one, or `HEAD` selects one that is absent on disk.
+- `cause` is a closed enum that says why the policy used is or is not the one at `HEAD`. It is present whenever `scope.policy` is an object. A policy on disk that cannot be used (over the size bound, unreadable, invalid, or not a regular file) is refused: the scan exits `2` with `project_config_invalid`, and prints no report, so no `cause` names it.
+- `matches_head` is `true` when the policy selected from disk and the policy selected at `HEAD` have the same path and the same digest.
+- When only one of the disk and `HEAD` selects a policy, `matches_head` is `false` and the text prints a WARNING. A difference qualifies a clean result.
+- A policy committed at `HEAD` and absent on disk is never read from the commit, so the scan uses a usable root `project.json` on disk (`differs_from_head`), or is file-local (`scope.policy` is `null`), and prints a WARNING that names the policy `HEAD` selects, with the diagnostic `project_policy_absent_on_disk`. A root `project.json` on disk that is not a usable policy is ignored, and the WARNING says so. `--fail-on-incomplete-coverage` exits `3` for it when no project policy was read.
+- `head_unreadable` means the scan used a usable policy on disk and HEAD's copy at its path could not be read to compare: the copy was over the size budget, or git stopped the read at its time or stderr bound. `matches_head` is `false`, the text policy line says the policy is not compared with HEAD, and the WARNING says HEAD's copy could not be read, naming the bound (git's time bound or git's stderr bound) when one stopped the read, instead of saying the content differs.
+- Text prints a policy line when a policy is selected or the two differ.
+
+| `cause` | `matches_head` | Meaning |
+| --- | --- | --- |
+| `same_as_head` | `true` | The policy on disk is the committed one, or a line-ending-converted copy of it. The scan used the committed bytes. |
+| `differs_from_head` | `false` | The policy on disk is committed at `HEAD` but is not the one `HEAD` selects: the same path with other content, another committed path such as the root `project.json` that stands in for a deleted canonical policy, or a path where `HEAD` holds a document that is not a valid policy or an entry that is not a regular file. The scan used the bytes on disk. |
+| `not_committed` | `false` | The policy on disk has no committed copy at that path at `HEAD`. The scan used the bytes on disk. |
+| `head_unreadable` | `false` | The policy on disk is usable and HEAD's copy at its path could not be read. The scan used the bytes on disk. |
+
+A report from a version that predates `cause` has no `cause` key. A consumer reads `matches_head` alone for it.
+
+### Unread parts of the working tree
+
+Git can leave part of the working tree out of what a scan reads. `--worktree` reports each cause as a `worktree_scan_incomplete` diagnostic. The entry has an empty `path`, because a path would count as an unanalyzed file. A cause is one reason at one root directory, so a reason that affects several directories gets an entry per directory. Each entry carries:
+
+| Field | Meaning |
+| --- | --- |
+| `reason` | One of `sparse_checkout`, `skip_worktree`, `assume_unchanged`, `submodule`, `nested_repository`, `unreadable_directory`, `git_version`, `unrecognized_git_warning`. |
+| `root` | The repository-relative directory the cause affects. `.` is the repository root. Absent for a sparse checkout that hides nothing, for `unrecognized_git_warning`, and for the entry that counts unlisted roots. Text prints it with a trailing `/` (`./` for the root). A control character in a name is escaped, never dropped. |
+| `hides_in_scope` | `yes`, `no` or `unknown`: whether the cause hides a path the scan would have analyzed. An entry without the field qualifies the verdict, as `yes` and `unknown` do. |
+| `roots_not_listed` | Only on the further entry described below: how many roots were not listed. |
+
+The reasons:
+
+| `reason` | What it names | `hides_in_scope` |
+| --- | --- | --- |
+| `sparse_checkout` | Tracked paths outside the sparse checkout, which the scan reads from the commit, not from disk. Skip-worktree entries that the sparse checkout set are reported here and not again as `skip_worktree`. | Per root, by the paths hidden under it. |
+| `skip_worktree` | Tracked paths marked skip-worktree. | Per root, by the paths hidden under it. |
+| `assume_unchanged` | Tracked paths marked assume-unchanged. | Per root, by the paths hidden under it. |
+| `submodule` | A submodule with working-tree changes. | `no`, unless the submodule's own path is an in-scope source file, such as a submodule at `x.ts`. |
+| `nested_repository` | An untracked directory that holds its own repository. | `no`, with the same exception. |
+| `git_version` | Every submodule, when git is older than 2.44. That git cannot be told not to fetch, so its status does not look into submodules. The message names the git version. There is no `submodule` entry for that root. | `no`, with the same exception. |
+| `unreadable_directory` | A directory git could not open, such as an untracked directory without read permission. Git leaves it out of the status without failing. | `unknown`. |
+| `unrecognized_git_warning` | A warning git printed on stderr while reading the status that Coach does not recognize. The message states how many were printed. | `unknown`. |
+
+A hidden path is in scope when it is the selected policy file, a project configuration file the scan reads, or a Go, TypeScript or TSX file that the active `--scope` selects. A root is judged by the paths hidden under it alone. A sparse checkout, skip-worktree or assume-unchanged root is named by its directory, widened to the parent for as long as every tracked path under the parent is hidden too. A sparse or skip-worktree file is never named on its own. Coach never analyzes another repository's files, so a submodule or nested repository hides no in-scope path. If the scope filter cannot answer, the root is `unknown`.
+
+At most 20 roots are listed per reason. The roots that qualify the verdict come first: `yes`, then `unknown`, then `no`, each alphabetical. When a reason has more roots, one further entry for that reason has no `root`, carries `roots_not_listed`, and takes the most severe `hides_in_scope` of the roots it leaves out, so the cap never turns a qualifying cause into an unqualified one. Text states `N more roots not listed` on that entry. The message of a reason is printed once in text, on its first entry. No entry relays git's stderr.
+
+What qualifies the verdict:
+
+- An entry with `hides_in_scope` of `yes` or `unknown`, or without the field, qualifies it. The text says `but the analysis is incomplete:` and names the cause once per reason, and `--fail-on-incomplete-coverage` exits `3`. This holds whether or not the entry's root is listed.
+- An entry with `hides_in_scope` of `no` is disclosed as an entry in JSON and a line in the text. It does not qualify the verdict and does not change the exit code.
+- `worktree_changes_not_analyzed`, `worktree_symlink_skipped` and `worktree_status_check_failed` also count as unread and exit `3` under `--fail-on-incomplete-coverage`. `unsupported_language` and `continuity_not_determined` qualify the verdict text and exit `0`, as in a committed scan.
+- A failed `git status` is an operational error. The CLI exits `1`, writes `coach: listing working tree changes: ...` to stderr, and prints no verdict.
+
+A text entry looks like this:
+
+```text
+path: , kind: worktree_scan_incomplete, message: an untracked nested repository is present and the worktree scan does not analyze it; it is another repository, so no in-scope source is hidden and the verdict is not qualified, reason: nested_repository, root: nest/, hides_in_scope: no
+```
+
 ## Diff-mode caveats
 
-- Dirty / uncommitted files are ignored as analysis input. A TypeScript project scan emits `worktree_report_reflects_committed_head` when relevant worktree changes exist; the report still applies to committed HEAD. Supported-language file-local dirt uses `worktree_changes_not_analyzed`. Unsupported dirt uses `worktree_not_clean`. The status is run without rename detection, so a file renamed in the index (`git mv`) is two paths wherever it is reported: its old path, deleted, and its new path, added, in `dirty_worktree.paths`, in the warning of `--check-project`, and in the count and the names of `worktree_changes_not_analyzed` ("2 staged files"), where v0.11.0 reported the new path alone. A status-check failure uses `worktree_status_check_failed`.
+- Without `--worktree`, dirty / uncommitted files are ignored as analysis input. A TypeScript project scan emits `worktree_report_reflects_committed_head` when relevant worktree changes exist; the report still applies to committed HEAD. Supported-language file-local dirt uses `worktree_changes_not_analyzed`. Unsupported dirt uses `worktree_not_clean`. The status is run without rename detection, so a file renamed in the index (`git mv`) is two paths wherever it is reported: its old path, deleted, and its new path, added, in `dirty_worktree.paths`, in the warning of `--check-project`, and in the count and the names of `worktree_changes_not_analyzed` ("2 staged files"), where v0.11.0 reported the new path alone. A status-check failure uses `worktree_status_check_failed`. With `--worktree` the supported-language files are read from the working tree instead; see [Uncommitted work](#uncommitted-work---worktree).
 - Diff mode passes `--find-renames` (default 50% similarity) and
   `--find-copies-harder` (unmodified files are copy-source candidates) to
   `git diff --name-status`. Rename (`R`) and copy (`C`) new paths are
@@ -271,6 +681,8 @@ A scan reads the repository through git with `core.fsmonitor` disabled and witho
 
 ## Lifecycle and counters
 
+A finding's fingerprint is computed from its rule, path, subject, evidence, and occurrence ordinal. It is not computed from its line, its severity, or `rule_version`. So a line shift or a severity change keeps the fingerprint, while a change of file path or of evidence gives the finding a new one. The `id` also includes the start position, so a line shift changes the `id` but not the fingerprint.
+
 Every entry in `signals[]` is counted in exactly one of `introduced_signals`,
 `existing_signals`, `resolved_signals`, `baseline_signals`,
 `unknown_signals`. `summary.unknown_signals` counts `unknown` lifecycle
@@ -307,6 +719,9 @@ Always present on a successful scan:
 
 Present only when `--min-severity` or `--top` was supplied: `signals_withheld`
 (see [Narrowing the rendered report](#narrowing-the-rendered-report)).
+
+`scope.worktree` is present only under `--worktree` (see
+[Uncommitted work](#uncommitted-work---worktree)).
 
 `schema_version: "2"` also includes `project_changes`, `project_facts`,
 `project_summary`, and `project_coverage`. TypeScript project reports

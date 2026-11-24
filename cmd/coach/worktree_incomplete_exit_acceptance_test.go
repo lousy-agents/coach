@@ -141,14 +141,14 @@ var _ = Describe("coach codesignal --worktree exits 3 when part of the working t
 	})
 
 	When("a user reads the help text of --fail-on-incomplete-coverage", func() {
-		It("describes only what the committed scan does, until --worktree graduates from experimental", func() {
+		It("states the working-tree rule after the exit-3 sentence (#168 worktree graduation)", func() {
 			stdout, stderr, exitCode := runCoachRaw("codesignal", "--help")
 
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 			help := string(stdout) + string(stderr)
 			Expect(help).To(ContainSubstring("exit 3 when required project coverage (model or bypass, on any analyzed side) is incomplete, or when no project policy was read because the policy HEAD selects is absent on disk; the report is still written to stdout"))
-			Expect(help).NotTo(ContainSubstring("working tree"), "the hidden mode's rule is not part of the documented help")
-			Expect(help).NotTo(ContainSubstring("-worktree"))
+			Expect(help).To(ContainSubstring("under --worktree it is also incomplete when part of the working tree could not be read"),
+				"the exit-3 sentence is followed by the working-tree rule")
 		})
 	})
 
