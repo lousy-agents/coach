@@ -54,7 +54,7 @@ func wrongCaseUnder(root, repoPath string, chooser pathChooser, tracked func(spe
 	case 0:
 		return nil
 	case 1:
-		return diskCaseRefusal(fmt.Sprintf("the policy is on disk as %q, but Coach reads %q, so it is not read: %s", others[0], repoPath, oneSpellingOnDisk(others[0], repoPath, chooser)+movedByGit(tracked(others[0]))))
+		return diskCaseRefusal(fmt.Sprintf("the policy is on disk as %q, but Coach reads %q, so it is not read: %s", others[0], repoPath, oneSpellingOnDisk(others[0], repoPath, chooser, tracked(others[0]))))
 	}
 	return diskCaseRefusal(severalSpellingsOnDisk(others, truncated, repoPath, chooser, tracked))
 }

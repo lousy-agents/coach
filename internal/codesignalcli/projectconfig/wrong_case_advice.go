@@ -17,13 +17,14 @@ func spellingToKeep(repoPath string, chooser pathChooser) string {
 }
 
 // oneSpellingOnDisk is the way out for a policy the disk lists under one other spelling. For the default policy's path
-// named in another case the rename is the wrong way: every scan that passes no flag reads the default spelling.
-func oneSpellingOnDisk(onDisk, typed string, chooser pathChooser) string {
+// named in another case the rename is the wrong way: every scan that passes no flag reads the default spelling. The advice
+// to move it with git, for a tracked policy, goes only with a rename.
+func oneSpellingOnDisk(onDisk, typed string, chooser pathChooser, tracked bool) string {
 	if namesTheDefaultPolicyInAnotherCase(typed, chooser) && onDisk == CanonicalPath {
-		return fmt.Sprintf("pass the spelling on disk, %q, or leave --project-config off, which reads that spelling by itself; to rename the file on disk to %q would make every scan without the flag refuse it", onDisk, typed)
+		return fmt.Sprintf("pass the spelling on disk, %q, or leave --project-config off, which reads that spelling by itself; to rename the file on disk to %q would make every scan without the flag refuse it.", onDisk, typed)
 	}
 	target := spellingToKeep(typed, chooser)
-	return fmt.Sprintf("rename the file on disk to %q, or pass the spelling on disk, %q%s.%s", target, onDisk, withTheFlag(chooser), directoryInCase(onDisk, target))
+	return fmt.Sprintf("rename the file on disk to %q, or pass the spelling on disk, %q%s.%s%s", target, onDisk, withTheFlag(chooser), directoryInCase(onDisk, target), movedByGit(tracked))
 }
 
 // withTheFlag says how a policy Coach found can be read at another spelling: the user names it.
