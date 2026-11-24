@@ -139,15 +139,18 @@ func TestVerifyReviewVerdict_TokenBoundary(t *testing.T) {
 		{"FINDINGS underscore suffix", "FINDINGS_X", true},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			stdout := runVerifyReviewVerdict(t, tc.message)
-			if tc.blocked {
-				assertBlockDecision(t, stdout)
-				return
-			}
-			if strings.TrimSpace(stdout) != "" {
-				t.Fatalf("expected %q to be allowed with no stdout; got: %q", tc.message, stdout)
-			}
-		})
+		t.Run(tc.name, func(t *testing.T) { assertVerdictDecision(t, tc.message, tc.blocked) })
+	}
+}
+
+func assertVerdictDecision(t *testing.T, message string, blocked bool) {
+	t.Helper()
+	stdout := runVerifyReviewVerdict(t, message)
+	if blocked {
+		assertBlockDecision(t, stdout)
+		return
+	}
+	if strings.TrimSpace(stdout) != "" {
+		t.Fatalf("expected %q to be allowed with no stdout; got: %q", message, stdout)
 	}
 }

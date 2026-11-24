@@ -142,6 +142,12 @@ var _ = Describe("findings relay contract", func() {
 				"The reviewer had findings; please fix them.")).To(BeTrue())
 		})
 
+		// The hook says verbatim: a heading in another case is a paraphrase.
+		It("is denied when the heading is spelled in another case", func() {
+			Expect(relayDenied("task-implementer",
+				"Address the reviewer findings.\n## reviewer findings\n1. fix x")).To(BeTrue())
+		})
+
 		// The integration reviewer emits one numbered list under a single
 		// heading. Splitting it into one delegation per finding drops the
 		// heading, so every such call is refused -- the orchestrator must
