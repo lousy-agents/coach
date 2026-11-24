@@ -60,6 +60,16 @@ var _ = Describe("a deleted discovered policy is disclosed once, by project_poli
 			expectNoUnreadListingOfDeletedPolicy(mode, report)
 		})
 
+		It("#168 item 2: under "+mode.name+", a committed root project.json left alone on disk is reported as deprecated exactly once", func() {
+			repo, base := diskPolicyRepo(scopePolicyFile{legacyConfigPath, goLayerPolicyConfigJSON})
+
+			report, _ := diskPolicyJSONScan(mode, repo, base)
+			text := diskPolicyTextScan(mode, repo, base)
+
+			Expect(diagnosticsOfKind(report.Diagnostics, "project_config_deprecated")).To(HaveLen(1), "diagnostics: %+v", report.Diagnostics)
+			Expect(strings.Count(string(text), "kind: project_config_deprecated")).To(Equal(1), "text:\n%s", text)
+		})
+
 		It("#168 item 3: under "+mode.name+", with no policy committed or on disk, no absent-policy diagnostic is reported", func() {
 			repo, base := diskPolicyRepo()
 
