@@ -26,7 +26,6 @@ var _ = Describe("loading the project for a TypeScript scan whose policy cannot 
 			}
 			ports := defaultScanPorts()
 			ports.loadExplicit = failingLoad
-			ports.loadDiscovered = failingLoad
 
 			_, loadErr := loadPreparedProject(repo, revision, source, "typescript", nil, projectconfig.DiskSelection{}, ports)
 
@@ -37,20 +36,23 @@ var _ = Describe("loading the project for a TypeScript scan whose policy cannot 
 			Expect(namedPath).To(Equal(wantNamedPath))
 		},
 		Entry("a policy named with --project-config", policyref.Named(".lousy-agents/coach.json"), ".lousy-agents/coach.json", true),
-		Entry("a policy the scan discovered", policyref.Discovered(".lousy-agents/coach.json"), "", false),
 	)
 })
 
 var _ = Describe("loading the project when no backend can run the policy", func() {
 	It("keeps the diagnostics that came with the policy and adds why the backend is unavailable", func() {
 		ports := defaultScanPorts()
-		ports.loadDiscovered = func(string, string, string) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }
+		ports.readCommitted = func(string, string, string) (projectconfig.CommittedCopy, error) {
+			return projectconfig.CommittedCopy{Kind: projectconfig.CopyAbsent}, nil
+		}
 		ports.resolveBackend = func(string) error {
 			return &codesignalcli.ProjectBackendUnavailableError{Message: "not here"}
 		}
 		earlier := codesignal.Diagnostic{Kind: "project_config_deprecated", Path: "project.json"}
+		content := json.RawMessage(`{}`)
+		onDisk := projectconfig.DiskSelection{Path: "project.json", Digest: projectconfig.Digest(content), Content: content}
 
-		prepared, err := loadPreparedProject(GinkgoT().TempDir(), "rev", policyref.Discovered("project.json"), "go", []codesignal.Diagnostic{earlier}, projectconfig.DiskSelection{}, ports)
+		prepared, err := loadPreparedProject(GinkgoT().TempDir(), "rev", policyref.Discovered("project.json"), "go", []codesignal.Diagnostic{earlier}, onDisk, ports)
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prepared.analysis).To(BeNil())

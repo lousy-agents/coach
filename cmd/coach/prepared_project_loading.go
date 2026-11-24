@@ -9,33 +9,34 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-// loadPreparedProject prepares the analysis of the policy the scan uses. source is the policy the revision holds, or,
+// loadPreparedProject prepares the analysis of the policy the scan uses. source is the policy the revision selects, or,
 // for a discovered policy that is not committed, an empty Ref: the working tree can still hold one. disk is what the
-// working tree selected for it, already judged usable.
+// working tree selected for it, already judged usable; a scan whose working tree selects none is file-local.
 func loadPreparedProject(dir, revision string, source policyref.Ref, language string, diags []codesignal.Diagnostic, disk projectconfig.DiskSelection, ports scanPorts) (preparedProject, error) {
 	evidence, err := gatherPolicyEvidence(dir, revision, source, disk, ports)
 	if err != nil {
 		return preparedProject{}, withReadinessForLanguage(err, dir, revision, source, language)
 	}
+	diags = withDiskSelectionDiagnostics(diags, source, disk)
 	choice := choosePolicy(evidence)
 	if choice.scope.Path == "" {
-		return preparedProject{diagnostics: diags}, nil
+		return preparedProject{diagnostics: withoutOutdatedDeprecation(diags, "")}, nil
 	}
 	return prepareAnalysis(choice, source, language, diags, ports)
 }
 
-// gatherPolicyEvidence reads the policy the revision holds as a policy only where the scan can use it. A policy that is
-// usable on disk is the one used, so what the revision holds at its path is read for comparison and refuses nothing.
+// gatherPolicyEvidence reads what the revision holds at the path of a policy that is usable on disk, for comparison only,
+// so it refuses nothing. Where the working tree selects none, the scan uses none; only a named policy is refused.
 func gatherPolicyEvidence(dir, revision string, source policyref.Ref, disk projectconfig.DiskSelection, ports scanPorts) (policyEvidence, error) {
 	evidence := policyEvidence{
+		headPath:         source.Path,
 		disk:             disk,
 		holdsConvertedAt: func(path string) bool { return projectconfig.HoldsCommittedPolicyConverted(dir, revision, path) },
 	}
-	var err error
-	if disk.Path == "" || committedCanonicalOutranks(source.Path, disk.Path) {
-		evidence.committed, err = loadCommittedPolicy(dir, revision, source, ports)
-		return evidence, err
+	if disk.Path == "" {
+		return evidence, refuseExplicitPolicyMissingOnDisk(dir, revision, source, ports)
 	}
+	var err error
 	evidence.head, err = readHeadCopy(dir, revision, source, disk.Path, ports)
 	return evidence, err
 }

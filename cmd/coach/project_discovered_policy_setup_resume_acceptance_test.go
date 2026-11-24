@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -36,5 +37,27 @@ var _ = Describe("coach codesignal (TypeScript, controlling terminal): compiler 
 		var report map[string]any
 		Expect(json.Unmarshal(stdout, &report)).To(Succeed(), "stdout: %s stderr: %s", stdout, stderr)
 		Expect(report).To(HaveKey("coverage"))
+	})
+
+	It("#168 item 3: offers no compiler setup when the discovered policy is committed at HEAD and deleted on disk, because the scan is file-local", func() {
+		repo := newTempGitRepo()
+		commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+		commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
+		commitFile(repo, coachConfigPath, singleRootPolicyJSON)
+		Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
+		writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
+		miseDir := writeStatefulStubMiseScript(tstoolchain.SupportedTypescriptVersions[0])
+		path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
+
+		session := startCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path),
+			"codesignal", "--baseline", "--project-language", "typescript", "--format=json")
+		stdout, stderr, _, exitCode := session.wait()
+
+		Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+		Expect(string(stderr)).NotTo(ContainSubstring("Type 'install' to run this setup command now"), "a file-local scan needs no compiler")
+		Expect(miseInvocationsIncludeInstall(miseDir)).To(BeFalse(), "no setup may run for a file-local scan")
+		var report map[string]any
+		Expect(json.Unmarshal(stdout, &report)).To(Succeed(), "stdout: %s stderr: %s", stdout, stderr)
+		Expect(report).To(HaveKeyWithValue("scope", HaveKeyWithValue("policy", BeNil())))
 	})
 })
