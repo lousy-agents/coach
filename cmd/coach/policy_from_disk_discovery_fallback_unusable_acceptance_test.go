@@ -40,7 +40,10 @@ var _ = Describe("coach codesignal refuses an unusable root project.json that st
 	scenarios := []unusableFallback{
 		{"invalid JSON", []string{"not a valid project policy"}, replaceWith("{bad")},
 		{"a schema the policy rejects", []string{"not a valid project policy"}, replaceWith(`{"schema_version":"9","roots":["."]}`)},
-		{"a directory", []string{"not_a_regular_file"}, inPlace(func(path string) { Expect(os.Mkdir(path, 0o755)).To(Succeed()) })},
+		{"a directory", []string{"not_a_regular_file"}, inPlace(func(path string) {
+			Expect(os.Mkdir(path, 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(path, "kept"), nil, 0o644)).To(Succeed(), "git lists a directory only when it holds a file")
+		})},
 		{"a symbolic link", []string{"symbolic_link"}, inPlace(func(path string) { Expect(os.Symlink("/etc/hostname", path)).To(Succeed()) })},
 		{"a file that cannot be read", []string{"unreadable_on_disk"}, unreadable},
 	}
@@ -75,6 +78,16 @@ var _ = Describe("coach codesignal refuses an unusable root project.json that st
 				expectDiskJudgedRefusal(stdout, stderr, exitCode, legacyConfigPath, scenario.words...)
 			})
 		}
+
+		It("#168: a canonical policy that HEAD commits invalid, deleted on disk, beside an invalid root project.json exits 2 naming project.json under "+mode.name, func() {
+			repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, "{bad"})
+			Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
+			overwriteOnDisk(repo, legacyConfigPath, "{bad")
+
+			stdout, stderr, exitCode := mode.run(repo, base, "--format=json")
+
+			expectDiskJudgedRefusal(stdout, stderr, exitCode, legacyConfigPath, "not a valid project policy")
+		})
 
 		It("#168: a deleted canonical policy beside a usable root project.json on disk still falls back to project.json under "+mode.name, func() {
 			repo, base := diskPolicyRepo(

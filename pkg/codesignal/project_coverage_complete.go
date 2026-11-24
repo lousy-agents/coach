@@ -34,7 +34,7 @@ func RequiredCoverageIncomplete(report *Report) bool {
 	if report == nil {
 		return false
 	}
-	if hasWorktreeScanIncomplete(report.Scope, report.Diagnostics) {
+	if hasWorktreeScanIncomplete(report.Scope, report.Diagnostics) || hasProjectPolicyAbsentOnDisk(report.Diagnostics) {
 		return true
 	}
 	if report.ProjectProvenance != nil {
@@ -82,6 +82,15 @@ func requiredProvenanceComplete(prov *ProjectProvenance) bool {
 func hasProjectBackendUnavailable(diags []Diagnostic) bool {
 	return slices.ContainsFunc(diags, func(d Diagnostic) bool {
 		return d.Kind == "project_backend_unavailable"
+	})
+}
+
+// hasProjectPolicyAbsentOnDisk reports whether the policy the revision selects was not read because the working tree
+// lacks it. Unlike the worktree kinds it counts in a committed scan too, because the scan applied other rules than the
+// repository committed whatever mode it ran in.
+func hasProjectPolicyAbsentOnDisk(diags []Diagnostic) bool {
+	return slices.ContainsFunc(diags, func(d Diagnostic) bool {
+		return d.Kind == DiagKindProjectPolicyAbsentOnDisk
 	})
 }
 

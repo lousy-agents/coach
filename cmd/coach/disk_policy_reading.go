@@ -19,13 +19,18 @@ type diskQuestion struct {
 }
 
 // judgeDiscoveredOnDisk asks the working tree for the discovered policy. The canonical path is always the scan's to
-// judge, and the root project.json only when discovery selected it, which it does only for a committed one.
+// judge. The root project.json is too when discovery selected it, which it does only for a committed one, or when the
+// revision selects the canonical policy, because a canonical policy that is gone from disk is replaced by project.json
+// and an unusable one must not turn that into a scan under no policy at all.
 func judgeDiscoveredOnDisk(dir, revision string, discovery projectconfig.Selection, ports scanPorts) (projectconfig.DiskSelection, error) {
 	if err := discovery.SubmoduleRefusal(); err != nil {
 		return projectconfig.DiskSelection{}, err
 	}
+	revisionSelectsCanonical := discovery.Path == projectconfig.CanonicalPath || discovery.Fatal != nil
 	return judgeOnDisk(dir, diskQuestion{
-		matters: func(path string) bool { return path == projectconfig.CanonicalPath || path == discovery.Path },
+		matters: func(path string) bool {
+			return path == projectconfig.CanonicalPath || path == discovery.Path || (path == projectconfig.DefaultPath && revisionSelectsCanonical)
+		},
 		refuse: func(refusal *projectconfig.DiskPolicyRefusal) error {
 			if refusal.Path == projectconfig.CanonicalPath {
 				return refusal.ScanError(false, projectconfig.UnmergedInIndex(dir, refusal.Path), discovery.Fatal)
