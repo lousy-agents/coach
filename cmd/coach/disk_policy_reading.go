@@ -19,19 +19,14 @@ type diskQuestion struct {
 }
 
 // judgeDiscoveredOnDisk asks the working tree for the discovered policy. The canonical path is always the scan's to
-// judge. The root project.json is too when discovery selected it, which it does only for a committed one, or when the
-// revision selects the canonical policy, because a canonical policy that is gone from disk is replaced by project.json
-// and an unusable one must not turn that into a scan under no policy at all.
+// judge, and the root project.json only when discovery selected it, which it does only for a committed one. Any other
+// project.json is a file that may never have been a Coach policy, so one that cannot be used is passed over.
 func judgeDiscoveredOnDisk(dir, revision string, discovery projectconfig.Selection, ports scanPorts) (projectconfig.DiskSelection, error) {
 	if err := discovery.SubmoduleRefusal(); err != nil {
 		return projectconfig.DiskSelection{}, err
 	}
-	// Discovery refuses (Fatal) only the canonical path, so discoveredSource names the canonical policy for it too.
-	revisionSelectsCanonical := discoveredSource(discovery).Path == projectconfig.CanonicalPath
 	return judgeOnDisk(dir, diskQuestion{
-		matters: func(path string) bool {
-			return path == projectconfig.CanonicalPath || path == discovery.Path || (path == projectconfig.DefaultPath && revisionSelectsCanonical)
-		},
+		matters: func(path string) bool { return path == projectconfig.CanonicalPath || path == discovery.Path },
 		refuse: func(refusal *projectconfig.DiskPolicyRefusal) error {
 			if refusal.Path == projectconfig.CanonicalPath {
 				return refusal.ScanError(false, projectconfig.UnmergedInIndex(dir, refusal.Path), discovery.Fatal)
@@ -78,7 +73,7 @@ func judgeOnDisk(dir string, question diskQuestion, ports scanPorts) (projectcon
 	case refusal == nil:
 		return projectconfig.DiskSelection{}, err
 	case !question.matters(refusal.Path):
-		return projectconfig.DiskSelection{}, nil
+		return projectconfig.DiskSelection{IgnoredPath: refusal.Path}, nil
 	}
 	return projectconfig.DiskSelection{}, question.refuse(refusal)
 }

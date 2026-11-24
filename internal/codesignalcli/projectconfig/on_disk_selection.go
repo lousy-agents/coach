@@ -11,10 +11,12 @@ import (
 )
 
 // DiskSelection is the policy the working tree holds: the bytes read and the digest of those same bytes. The zero
-// value is no policy on disk.
+// value is no policy on disk. IgnoredPath is a policy-named entry that cannot be used and that the scan would not have
+// read anyway, so it is passed over and no policy is selected.
 type DiskSelection struct {
 	Path, Digest string
 	Content      json.RawMessage
+	IgnoredPath  string
 }
 
 // SelectOnDisk is the policy file the working tree selects for a scan, with the digest of the bytes it holds now.

@@ -21,9 +21,13 @@ func withDiskSelectionDiagnostics(diags []codesignal.Diagnostic, source policyre
 	if source.Path == "" || !headSelectionAbsent {
 		return diags
 	}
+	message := "The project policy HEAD selects is not on disk, so this scan did not read it."
+	if disk.IgnoredPath != "" {
+		message += " " + codesignal.AbsentPolicyFallbackIgnored + "."
+	}
 	return appendDiagnostic(diags, codesignal.Diagnostic{
 		Kind:    codesignal.DiagKindProjectPolicyAbsentOnDisk,
 		Path:    source.Path,
-		Message: "The project policy HEAD selects is not on disk, so this scan did not read it.",
+		Message: message,
 	})
 }

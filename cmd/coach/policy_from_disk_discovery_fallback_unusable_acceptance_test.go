@@ -10,13 +10,14 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// The scan falls back to a root project.json on disk when the canonical policy HEAD selects is deleted, so that file is
-// one it would read. When it cannot be used, the scan refuses it as it refuses an unusable canonical policy, and neither
-// a committed copy nor a file-local scan stands in.
-var _ = Describe("coach codesignal refuses an unusable root project.json that stands in for a deleted canonical policy (#168)", func() {
+// A root project.json is often a file that was never a Coach policy (Nx has one), so when the canonical policy HEAD
+// selects is deleted and project.json cannot be used as a Coach policy, the scan ignores it: it is file-local, says that
+// it found project.json and did not use it, and counts as incomplete coverage because no policy was read.
+var _ = Describe("coach codesignal ignores a root project.json that is not a usable policy when the canonical policy HEAD selects is deleted (#168)", func() {
+	const notUsableNote = "not a usable Coach policy"
+
 	type unusableFallback struct {
 		description string
-		words       []string
 		make        func(repo string)
 		// needsExistingFile is a state that changes a file that is already there, so an untracked fixture creates it first.
 		needsExistingFile bool
@@ -40,19 +41,33 @@ var _ = Describe("coach codesignal refuses an unusable root project.json that st
 		DeferCleanup(func() { _ = os.Chmod(path, 0o644) })
 	}
 	scenarios := []unusableFallback{
-		{"invalid JSON", []string{"not a valid project policy"}, replaceWith("{bad"), false},
-		{"a schema the policy rejects", []string{"not a valid project policy"}, replaceWith(`{"schema_version":"9","roots":["."]}`), false},
-		{"a directory", []string{"not_a_regular_file"}, inPlace(func(path string) {
+		{"invalid JSON", replaceWith("{bad"), false},
+		{"a schema the policy rejects", replaceWith(`{"schema_version":"9","roots":["."]}`), false},
+		{"a directory", inPlace(func(path string) {
 			Expect(os.Mkdir(path, 0o755)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(path, "kept"), nil, 0o644)).To(Succeed(), "git lists a directory only when it holds a file")
 		}), false},
-		{"a symbolic link", []string{"symbolic_link"}, inPlace(func(path string) { Expect(os.Symlink("/etc/hostname", path)).To(Succeed()) }), false},
-		{"a file that cannot be read", []string{"unreadable_on_disk"}, unreadable, true},
+		{"a symbolic link", inPlace(func(path string) { Expect(os.Symlink("/etc/hostname", path)).To(Succeed()) }), false},
+		{"a file that cannot be read", unreadable, true},
 	}
 
 	for _, mode := range scopePolicyModes {
 		for _, scenario := range scenarios {
-			It("#168: a deleted canonical policy beside a committed root project.json that is "+scenario.description+" on disk exits 2 as project_config_invalid under "+mode.name+", with no committed copy and no file-local scan", func() {
+			expectIgnoredAndFileLocal := func(repo, base, headPolicy string) {
+				GinkgoHelper()
+				plainJSON, plainStderr, plainExit := mode.run(repo, base, "--format=json")
+				Expect(plainExit).To(Equal(0), "stdout=%s stderr=%s", plainJSON, plainStderr)
+				report := decodeCoachReport(plainJSON)
+				expectDiagnosticKind(report, "project_policy_absent_on_disk", headPolicy)
+				expectNoDiagnosticKind(report, "project_config_invalid")
+				Expect(scopePolicyScopeOf(plainJSON)).To(HaveKeyWithValue("policy", BeNil()))
+
+				text, textStderr, textExit := mode.run(repo, base, failOnIncompleteCoverageFlag)
+				Expect(textExit).To(Equal(3), "no policy was read; stdout=%s stderr=%s", text, textStderr)
+				Expect(warningLinesNaming(text, headPolicy, legacyConfigPath, notUsableNote)).NotTo(BeEmpty(), "text:\n%s", text)
+			}
+
+			It("#168: a deleted canonical policy beside a committed root project.json that is "+scenario.description+" on disk is file-local with a WARNING under "+mode.name, func() {
 				repo, base := diskPolicyRepo(
 					scopePolicyFile{coachConfigPath, diskPolicyWithoutForbiddenImports},
 					scopePolicyFile{legacyConfigPath, goLayerPolicyConfigJSON},
@@ -60,13 +75,10 @@ var _ = Describe("coach codesignal refuses an unusable root project.json that st
 				Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
 				scenario.make(repo)
 
-				stdout, stderr, exitCode := mode.run(repo, base, "--format=json")
-
-				expectDiskJudgedRefusal(stdout, stderr, exitCode, legacyConfigPath, scenario.words...)
-				Expect(string(stderr)).NotTo(ContainSubstring(" at revision "), "the bytes are the disk's, so the words are not the revision's")
+				expectIgnoredAndFileLocal(repo, base, coachConfigPath)
 			})
 
-			It("#168: a deleted canonical policy beside an uncommitted root project.json that is "+scenario.description+" exits 2 as project_config_invalid under "+mode.name, func() {
+			It("#168: a deleted canonical policy beside an uncommitted root project.json that is "+scenario.description+" is file-local with a WARNING under "+mode.name, func() {
 				repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, diskPolicyWithoutForbiddenImports})
 				Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
 				if scenario.needsExistingFile {
@@ -75,20 +87,31 @@ var _ = Describe("coach codesignal refuses an unusable root project.json that st
 				scenario.make(repo)
 				expectGitStatusContains(repo, "?? "+legacyConfigPath)
 
-				stdout, stderr, exitCode := mode.run(repo, base, "--format=json")
-
-				expectDiskJudgedRefusal(stdout, stderr, exitCode, legacyConfigPath, scenario.words...)
+				expectIgnoredAndFileLocal(repo, base, coachConfigPath)
 			})
 		}
 
-		It("#168: a canonical policy that HEAD commits invalid, deleted on disk, beside an invalid root project.json exits 2 naming project.json under "+mode.name, func() {
+		It("#168: a canonical policy that HEAD commits invalid, deleted on disk, beside an invalid root project.json is file-local with a WARNING under "+mode.name, func() {
 			repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, "{bad"})
 			Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
 			overwriteOnDisk(repo, legacyConfigPath, "{bad")
 
-			stdout, stderr, exitCode := mode.run(repo, base, "--format=json")
+			plainJSON, plainStderr, plainExit := mode.run(repo, base, "--format=json")
+			Expect(plainExit).To(Equal(0), "stdout=%s stderr=%s", plainJSON, plainStderr)
+			Expect(scopePolicyScopeOf(plainJSON)).To(HaveKeyWithValue("policy", BeNil()))
+			text, _, textExit := mode.run(repo, base, failOnIncompleteCoverageFlag)
+			Expect(textExit).To(Equal(3))
+			Expect(warningLinesNaming(text, coachConfigPath, legacyConfigPath, notUsableNote)).NotTo(BeEmpty(), "text:\n%s", text)
+		})
 
-			expectDiskJudgedRefusal(stdout, stderr, exitCode, legacyConfigPath, "not a valid project policy")
+		It("#168: a deleted canonical policy with no root project.json anywhere says nothing about project.json under "+mode.name, func() {
+			repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, goLayerPolicyConfigJSON})
+			Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
+
+			text, stderr, exitCode := mode.run(repo, base, failOnIncompleteCoverageFlag)
+
+			Expect(exitCode).To(Equal(3), "stdout=%s stderr=%s", text, stderr)
+			Expect(warningLinesNaming(text, notUsableNote)).To(BeEmpty(), "text:\n%s", text)
 		})
 
 		It("#168: a deleted canonical policy beside a usable root project.json on disk still falls back to project.json under "+mode.name, func() {
