@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -22,6 +24,9 @@ func withDiskSelectionDiagnostics(diags []codesignal.Diagnostic, source policyre
 		return diags
 	}
 	message := "The project policy HEAD selects is not on disk, so this scan did not read it."
+	if source.Path != projectconfig.CanonicalPath && strings.EqualFold(source.Path, projectconfig.CanonicalPath) {
+		message += " " + codesignal.AbsentPolicyInAnotherCase + " " + projectconfig.CanonicalPath + "."
+	}
 	if disk.IgnoredPath != "" {
 		message += " " + codesignal.AbsentPolicyFallbackIgnored + "."
 	}
