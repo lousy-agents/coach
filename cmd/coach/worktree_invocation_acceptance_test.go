@@ -173,6 +173,7 @@ var _ = Describe("coach codesignal --worktree invocation", func() {
 			Expect(exitCode).To(Equal(0))
 			help := string(stdout) + string(stderr)
 			Expect(help).To(MatchRegexp(`(?m)^  -worktree\n\s+\S`), "the flag listing carries a description")
+			Expect(help).To(ContainSubstring("with no --base or --baseline it compares the working tree with HEAD"))
 			Expect(help).NotTo(ContainSubstring("experimental"))
 
 			_, runStderr, runExit := runCoachBinary(commandPath, editedRepo(), nil, "codesignal", "--worktree", "--format=json")
