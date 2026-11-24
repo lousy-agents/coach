@@ -47,7 +47,7 @@ var _ = Describe("a policy HEAD commits only in another case and that is absent 
 		})
 	}
 
-	It("#168: --check-project calls it policy_missing and does not offer to author a policy, which would collide with the committed spelling", func() {
+	It("#168: --check-project calls it policy_missing and offers to restore it, not to author a policy, which would collide with the committed spelling", func() {
 		repo := newTempGitRepo()
 		commitFile(repo, committedInAnotherCase, singleRootPolicyJSON)
 		Expect(os.Remove(filepath.Join(repo, committedInAnotherCase))).To(Succeed())
@@ -56,5 +56,23 @@ var _ = Describe("a policy HEAD commits only in another case and that is absent 
 
 		Expect(doc.Checks.Policy.Code).To(Equal("policy_missing"))
 		Expect(nextActionKinds(doc)).NotTo(ContainElement("author_policy"), "next actions: %+v", doc.NextActions)
+		Expect(nextActionKinds(doc)).To(ContainElement("restore_policy"), "next actions: %+v", doc.NextActions)
+	})
+
+	It("#168: --prepare-compiler names the restore of the committed spelling, not of the default spelling, and does not offer to author one", func() {
+		repo := newTempGitRepo()
+		commitFile(repo, committedInAnotherCase, singleRootPolicyJSON)
+		Expect(os.Remove(filepath.Join(repo, committedInAnotherCase))).To(Succeed())
+
+		stdout, stderr, _, exitCode := runCoachBinaryWithControllingTerminal(
+			commandPath, repo, stubToolchainEnv(pathWithoutNode()), "",
+			"codesignal", "--baseline", "--prepare-compiler", "--project-language", "typescript",
+		)
+
+		Expect(exitCode).To(Equal(2), "stdout=%s stderr=%s", stdout, stderr)
+		Expect(string(stderr)).To(ContainSubstring("restore_policy"), "stderr=%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("':(top,literal)"+committedInAnotherCase+"'"), "stderr=%s", stderr)
+		Expect(string(stderr)).NotTo(ContainSubstring("':(top,literal)"+coachConfigPath+"'"), "stderr=%s", stderr)
+		Expect(string(stderr)).NotTo(ContainSubstring("author_policy"), "stderr=%s", stderr)
 	})
 })
