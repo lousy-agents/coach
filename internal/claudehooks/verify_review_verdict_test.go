@@ -109,9 +109,8 @@ func runVerifyReviewVerdict(t *testing.T, lastAssistantMessage string) string {
 	return stdout.String()
 }
 
-// TestVerifyReviewVerdict_TokenBoundary pins the word boundary that follows
-// PASS/FINDINGS in the first non-empty line: the hook matches it with a bash
-// regex rather than grep's \b, so each side of the boundary needs a row.
+// TestVerifyReviewVerdict_TokenBoundary pins that PASSED, PASSWORD and PASS_X
+// do not count as PASS.
 func TestVerifyReviewVerdict_TokenBoundary(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -127,6 +126,10 @@ func TestVerifyReviewVerdict_TokenBoundary(t *testing.T) {
 		{"FINDINGS alone", "FINDINGS", false},
 		{"FINDINGS then newline", "FINDINGS\n## Reviewer Findings", false},
 		{"FINDINGS then colon", "FINDINGS: 2", false},
+		{"PASS then CR", "PASS\r", false},
+		{"PASS then CRLF", "PASS\r\nbody", false},
+		{"FINDINGS then CR", "FINDINGS\r", false},
+		{"leading space", "  PASS", true},
 		{"PASSED", "PASSED", true},
 		{"PASSING", "PASSING", true},
 		{"PASSWORD", "PASSWORD", true},

@@ -22,10 +22,7 @@ verdict=$(jq -r '.last_assistant_message // empty' <<<"$input")
 # appearing after leading prose slip through. Anchor to the first non-empty
 # line instead.
 #
-# No pipeline reads $verdict or $first_line: a reader that exits early (sed q)
-# makes the writer die of SIGPIPE, and under pipefail the hook then exits 141
-# instead of reaching the verdict logic. Here-strings and [[ =~ ]] keep the
-# verdict check independent of reply size and scheduling.
+# Here-strings, not pipes, for the same SIGPIPE reason as verify-context-relay.sh.
 first_line=$(sed -n '/[^[:space:]]/{p;q;}' <<<"$verdict")
 
 # ([^[:alnum:]_]|$) after the token is grep's \b: PASSED and PASSWORD are not PASS.

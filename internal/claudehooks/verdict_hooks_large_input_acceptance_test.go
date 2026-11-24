@@ -1,10 +1,7 @@
 package claudehooks
 
 import (
-	"bytes"
 	"encoding/json"
-	"os/exec"
-	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -15,34 +12,6 @@ import (
 // through a pipeline whose reader exits early is killed by SIGPIPE
 // deterministically rather than only under unlucky scheduling.
 var oversizedBody = strings.Repeat("padding line that is irrelevant to the verdict\n", 80_000)
-
-type hookRun struct {
-	exitCode int
-	stdout   string
-	stderr   string
-}
-
-func runHookRaw(script string, payload map[string]any) hookRun {
-	GinkgoHelper()
-
-	path, err := filepath.Abs(filepath.Join("..", "..", ".claude", "hooks", script))
-	Expect(err).NotTo(HaveOccurred())
-	body, err := json.Marshal(payload)
-	Expect(err).NotTo(HaveOccurred())
-
-	cmd := exec.Command("bash", path)
-	cmd.Stdin = bytes.NewReader(body)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err = cmd.Run()
-	run := hookRun{stdout: stdout.String(), stderr: stderr.String()}
-	if exitErr, ok := err.(*exec.ExitError); ok {
-		run.exitCode = exitErr.ExitCode()
-	} else {
-		Expect(err).NotTo(HaveOccurred())
-	}
-	return run
-}
 
 func runVerdictHook(message string) hookRun {
 	GinkgoHelper()
@@ -58,13 +27,13 @@ func runRelayHook(prompt string) hookRun {
 
 func expectAllowed(run hookRun) {
 	GinkgoHelper()
-	Expect(run.exitCode).To(Equal(0), "hook must exit 0; stderr: %q", run.stderr)
+	Expect(run.exitCode).To(Equal(0), "hook must exit 0 (%s); stderr: %q", run.status, run.stderr)
 	Expect(strings.TrimSpace(run.stdout)).To(BeEmpty())
 }
 
 func expectVerdictBlocked(run hookRun) {
 	GinkgoHelper()
-	Expect(run.exitCode).To(Equal(0), "hook must exit 0; stderr: %q", run.stderr)
+	Expect(run.exitCode).To(Equal(0), "hook must exit 0 (%s); stderr: %q", run.status, run.stderr)
 	var payload struct {
 		Decision string `json:"decision"`
 	}
@@ -74,7 +43,7 @@ func expectVerdictBlocked(run hookRun) {
 
 func expectRelayDenied(run hookRun) {
 	GinkgoHelper()
-	Expect(run.exitCode).To(Equal(0), "hook must exit 0; stderr: %q", run.stderr)
+	Expect(run.exitCode).To(Equal(0), "hook must exit 0 (%s); stderr: %q", run.status, run.stderr)
 	var payload struct {
 		HookSpecificOutput struct {
 			PermissionDecision string `json:"permissionDecision"`
@@ -111,17 +80,20 @@ var _ = Describe("findings relay contract with an oversized prompt", func() {
 			expectRelayDenied(runRelayHook(rework + oversizedBody))
 		})
 
-		It("is allowed when the findings block is at the very end", func() {
+		// The two allow specs below are guards, not red-then-green: on the
+		// unfixed hook the outer pipeline dies first and the hook exits 0 for
+		// the wrong reason. Only an inner-pipeline regression fails them.
+		It("guard: is allowed when the findings block is at the very end", func() {
 			expectAllowed(runRelayHook(rework + oversizedBody + "## Reviewer Findings\n1. fix x\n"))
 		})
 
-		It("is allowed when the findings block is at the start", func() {
+		It("guard: is allowed when the findings block is at the start", func() {
 			expectAllowed(runRelayHook("## Reviewer Findings\n1. fix x\n" + rework + oversizedBody))
 		})
 	})
 
 	When("a multi-megabyte prompt is not rework", func() {
-		It("stays out of the way", func() {
+		It("guard: stays out of the way", func() {
 			expectAllowed(runRelayHook("Implement task T1.\n" + oversizedBody))
 		})
 	})
