@@ -86,7 +86,7 @@ func specifySpellingOnDisk(mode scopePolicyMode, target spellingTarget) {
 		stderr := scanJSONRefused(mode, repo, base, target)
 
 		expectTheDiskSpellingRefusal(stderr)
-		Expect(stderr).To(ContainSubstring(renameWithGitsMove), "a tracked policy is renamed in the index as well:\n%s", stderr)
+		Expect(stderr).To(ContainSubstring(". Rename it "+renameWithGitsMove+"."), "a tracked policy is renamed in the index as well, in a sentence of its own:\n%s", stderr)
 	})
 
 	It("reads the entry spelled exactly as the path, and not the case variants beside it", func() {
