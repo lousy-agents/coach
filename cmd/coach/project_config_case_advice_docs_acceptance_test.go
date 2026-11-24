@@ -86,4 +86,14 @@ var _ = Describe("the CLI contract, ADR-008 and the PRD: the case rule they desc
 			Expect(rows[index]).To(ContainSubstring("uperseded"), "the row that begins %q describes the old case behaviour and says it is superseded", prefix)
 		}
 	})
+
+	It("requires in the PRD that the case rename is described in words, with no runnable command, and the same for a policy named and one Coach finds", func() {
+		prd := documentText("docs/product/prd.md")
+
+		Expect(prd).To(ContainSubstring("WHERE the refusal is `name_case_differs`, THE Coach CLI shall describe the rename in words: it shall name the spelling on disk and the path Coach reads, and say to rename the file on disk or to pass the spelling on disk."))
+		Expect(prd).To(ContainSubstring("It shall print no `git mv`, `git rm` or other shell command."))
+		Expect(prd).To(ContainSubstring("The message shall be the same for a policy named with `--project-config` and a policy Coach finds"))
+		Expect(prd).To(ContainSubstring("`--check-project` shall name `name_case_differs` and offer no `author_policy`."))
+		Expect(prd).To(ContainSubstring("WHERE the rename changes the case of a directory's name, it shall add that a directory whose name changes only in case cannot be renamed in one step on a file system that folds case"))
+	})
 })
