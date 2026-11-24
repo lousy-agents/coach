@@ -3,6 +3,7 @@ package claudehooks
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,11 +13,21 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// runHook feeds a synthetic hook payload to one of the committed hook scripts
-// and returns its stdout. These hooks are the only mechanical enforcement of
-// the reviewer verdict contract and the findings-relay contract, so they are
-// exercised as black boxes against real payload shapes.
-func runHookPayload(script string, payload map[string]any) string {
+type hookRun struct {
+	exitCode int
+	// status is the process state as the OS reported it, so a death by signal
+	// ("signal: broken pipe") reads differently from a hook's own exit 141.
+	status string
+	stdout string
+	stderr string
+}
+
+// runHookRaw feeds a synthetic hook payload to one of the committed hook
+// scripts without asserting on how it exited. These hooks are the only
+// mechanical enforcement of the reviewer verdict contract and the
+// findings-relay contract, so they are exercised as black boxes against real
+// payload shapes.
+func runHookRaw(script string, payload map[string]any) hookRun {
 	GinkgoHelper()
 
 	path, err := filepath.Abs(filepath.Join("..", "..", ".claude", "hooks", script))
@@ -30,8 +41,23 @@ func runHookPayload(script string, payload map[string]any) string {
 	cmd.Env = os.Environ()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	Expect(cmd.Run()).To(Succeed(), "hook exited non-zero; stderr: %s", stderr.String())
-	return stdout.String()
+	err = cmd.Run()
+	run := hookRun{stdout: stdout.String(), stderr: stderr.String()}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		run.exitCode = exitErr.ExitCode()
+		run.status = exitErr.ProcessState.String()
+	} else {
+		Expect(err).NotTo(HaveOccurred())
+	}
+	return run
+}
+
+func runHookPayload(script string, payload map[string]any) string {
+	GinkgoHelper()
+	run := runHookRaw(script, payload)
+	Expect(run.exitCode).To(Equal(0), "hook exited non-zero (%s); stderr: %s", run.status, run.stderr)
+	return run.stdout
 }
 
 func verdictBlocked(message string) bool {
@@ -114,6 +140,12 @@ var _ = Describe("findings relay contract", func() {
 		It("is denied when the findings are paraphrased away", func() {
 			Expect(relayDenied("task-implementer",
 				"The reviewer had findings; please fix them.")).To(BeTrue())
+		})
+
+		// The hook says verbatim: a heading in another case is a paraphrase.
+		It("is denied when the heading is spelled in another case", func() {
+			Expect(relayDenied("task-implementer",
+				"Address the reviewer findings.\n## reviewer findings\n1. fix x")).To(BeTrue())
 		})
 
 		// The integration reviewer emits one numbered list under a single

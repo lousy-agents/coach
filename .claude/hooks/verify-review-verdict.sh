@@ -21,12 +21,15 @@ verdict=$(jq -r '.last_assistant_message // empty' <<<"$input")
 # checking the whole (possibly multi-line) message would let PASS/FINDINGS
 # appearing after leading prose slip through. Anchor to the first non-empty
 # line instead.
-first_line=$(printf '%s\n' "$verdict" | sed -n '/[^[:space:]]/{p;q;}')
+#
+# Here-strings, not pipes, for the same SIGPIPE reason as verify-context-relay.sh.
+first_line=$(sed -n '/[^[:space:]]/{p;q;}' <<<"$verdict")
 
-if echo "$first_line" | grep -qE '^PASS\b'; then
+# ([^[:alnum:]_]|$) after the token is grep's \b: PASSED and PASSWORD are not PASS.
+if [[ $first_line =~ ^PASS([^[:alnum:]_]|$) ]]; then
   exit 0
 fi
-if echo "$first_line" | grep -qE '^FINDINGS\b'; then
+if [[ $first_line =~ ^FINDINGS([^[:alnum:]_]|$) ]]; then
   exit 0
 fi
 

@@ -74,7 +74,7 @@ var _ = Describe("coach codesignal --worktree for a project policy that is not c
 		}, ".lousy-agents/coach.json"),
 	)
 
-	It("uses the committed copy of a policy renamed to another name, because no policy file is on disk, and says so", func() {
+	It("#168 item 3: is file-local when the committed policy is renamed to another name, because no policy file is on disk, says so, and exits 3 because the policy HEAD selects was not read", func() {
 		repo, _ := repoWithoutPolicy()
 		commitFile(repo, "project.json", goLayerPolicyConfigJSON)
 		runGitInRepo(repo, "mv", "project.json", "moved.json")
@@ -82,10 +82,11 @@ var _ = Describe("coach codesignal --worktree for a project policy that is not c
 		text, stderr, exitCode := worktreeBaseline.run(repo, "", "--fail-on-incomplete-coverage")
 		jsonOut, _, _ := worktreeBaseline.run(repo, "", "--fail-on-incomplete-coverage", "--format=json")
 
-		Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, text)
+		Expect(exitCode).To(Equal(3), "stderr: %s stdout: %s", stderr, text)
 		Expect(diagnosticsOfKind(decodeCoachReport(jsonOut).Diagnostics, "worktree_changes_not_analyzed")).To(BeEmpty())
-		Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", Equal(diskPolicyScope("project.json", goLayerPolicyConfigJSON, diskCauseMissingOnDisk))))
-		Expect(string(text)).To(ContainSubstring(diskPolicyMissingOnDiskWarning("project.json")))
+		Expect(scopePolicyScopeOf(jsonOut)).To(HaveKeyWithValue("policy", BeNil()))
+		Expect(warningLinesNaming(text, "project.json")).NotTo(BeEmpty(), "a WARNING must name the missing policy; text:\n%s", text)
+		Expect(string(text)).NotTo(ContainSubstring(diskPolicyMissingOnDiskWarning("project.json")))
 	})
 
 	It("reads the untracked canonical policy beside a committed deprecated one, and does not report it as unread", func() {

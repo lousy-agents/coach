@@ -65,26 +65,26 @@ func (r hiddenReason) entry(root, hidesInScope string) codesignal.Diagnostic {
 // status, with one entry per root directory. A sparse checkout owns the
 // skip-worktree entries it set, so they are not reported a second time. A sparse
 // checkout that hides nothing is still disclosed, with no root.
-func (v *WorktreeView) hiddenPathDiagnostics(state gitrepo.SparseState, policyPath string) []codesignal.Diagnostic {
+func (v *WorktreeView) hiddenPathDiagnostics(state gitrepo.SparseState, policyPaths []string) []codesignal.Diagnostic {
 	skipWorktree := state.SkipWorktree
 	var diagnostics []codesignal.Diagnostic
 	if state.SparseCheckout {
-		diagnostics = v.hiddenReasonDiagnostics(sparseCheckoutReason, skipWorktree, state.Tracked, policyPath)
+		diagnostics = v.hiddenReasonDiagnostics(sparseCheckoutReason, skipWorktree, state.Tracked, policyPaths)
 		skipWorktree = nil
 	}
 	if len(skipWorktree) > 0 {
-		diagnostics = append(diagnostics, v.hiddenReasonDiagnostics(skipWorktreeReason, skipWorktree, state.Tracked, policyPath)...)
+		diagnostics = append(diagnostics, v.hiddenReasonDiagnostics(skipWorktreeReason, skipWorktree, state.Tracked, policyPaths)...)
 	}
 	if len(state.AssumeUnchanged) > 0 {
-		diagnostics = append(diagnostics, v.hiddenReasonDiagnostics(assumeUnchangedReason, state.AssumeUnchanged, state.Tracked, policyPath)...)
+		diagnostics = append(diagnostics, v.hiddenReasonDiagnostics(assumeUnchangedReason, state.AssumeUnchanged, state.Tracked, policyPaths)...)
 	}
 	return diagnostics
 }
 
-func (v *WorktreeView) hiddenReasonDiagnostics(reason hiddenReason, hidden, tracked []string, policyPath string) []codesignal.Diagnostic {
+func (v *WorktreeView) hiddenReasonDiagnostics(reason hiddenReason, hidden, tracked []string, policyPaths []string) []codesignal.Diagnostic {
 	byRoot := hiddenPathsByRoot(hidden, tracked)
 	if len(byRoot) == 0 {
 		byRoot = map[string][]string{"": nil}
 	}
-	return reasonDiagnostics(reason, v.hidesInScope(byRoot, policyPath))
+	return reasonDiagnostics(reason, v.hidesInScope(byRoot, policyPaths...))
 }

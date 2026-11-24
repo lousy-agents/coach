@@ -3,6 +3,7 @@ package projectconfig
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 )
 
@@ -10,24 +11,27 @@ import (
 // them, and a message that named all would not fit a terminal.
 const maxSpellings = 16
 
-// spellingSearch collects the paths of a revision whose every component equals the policy path's, ignoring case.
+// spellingSearch collects the paths whose every component equals the policy path's, ignoring case.
 type spellingSearch struct {
-	entries   revisionEntries
-	typed     string
-	others    []string
-	held      bool
-	truncated bool
+	entries directoryEntries
+	typed   string
+	others  []string
+	held    bool
 }
 
-// spellingsInRevision is every path of the revision that equals parts in every component ignoring case, apart from
-// the path as typed: those are the others, and held says whether the revision commits the path as typed as well. It
-// reports truncated when there are more than maxSpellings others. A listing git could not give is the error.
-func spellingsInRevision(entries revisionEntries, parts []string) (others []string, held, truncated bool, err error) {
+// spellingsListed is every listed path that equals parts in every component ignoring case, apart from the path as
+// typed: those are the others, in order, and held says whether the path as typed is listed as well. It names the first maxSpellings others and reports truncated when there are more. A listing that could not be
+// given is the error.
+func spellingsListed(entries directoryEntries, parts []string) (others []string, held, truncated bool, err error) {
 	search := &spellingSearch{entries: entries, typed: strings.Join(parts, "/")}
 	if err := search.below("", parts); err != nil {
 		return nil, false, false, err
 	}
-	return search.others, search.held, search.truncated, nil
+	others = slices.Sorted(slices.Values(search.others))
+	if len(others) > maxSpellings {
+		return others[:maxSpellings], search.held, true, nil
+	}
+	return others, search.held, false, nil
 }
 
 func (s *spellingSearch) below(directory string, parts []string) error {
@@ -50,15 +54,14 @@ func (s *spellingSearch) below(directory string, parts []string) error {
 	return nil
 }
 
+// add records one spelling. Every spelling is kept so that the ones named past maxSpellings are the first in order and
+// not the first a listing happens to return.
 func (s *spellingSearch) add(spelling string) {
-	switch {
-	case spelling == s.typed:
+	if spelling == s.typed {
 		s.held = true
-	case len(s.others) == maxSpellings:
-		s.truncated = true
-	default:
-		s.others = append(s.others, spelling)
+		return
 	}
+	s.others = append(s.others, spelling)
 }
 
 func quotedList(items []string) string {

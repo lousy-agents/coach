@@ -73,8 +73,8 @@ func (v *WorktreeView) ConfigFiles() []string {
 // project backend has run: the paths the overlay could not read, and the dirty
 // paths nothing analyzed. They wait for the backend because a configuration file
 // is accounted for only if the analysis opened it.
-func withWorktreeDiagnostics(input codesignal.Input, view *WorktreeView, dir, revision, policyPath string) codesignal.Input {
-	extra := append(view.Diagnostics(dir, revision), view.Disclosure(dir, revision, policyPath)...)
+func withWorktreeDiagnostics(input codesignal.Input, view *WorktreeView, dir, revision string, project *ProjectAnalysis) codesignal.Input {
+	extra := append(view.Diagnostics(dir, revision), view.Disclosure(dir, revision, project.policyPath(), project.absentPolicyPaths()...)...)
 	input.Diagnostics = slices.Concat(input.Diagnostics, extra)
 	return input
 }
@@ -100,5 +100,5 @@ func withWorktree(input codesignal.Input, project *ProjectAnalysis, dir, revisio
 	if view == nil {
 		return input
 	}
-	return withWorktreeScope(withWorktreeDiagnostics(input, view, dir, revision, project.policyPath()), view)
+	return withWorktreeScope(withWorktreeDiagnostics(input, view, dir, revision, project), view)
 }

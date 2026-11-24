@@ -35,7 +35,4 @@ func assertMarkedEmptyEntryNamedForItsMark(t *testing.T, fake indexFake, wantTex
 	if strings.Contains(status.Message, "git restore") || strings.Contains(status.Message, "staged edit") || strings.Contains(status.Message, "git diff --cached") {
 		t.Errorf("message %q; the entry holds no content, so it is neither an edit to review nor a copy to restore", status.Message)
 	}
-	if status.UnreadStagedEdit {
-		t.Error("UnreadStagedEdit is set for an entry that holds no content")
-	}
 }

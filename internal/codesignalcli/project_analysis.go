@@ -33,6 +33,8 @@ type ProjectAnalysis struct {
 	// from and whether it is the one committed at HEAD.
 	PolicyScope codesignal.PolicyScope
 	Backend     ProjectBackend
+	// AbsentPolicyPath is the policy the revision selects that the working tree does not hold; empty when there is none.
+	AbsentPolicyPath string
 	// Worktree, when set, lays the working tree over the head revision
 	// (--worktree).
 	Worktree *WorktreeView
@@ -170,7 +172,7 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 	}
 	roots := selectedRootsFromConfig(project.Config)
 	if project.Worktree == nil {
-		diagnostics = appendProjectWorktreeDiagnostic(diagnostics, project.Status, roots, project.Policy)
+		diagnostics = appendProjectWorktreeDiagnostic(diagnostics, project.Status, roots, project.Policy, project.absentPolicyPaths()...)
 	}
 
 	merged := codesignal.Input{

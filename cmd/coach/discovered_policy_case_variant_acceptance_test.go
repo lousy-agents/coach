@@ -18,8 +18,6 @@ func skipUnlessTheFileSystemFoldsCase(directory string) {
 	}
 }
 
-const uncommittedDefaultPolicy = ".lousy-agents/coach.json is in the worktree but is not committed"
-
 func writeInRepo(repo, name, content string) {
 	GinkgoHelper()
 	Expect(os.MkdirAll(filepath.Dir(filepath.Join(repo, name)), 0o755)).To(Succeed())
@@ -49,9 +47,6 @@ var _ = Describe("coach codesignal: a default policy path the disk spells in ano
 			gitOutputIn(repo, "add", "-A")
 			gitOutputIn(repo, "commit", "--quiet", "-m", "another tool's file")
 		}, ""),
-		Entry("an untracked policy file in another case", func(repo string) {
-			writeInRepo(repo, ".lousy-agents/Coach.json", singleRootPolicyJSON)
-		}, uncommittedDefaultPolicy),
 	}
 
 	DescribeTable("a baseline scan goes on without a policy",
@@ -101,4 +96,38 @@ var _ = Describe("coach codesignal: a default policy path the disk spells in ano
 		},
 		variants,
 	)
+})
+
+// A policy file the listing holds at the default path in another case is the file at that path, whichever spelling the
+// disk is on, so the scan is refused in the words of the disk.
+var _ = Describe("coach codesignal: an untracked policy file at the default path in another case", func() {
+	It("refuses a baseline scan, on every file system", func() {
+		repo, _ := scannableRepoWithTwoCommits()
+		writeInRepo(repo, ".lousy-agents/Coach.json", singleRootPolicyJSON)
+
+		stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json", "--no-interactive")
+
+		Expect(exitCode).To(Equal(2), "stdout: %s\nstderr: %s", stdout, stderr)
+		expectTheDiskSpellingRefusal(string(stderr))
+	})
+
+	It("refuses a diff scan, on every file system", func() {
+		repo, first := scannableRepoWithTwoCommits()
+		writeInRepo(repo, ".Lousy-Agents/coach.json", singleRootPolicyJSON)
+
+		stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, "codesignal", "--base", first, "--format=json", "--no-interactive")
+
+		Expect(exitCode).To(Equal(2), "stdout: %s\nstderr: %s", stdout, stderr)
+		expectTheDiskSpellingRefusal(string(stderr))
+	})
+
+	It("is a policy gap with the cause name_case_differs in --check-project", func() {
+		repo, _ := scannableRepoWithTwoCommits()
+		writeInRepo(repo, ".lousy-agents/Coach.json", singleRootPolicyJSON)
+
+		doc, _ := checkProjectBothFormats(repo, pathWithoutNode())
+
+		Expect(doc.Checks.Policy.Code).To(Equal("policy_invalid"))
+		Expect(causeOfGap(doc, "policy_invalid")).To(Equal("name_case_differs"), "gaps: %+v", doc.Gaps)
+	})
 })

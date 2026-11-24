@@ -58,7 +58,7 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 		format:                   flags.String("format", "text", "output format: text or json"),
 		scope:                    flags.String("scope", "production", "source scope: production or all"),
 		buildTarget:              flags.String("build-target", "", "Go package pattern used to determine production reachability"),
-		projectConfig:            flags.String("project-config", "", "repository-relative path to a project-analysis config; the file must exist on disk, and a scan reads its content from disk and discloses it against HEAD; enables opt-in cross-module project facts"),
+		projectConfig:            flags.String("project-config", "", "repository-relative path to a project-analysis config; the file must exist on disk and its content is read from disk; scope.policy says whether it matches HEAD's copy; enables opt-in cross-module project facts"),
 		projectLanguage:          flags.String("project-language", "go", "project-analysis language: go or typescript"),
 		minSeverity:              flags.String("min-severity", "", "render only signals at or above this severity ("+severityFloorsHelp()+") and report how many were withheld; summary and coverage still describe the full analysis, and the exit status is unchanged"),
 		top:                      flags.String("top", "", "render only the first N signals in report order (a positive integer, applied after --min-severity; the order puts lifecycle group first, then severity) and report how many were withheld; summary and coverage still describe the full analysis, and the exit status is unchanged"),
@@ -67,7 +67,7 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 		checkProject:             &countingBoolFlag{},
 		prepareCompiler:          &countingBoolFlag{},
 		noInteractive:            flags.Bool("no-interactive", false, "treat this invocation as non-interactive even if a controlling terminal is attached: a scan's interactive compiler-setup and guided-policy-authoring offers are skipped in favor of the plain message-only remediation a piped invocation gets, and --suggest-project-config/--prepare-compiler refuse instead of prompting (also honored via a non-empty CI environment variable)"),
-		failOnIncompleteCoverage: flags.Bool("fail-on-incomplete-coverage", false, "exit 3 when required project coverage (model or bypass, on any analyzed side) is incomplete; the report is still written to stdout; under --worktree it is also incomplete when part of the working tree could not be read"),
+		failOnIncompleteCoverage: flags.Bool("fail-on-incomplete-coverage", false, "exit 3 when required project coverage (model or bypass, on any analyzed side) is incomplete, or when no project policy was read because the policy HEAD selects is absent on disk; the report is still written to stdout; under --worktree it is also incomplete when part of the working tree could not be read"),
 		worktree:                 flags.Bool("worktree", false, "analyze uncommitted supported files from the working tree on top of the analyzed revision; with no --base or --baseline it compares the working tree with HEAD"),
 	}
 	flags.Var(h.suggestProjectConfig, "suggest-project-config", "generate a project-config candidate JSON from Go module/workspace discovery at HEAD (requires --baseline; human-reviewed candidate only, never auto-applied); combined with --project-language typescript, runs an interactive guided-authoring session over discovered TypeScript roots instead of emitting a Go candidate directly")

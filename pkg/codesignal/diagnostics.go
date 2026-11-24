@@ -80,6 +80,30 @@ const (
 	DiagKindWorktreeScanIncomplete              = "worktree_scan_incomplete"
 )
 
+// DiagKindProjectPolicyAbsentOnDisk names the policy HEAD selects when the working tree holds no file there, so the scan
+// did not read it. Path is the policy HEAD selects; scope.policy names the policy the scan used instead, or is null.
+const DiagKindProjectPolicyAbsentOnDisk = "project_policy_absent_on_disk"
+
+// AbsentPolicyFallbackIgnored is the clause a project_policy_absent_on_disk message carries when a root project.json was
+// found on disk and passed over because it is not a usable Coach policy. The text report reads it from the message so
+// that the JSON report gains no field.
+const AbsentPolicyFallbackIgnored = "project.json is on disk but is not a usable Coach policy"
+
+// AbsentPolicyInAnotherCase is the clause a project_policy_absent_on_disk message carries when HEAD commits the default
+// policy only in another case than the default path, which follows it. The text report reads it from the message so
+// that the JSON report gains no field.
+const AbsentPolicyInAnotherCase = "HEAD commits it in another case than"
+
+// DiagnosticOfKind is the first diagnostic of kind, and whether there is one.
+func DiagnosticOfKind(diagnostics []Diagnostic, kind string) (Diagnostic, bool) {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Kind == kind {
+			return diagnostic, true
+		}
+	}
+	return Diagnostic{}, false
+}
+
 // SortDiagnostics orders diagnostics by path, kind, location, then message.
 // Callers that append diagnostics after Build must use this so report order
 // stays identical to Build's own sortDiagnostics pass.

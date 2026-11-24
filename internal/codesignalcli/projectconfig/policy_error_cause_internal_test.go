@@ -2,6 +2,8 @@ package projectconfig
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
@@ -33,15 +35,12 @@ func TestEveryPolicyErrorNamesARemedyOrACauseNeverBothAndNeverNeither(t *testing
 		"a read past the stderr bound":                     readError(NewGitRunner(), absent, "HEAD", "cfg.json", &gitrepo.BoundError{Kind: gitrepo.BoundStderr}),
 		"a read git could not answer":                      unansweredRead("cfg/p.json", "HEAD", newGitFailure("what the revision holds at the path", errBoom)),
 		"an entry the revision commits that is not a file": committedAsADirectory(t),
-		"a policy committed in another case":               committedInAnotherCase(t),
-		"a revision whose spellings git could not list":    WrongCaseAtRevision(failingGit, "repo", "HEAD", CanonicalPath),
+		"a policy the disk lists in another case":          listedInAnotherCase(t),
 	}
 	for name, err := range cases {
 		t.Run(name, func(t *testing.T) { requireTheErrorNamesOneOfThem(t, err) })
 	}
 }
-
-func failingGit(string, ...string) ([]byte, error) { return nil, errBoom }
 
 func committedAsADirectory(t *testing.T) error {
 	t.Helper()
@@ -54,13 +53,18 @@ func committedAsADirectory(t *testing.T) error {
 	return refusal
 }
 
-func committedInAnotherCase(t *testing.T) error {
+func listedInAnotherCase(t *testing.T) error {
 	t.Helper()
-	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, ".Lousy-Agents/Coach.json", "{}")
-	refusal := WrongCaseAtRevision(NewGitRunner(), repo, "HEAD", CanonicalPath)
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".Lousy-Agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".Lousy-Agents", "Coach.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	refusal := wrongCaseUnder(root, CanonicalPath, chosenByCoach, untracked)
 	if refusal == nil {
-		t.Fatalf("WrongCaseAtRevision = nil; want the refusal for a policy committed in another case")
+		t.Fatalf("wrongCaseUnder = nil; want the refusal for a policy the disk lists in another case")
 	}
 	return refusal
 }

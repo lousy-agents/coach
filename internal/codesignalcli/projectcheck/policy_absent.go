@@ -16,7 +16,7 @@ func judgeAbsentPolicy(run gitrepo.Runner, dir, revision string, policy policyre
 	if err != nil {
 		return policyJudgment{}, err
 	}
-	status, err := onDiskStatus(run, dir, revision, policyPath)
+	status, err := onDiskStatus(run, dir, revision, policyPath, policy.Explicit)
 	if err != nil {
 		return policyJudgment{}, err
 	}

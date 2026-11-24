@@ -19,7 +19,6 @@ var _ = Describe("coach codesignal --baseline (TypeScript): a scan whose policy 
 		commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersWithoutImport)
 		commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
 		commitFile(repo, coachConfigPath, goLayerPolicyConfigJSON)
-		Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
 	})
 
 	It("prints a remediation that does not name the discovered policy with --project-config", func() {
@@ -45,6 +44,7 @@ var _ = Describe("coach codesignal --baseline (TypeScript): a scan whose policy 
 		_, stderr, _ := runCoachCodesignalBaselineEnv(repo, path, "--project-language", "typescript", "--format=json")
 
 		args := codesignalArgsFromRemediationLine(stderr)
+		Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
 		stdout, checkStderr, exitCode := runCoachCheckProjectEnv(repo, path, append(args, "--format", "json")...)
 
 		Expect(exitCode).To(Equal(0), "stderr: %s", checkStderr)

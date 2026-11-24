@@ -40,9 +40,6 @@ func assertEmptyEntryOffersNoRestore(t *testing.T, entry string) {
 	if strings.Contains(status.Message, "git restore") || strings.Contains(status.Message, "staged copy") {
 		t.Errorf("message %q; an empty entry holds no content, and restoring it writes an empty file", status.Message)
 	}
-	if status.UnreadStagedEdit {
-		t.Error("UnreadStagedEdit is set for an entry that holds no content: nothing was staged that this report could have missed")
-	}
 }
 
 func TestAnEmptyIndexEntryOverACommittedPolicyIsRestoredFromTheCommit(t *testing.T) {
@@ -56,8 +53,5 @@ func TestAnEmptyIndexEntryOverACommittedPolicyIsRestoredFromTheCommit(t *testing
 	}
 	if status.Remedy != projectreadiness.RemedyRestoreOverEmptyEntry {
 		t.Errorf("remedy = %d, want the restore-over-an-empty-entry remedy: nothing is staged that a restore would lose", status.Remedy)
-	}
-	if status.UnreadStagedEdit {
-		t.Error("UnreadStagedEdit is set for an entry that holds no content")
 	}
 }

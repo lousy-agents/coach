@@ -146,7 +146,7 @@ var _ = Describe("coach codesignal --worktree exits 3 when part of the working t
 
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 			help := string(stdout) + string(stderr)
-			Expect(help).To(ContainSubstring("exit 3 when required project coverage (model or bypass, on any analyzed side) is incomplete; the report is still written to stdout"))
+			Expect(help).To(ContainSubstring("exit 3 when required project coverage (model or bypass, on any analyzed side) is incomplete, or when no project policy was read because the policy HEAD selects is absent on disk; the report is still written to stdout"))
 			Expect(help).To(ContainSubstring("under --worktree it is also incomplete when part of the working tree could not be read"),
 				"the exit-3 sentence is followed by the working-tree rule")
 		})

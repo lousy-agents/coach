@@ -48,5 +48,15 @@ func prepareCompilerMiseTypeScript(dir string, stdin, stdout, stderr *os.File, p
 	ctx, stop := interruptibleContext()
 	defer stop()
 	result := tssetup.RunPrepareCompilerMiseSetup(ctx, dir, revision, policy, readiness, stdin, stderr)
-	return reportPrepareCompilerMiseResult(result, revision, policy.Path, stderr)
+	return reportPrepareCompilerMiseResult(result, revision, judgedPolicyPath(dir, revision, policy), stderr)
+}
+
+// judgedPolicyPath is the path whose policy readiness judged, so that a restore it offers names the file to restore. A
+// path discovery cannot name leaves the policy's own path, which is empty for a discovered policy.
+func judgedPolicyPath(dir, revision string, policy policyref.Ref) string {
+	path, err := projectcheck.JudgedPolicyPath(dir, revision, policy)
+	if err != nil {
+		return policy.Path
+	}
+	return path
 }
