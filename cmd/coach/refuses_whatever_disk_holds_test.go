@@ -5,19 +5,16 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-func TestARefusalOfTheCommittedCanonicalPolicyStandsOnlyWhenItIsAboutThePath(t *testing.T) {
+func TestOnlyAnOperationalFailureToReadTheCommittedCanonicalPolicyStands(t *testing.T) {
 	invalid := &projectconfig.ConfigError{Kind: projectconfig.KindInvalid}
-	wrongCase := &projectconfig.ConfigError{Kind: projectconfig.KindInvalid, PolicyCause: projectreadiness.CauseNameCaseDiffers}
 	tests := []struct {
 		name  string
 		fatal error
 		want  bool
 	}{
 		{"a refusal of the copy", invalid, false},
-		{"a policy committed in another case", wrongCase, true},
 		{"an operational failure, which is no refusal of the copy", errors.New("git: could not run"), true},
 	}
 	for _, tt := range tests {

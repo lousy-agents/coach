@@ -6,13 +6,6 @@ import (
 	"testing"
 )
 
-func requireTheIndexLeftUnread(t *testing.T, status *ConfigError, why string) {
-	t.Helper()
-	if !status.UnreadStagedEdit {
-		t.Errorf("UnreadStagedEdit = false; %s", why)
-	}
-}
-
 // GitFailure words the failure for the user, and keeps git's own error behind it, so
 // a caller that has to classify the failure can reach the error and not only the text.
 func TestAGitFailureKeepsGitsOwnErrorReachable(t *testing.T) {

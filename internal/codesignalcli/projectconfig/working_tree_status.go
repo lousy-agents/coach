@@ -26,12 +26,9 @@ func workingTreeStatus(run gitrepo.Runner, dir, revision, repoPath string) (*Con
 	}
 	judgment := judgeRestore(run, dir, revision, repoPath)
 	judged := *found
-	judged.FromWorkingTree = true
-	judged.UnreadStagedEdit = judgment.indexEntryUnread
 	if judgment.failure != nil && found.Kind == KindMissing {
 		// A failed question changes the outcome only where an offer depends on it. For a path the
-		// working tree found unusable no offer is made, so the failure is not an operational error:
-		// UnreadStagedEdit already says the index could not be ruled out.
+		// working tree found unusable no offer is made, so the failure is not an operational error.
 		judged.GitFailure = judgment.failure
 	}
 	offer, offered := restoreOfferFor(judgment, revision, found, repoPath)

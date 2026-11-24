@@ -8,14 +8,10 @@ import (
 )
 
 // UncommittedPolicyState is what is true of a --project-config policy that is in the working tree and that the analyzed
-// revision does not hold: what the scan says, the stable word for it, and whether the index holds work for the path.
+// revision does not hold: what the scan says and the stable word for it.
 type UncommittedPolicyState struct {
 	Message string
 	Cause   projectreadiness.PolicyCause
-	// HeldByTheIndex is whether the index holds a staged copy of the policy or an unresolved conflict for it. The file in
-	// the working tree is then not the whole of what is held at the path, so a report that read the file has not read what
-	// the index holds, and the path stays among the changes it did not read.
-	HeldByTheIndex bool
 }
 
 // UncommittedPolicyInIndex is UncommittedPolicy for a policy that is on disk, with what the index holds for the path
@@ -40,11 +36,8 @@ func UncommittedPolicyInIndex(run gitrepo.Runner, dir, revision, repoPath string
 
 // stateAmong is the state of an uncommitted policy given the entries the index holds for it that carry content.
 func stateAmong(entries []gitrepo.IndexEntry, uncommitted UncommittedPolicyState, revision, repoPath string) UncommittedPolicyState {
-	switch {
-	case holdsUnmergedEntry(entries):
-		return UncommittedPolicyState{Message: unmergedOnDiskMessage(repoPath, revision), Cause: projectreadiness.CauseMergeConflict, HeldByTheIndex: true}
-	case len(entries) > 0:
-		uncommitted.HeldByTheIndex = true
+	if holdsUnmergedEntry(entries) {
+		return UncommittedPolicyState{Message: unmergedOnDiskMessage(repoPath, revision), Cause: projectreadiness.CauseMergeConflict}
 	}
 	return uncommitted
 }

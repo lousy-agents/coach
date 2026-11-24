@@ -6,7 +6,6 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
@@ -43,13 +42,12 @@ func prepareProjectAnalysis(dir, revision string, named policyref.Ref, language 
 	return loadPreparedProject(dir, revision, discoveredSource(selection), language, projectSelectionDiagnostics(selection), disk, ports)
 }
 
-// refusesWhateverDiskHolds is whether a refusal of the committed canonical policy stands whatever the working tree
-// holds. The content of the committed copy never decides a scan, since the policy on disk is used or none is, but a
-// refusal that is about the path, not about the copy, stands: a policy committed in another case is a policy the scan
-// cannot read.
+// refusesWhateverDiskHolds is whether a failure to read the committed canonical policy stands whatever the working tree
+// holds. A refusal of the committed copy never decides a scan, since the policy on disk is used or none is; an
+// operational failure is no refusal of the copy, and stands.
 func refusesWhateverDiskHolds(fatal error) bool {
 	var refusal *projectconfig.ConfigError
-	return !errors.As(fatal, &refusal) || refusal.PolicyCause == projectreadiness.CauseNameCaseDiffers
+	return !errors.As(fatal, &refusal)
 }
 
 // discoveredSource is the policy the revision selects. A committed canonical policy that is not usable still is the

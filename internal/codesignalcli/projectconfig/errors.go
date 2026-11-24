@@ -54,18 +54,9 @@ type ConfigError struct {
 	// callers that have to tell the cases apart. It is MissingUnset for every
 	// other kind. It is not PolicyCause, the stable word the readiness result carries.
 	Missing MissingCause
-	// FromWorkingTree is set when the working tree, not the analyzed revision,
-	// produced this error. A caller that holds it does not need to look at the
-	// working tree for the same policy again.
-	FromWorkingTree bool
 	// UnusableOnDisk is set when the file on disk is a policy that cannot be used for what it holds: it is not valid or
 	// is over the size limit. The way out is to fix that file, in words, whatever the revision holds at the path.
 	UnusableOnDisk bool
-	// UnreadStagedEdit is set when the working tree could not supply the
-	// policy and the policy is committed, and the index holds an edit to it that
-	// nothing has read, or git could not say it holds none. A report that rests
-	// on this error does not reflect that edit.
-	UnreadStagedEdit bool
 	// Blocker is, for a policy missing because a file stands where a directory of its path should be, that file's
 	// path. It is empty for every other error.
 	Blocker string

@@ -25,7 +25,7 @@ func TestAGitFailureAboutAPathTheWorkingTreeRefusedIsNotAnOperationalFailure(t *
 	if err != nil || status == nil || status.Kind != KindInvalid {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want the refusal of a directory where a file should be", status, err)
 	}
-	if status.GitFailure != nil || !status.UnreadStagedEdit {
-		t.Errorf("GitFailure = %v, UnreadStagedEdit = %v; want no operational failure and the index left unread", status.GitFailure, status.UnreadStagedEdit)
+	if status.GitFailure != nil {
+		t.Errorf("GitFailure = %v; want no operational failure", status.GitFailure)
 	}
 }

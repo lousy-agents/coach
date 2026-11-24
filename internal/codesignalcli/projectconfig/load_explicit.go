@@ -43,7 +43,6 @@ func OnDiskStatus(run gitrepo.Runner, dir, revision, repoPath string, named bool
 			return nil, err
 		}
 		if respelled != nil {
-			respelled.FromWorkingTree = true
 			return respelled, nil
 		}
 	}

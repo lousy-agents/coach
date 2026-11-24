@@ -28,8 +28,8 @@ func TestAnUncommittedPolicyWhoseIndexEntryGitCannotListGivesNoAdvice(t *testing
 	if err == nil {
 		t.Fatal("UncommittedPolicyInIndex returned no error for an index git could not list: the caller must report a failure of git, not a verdict about the policy")
 	}
-	if state.Cause != projectreadiness.CauseGitUnreadable || state.HeldByTheIndex {
-		t.Errorf("cause %q, held %v; want git_unreadable and not held, because nothing is known of the index", state.Cause, state.HeldByTheIndex)
+	if state.Cause != projectreadiness.CauseGitUnreadable {
+		t.Errorf("cause %q; want git_unreadable, because nothing is known of the index", state.Cause)
 	}
 	requireWords(t, state.Message, "Coach could not check what the index holds for it", "gives no advice")
 	requireNoWords(t, state.Message, "commit the file", "resolve the conflict")
@@ -40,7 +40,7 @@ func TestAnUncommittedPolicyWhoseSubmoduleQuestionGitCannotAnswerStillGivesNoAdv
 
 	state, err := UncommittedPolicyInIndex(fake.run, "repo", "HEAD", uncommittedPolicyPath)
 
-	if err == nil || state.Cause != projectreadiness.CauseGitUnreadable || state.HeldByTheIndex {
-		t.Errorf("UncommittedPolicyInIndex = cause %q, held %v, error %v; want git_unreadable, not held, and an error", state.Cause, state.HeldByTheIndex, err)
+	if err == nil || state.Cause != projectreadiness.CauseGitUnreadable {
+		t.Errorf("UncommittedPolicyInIndex = cause %q, error %v; want git_unreadable and an error", state.Cause, err)
 	}
 }
