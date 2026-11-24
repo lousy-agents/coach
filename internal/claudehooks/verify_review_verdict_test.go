@@ -108,3 +108,43 @@ func runVerifyReviewVerdict(t *testing.T, lastAssistantMessage string) string {
 	}
 	return stdout.String()
 }
+
+// TestVerifyReviewVerdict_TokenBoundary pins the word boundary that follows
+// PASS/FINDINGS in the first non-empty line: the hook matches it with a bash
+// regex rather than grep's \b, so each side of the boundary needs a row.
+func TestVerifyReviewVerdict_TokenBoundary(t *testing.T) {
+	cases := []struct {
+		name    string
+		message string
+		blocked bool
+	}{
+		{"PASS alone", "PASS", false},
+		{"PASS then newline", "PASS\nbody", false},
+		{"PASS then period", "PASS.", false},
+		{"PASS then colon", "PASS: verified", false},
+		{"PASS then space", "PASS -- ok", false},
+		{"PASS then tab", "PASS\tok", false},
+		{"FINDINGS alone", "FINDINGS", false},
+		{"FINDINGS then newline", "FINDINGS\n## Reviewer Findings", false},
+		{"FINDINGS then colon", "FINDINGS: 2", false},
+		{"PASSED", "PASSED", true},
+		{"PASSING", "PASSING", true},
+		{"PASSWORD", "PASSWORD", true},
+		{"PASS underscore suffix", "PASS_X", true},
+		{"PASS digit suffix", "PASS2", true},
+		{"FINDINGSX", "FINDINGSX", true},
+		{"FINDINGS underscore suffix", "FINDINGS_X", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout := runVerifyReviewVerdict(t, tc.message)
+			if tc.blocked {
+				assertBlockDecision(t, stdout)
+				return
+			}
+			if strings.TrimSpace(stdout) != "" {
+				t.Fatalf("expected %q to be allowed with no stdout; got: %q", tc.message, stdout)
+			}
+		})
+	}
+}
