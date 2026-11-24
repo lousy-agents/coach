@@ -66,3 +66,22 @@ var _ = Describe("RequiredCoverageIncomplete for a report without provenance", f
 			&codesignal.Report{ProjectProvenance: provenanceWithCoverage("complete", "incomplete")}, true),
 	)
 })
+
+var _ = Describe("RequiredCoverageIncomplete for a policy that HEAD selects and the working tree lacks", func() {
+	absent := []codesignal.Diagnostic{{Kind: codesignal.DiagKindProjectPolicyAbsentOnDisk}}
+	policyRead := codesignal.Scope{Policy: &codesignal.PolicyScope{Path: "project.json"}}
+
+	DescribeTable("counts only when no project policy was read, in any scan mode",
+		func(report *codesignal.Report, want bool) {
+			Expect(codesignal.RequiredCoverageIncomplete(report)).To(Equal(want))
+		},
+		Entry("the diagnostic with no policy read is incomplete",
+			&codesignal.Report{Diagnostics: absent}, true),
+		Entry("the same report in a --worktree scan is incomplete too",
+			&codesignal.Report{Scope: codesignal.Scope{Worktree: &codesignal.WorktreeScope{}}, Diagnostics: absent}, true),
+		Entry("the diagnostic with a policy read from disk in its place is complete",
+			&codesignal.Report{Scope: policyRead, Diagnostics: absent}, false),
+		Entry("no diagnostic and no policy is complete",
+			&codesignal.Report{}, false),
+	)
+})

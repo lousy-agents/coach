@@ -22,7 +22,7 @@ func renderPolicyDisclosure(b *strings.Builder, report *codesignal.Report) {
 		}
 	}
 	if hasAbsent {
-		b.WriteString(absentPolicyWarning(absent.Path, policy) + "\n")
+		b.WriteString(absentPolicyWarning(absent, policy) + "\n")
 	}
 }
 
