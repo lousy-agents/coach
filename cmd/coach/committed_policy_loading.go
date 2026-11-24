@@ -13,7 +13,7 @@ func refuseExplicitPolicyMissingOnDisk(dir, revision string, source policyref.Re
 	if !source.Explicit || source.Path == "" {
 		return nil
 	}
-	_, err := ports.loader(source.JudgedOnDisk())(dir, revision, source.Path)
+	_, err := ports.loadExplicit(dir, revision, source.Path)
 	return err
 }
 

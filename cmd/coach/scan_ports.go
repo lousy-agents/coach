@@ -16,9 +16,8 @@ import (
 // answer a real repository cannot provide passes its own instead of replacing a
 // package variable.
 type scanPorts struct {
-	discover       func(dir, revision string) (projectconfig.Selection, error)
-	loadExplicit   func(dir, revision, repoPath string) (json.RawMessage, error)
-	loadDiscovered func(dir, revision, repoPath string) (json.RawMessage, error)
+	discover     func(dir, revision string) (projectconfig.Selection, error)
+	loadExplicit func(dir, revision, repoPath string) (json.RawMessage, error)
 	// readCommitted says what the revision holds at a path as data, never as a refusal: it is how the scan compares
 	// the policy on disk with HEAD's copy.
 	readCommitted func(dir, revision, repoPath string) (projectconfig.CommittedCopy, error)
@@ -39,7 +38,6 @@ func defaultScanPorts() scanPorts {
 	return scanPorts{
 		discover:            projectconfig.Discover,
 		loadExplicit:        projectconfig.LoadExplicit,
-		loadDiscovered:      projectconfig.Load,
 		readCommitted:       projectconfig.ReadCommittedCopy,
 		selectOnDisk:        projectconfig.SelectOnDisk,
 		resolveBackend:      codesignalcli.ResolveProjectBackend,
@@ -62,14 +60,4 @@ func lookupRegisteredBackend(language string) codesignalcli.ProjectBackend {
 	default:
 		return nil
 	}
-}
-
-// loader is the function that reads the policy a selection names: an explicit
-// --project-config is read through the on-disk check, a discovered one at the
-// revision.
-func (p scanPorts) loader(explicit bool) func(dir, revision, repoPath string) (json.RawMessage, error) {
-	if explicit {
-		return p.loadExplicit
-	}
-	return p.loadDiscovered
 }
