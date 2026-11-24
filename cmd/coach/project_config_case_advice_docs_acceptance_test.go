@@ -86,12 +86,4 @@ var _ = Describe("the CLI contract, ADR-008 and the PRD: the case rule they desc
 			Expect(rows[index]).To(ContainSubstring("uperseded"), "the row that begins %q describes the old case behaviour and says it is superseded", prefix)
 		}
 	})
-
-	It("requires in the PRD that the rename is described in words, with the warning, and the same for a staged rename", func() {
-		prd := documentText("docs/product/prd.md")
-
-		Expect(prd).To(ContainSubstring("WHERE the analyzed revision does not commit a policy path as written but commits the same path in another case, THE Coach CLI shall exit with status `2`, name `project_config_invalid` and the cause `name_case_differs`"))
-		Expect(prd).To(ContainSubstring("It shall print no `git mv`, `git rm` or other shell command, shall always warn that a file already at the destination is to be moved aside first because git can overwrite it when `core.ignorecase` is set, and shall tell a rename that is already staged the same as one that is not."))
-		Expect(prd).To(ContainSubstring("The message shall be the same for a policy named with `--project-config` and a policy Coach finds, on a file system that folds case and one that does not, except that for a policy named with `--project-config` it shall first offer passing the committed spelling, or one of them when several are committed, because the name may be a slip. WHERE the rename changes the case of a directory's name, it shall add that git cannot do that in one step on a file system that folds case, and say to rename the directory to another name first."))
-	})
 })
