@@ -232,9 +232,6 @@ var _ = Describe("coach codesignal narrowing with --fail-on-incomplete-coverage"
 
 	BeforeEach(func() {
 		ports = defaultScanPorts()
-		ports.loadExplicit = func(string, string, string) (json.RawMessage, error) {
-			return json.RawMessage(`{"schema_version":"1","roots":["."]}`), nil
-		}
 		ports.resolveBackend = func(string) error {
 			return &codesignalcli.ProjectBackendUnavailableError{
 				Message: `coach codesignal: no project-analysis backend is available for language "rust" yet (project_backend_unavailable)`,
@@ -257,6 +254,7 @@ var _ = Describe("coach codesignal narrowing with --fail-on-incomplete-coverage"
 		func(wantRendered int, wantWithheld string, narrowing ...string) {
 			repo := newTempGitRepo()
 			commitFile(repo, "tangle.go", nestedIfs("tangle", 6))
+			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`)
 
 			fullStdout, fullExit := runInRepo(repo)
 			Expect(fullExit).To(Equal(3))

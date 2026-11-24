@@ -18,7 +18,6 @@ const (
 
 	policyDiffersWarning    = "WARNING: the project policy on disk differs from HEAD's; this scan used the policy on disk, so its result can differ from CI, which reads the committed policy."
 	policyNotCommittedWarn  = "WARNING: the project policy .lousy-agents/coach.json is on disk and not committed at HEAD; this scan used it."
-	policyMissingOnDiskWarn = "WARNING: .lousy-agents/coach.json is committed at HEAD and missing on disk; this scan used the committed copy."
 	policyQualifiedAllClear = "No active CodeSignal findings, but the project policy on disk differs from HEAD."
 	policyUnqualifiedClear  = "No active CodeSignal findings."
 	policyTestWorktreeRev   = "0123456789abcdef0123"
@@ -150,7 +149,6 @@ var _ = Describe("ReportText project policy disclosure (#168 A2a)", func() {
 		Entry("zero cause and matches_head false reads as differs from HEAD", scopePolicy(false, codesignal.PolicyCauseUnset), policyTestPrefix+"differs from HEAD.", policyDiffersWarning),
 		Entry("differs from HEAD", scopePolicy(false, codesignal.PolicyCauseDiffersFromHead), policyTestPrefix+"differs from HEAD.", policyDiffersWarning),
 		Entry("not committed at HEAD", scopePolicy(false, codesignal.PolicyCauseNotCommitted), policyTestPrefix+"not committed at HEAD.", policyNotCommittedWarn),
-		Entry("committed at HEAD and missing on disk", scopePolicy(false, codesignal.PolicyCauseMissingOnDisk), policyTestPrefix+"differs from HEAD.", policyMissingOnDiskWarn),
 	)
 
 	DescribeTable("a policy path that holds a control character is shown quoted and escaped, so the text carries no line break or escape",
@@ -175,10 +173,6 @@ var _ = Describe("ReportText project policy disclosure (#168 A2a)", func() {
 			`WARNING: the project policy "my\nconfig.json" is on disk and not committed at HEAD; this scan used it.`),
 		Entry("an escape byte, in the not-committed WARNING", "my\x1bconfig.json", codesignal.PolicyCauseNotCommitted, `"my\x1bconfig.json"`, "not committed at HEAD.",
 			`WARNING: the project policy "my\x1bconfig.json" is on disk and not committed at HEAD; this scan used it.`),
-		Entry("a line break, in the missing-on-disk WARNING", "my\nconfig.json", codesignal.PolicyCauseMissingOnDisk, `"my\nconfig.json"`, "differs from HEAD.",
-			`WARNING: "my\nconfig.json" is committed at HEAD and missing on disk; this scan used the committed copy.`),
-		Entry("an escape byte, in the missing-on-disk WARNING", "my\x1bconfig.json", codesignal.PolicyCauseMissingOnDisk, `"my\x1bconfig.json"`, "differs from HEAD.",
-			`WARNING: "my\x1bconfig.json" is committed at HEAD and missing on disk; this scan used the committed copy.`),
 	)
 
 	DescribeTable("the verdict of a result with no findings",
@@ -196,8 +190,6 @@ var _ = Describe("ReportText project policy disclosure (#168 A2a)", func() {
 		Entry("a zero-cause policy with matches_head false qualifies the all-clear", scopePolicy(false, codesignal.PolicyCauseUnset), policyQualifiedAllClear),
 		Entry("a policy not committed at HEAD qualifies the all-clear", scopePolicy(false, codesignal.PolicyCauseNotCommitted),
 			"No active CodeSignal findings, but the project policy on disk is not committed at HEAD."),
-		Entry("a policy missing on disk qualifies the all-clear", scopePolicy(false, codesignal.PolicyCauseMissingOnDisk),
-			"No active CodeSignal findings, but the project policy is missing on disk and the committed copy was used."),
 	)
 
 	When("the policy differs from HEAD and another cause already qualifies the all-clear", func() {
@@ -249,6 +241,51 @@ var _ = Describe("ReportJSON project policy cause (#168 A2a)", func() {
 		Entry("same as HEAD", scopePolicy(true, codesignal.PolicyCauseSameAsHead), "same_as_head"),
 		Entry("differs from HEAD", scopePolicy(false, codesignal.PolicyCauseDiffersFromHead), "differs_from_head"),
 		Entry("not committed", scopePolicy(false, codesignal.PolicyCauseNotCommitted), "not_committed"),
-		Entry("missing on disk", scopePolicy(false, codesignal.PolicyCauseMissingOnDisk), "missing_on_disk"),
 	)
+})
+
+var _ = Describe("ReportText names the policy HEAD selects when the working tree holds none (#168 A3)", func() {
+	absentFromDisk := func(layout policyLayout, policy *codesignal.PolicyScope, path string) string {
+		report := policyReport(layout, policy)
+		report.Diagnostics = []codesignal.Diagnostic{{Path: path, Kind: codesignal.DiagKindProjectPolicyAbsentOnDisk}}
+		return ReportText(report)
+	}
+
+	for _, layout := range policyLayouts {
+		It("renders the "+layout.name+" text of a file-local scan with no policy line and a WARNING that names the absent policy", func() {
+			text := absentFromDisk(layout, nil, policyTestPath)
+
+			Expect(linesAfterSummary(layout, text, 1)).To(Equal([]string{
+				"WARNING: .lousy-agents/coach.json is committed at HEAD and absent on disk; this scan used no project policy, so its result can differ from CI, which reads the committed policy.",
+			}), "text:\n%s", text)
+			Expect(text).NotTo(MatchRegexp(`(?m)^policy: `))
+		})
+
+		It("renders the "+layout.name+" text of a fallback with one WARNING that names the absent policy and the policy used, not the generic one", func() {
+			fallback := &codesignal.PolicyScope{Path: "project.json", Digest: policyTestDigest, Cause: codesignal.PolicyCauseDiffersFromHead}
+
+			text := absentFromDisk(layout, fallback, policyTestPath)
+
+			Expect(linesAfterSummary(layout, text, 2)).To(Equal([]string{
+				"policy: project.json (pcfg_24ee6328b822), differs from HEAD.",
+				"WARNING: .lousy-agents/coach.json is committed at HEAD and absent on disk; this scan used project.json instead, so its result can differ from CI, which reads the committed policy.",
+			}), "text:\n%s", text)
+			Expect(strings.Count(text, "WARNING")).To(Equal(1))
+		})
+
+		It("renders the "+layout.name+" text of an uncommitted fallback with both the not-committed and the absent WARNING", func() {
+			fallback := &codesignal.PolicyScope{Path: "project.json", Digest: policyTestDigest, Cause: codesignal.PolicyCauseNotCommitted}
+
+			text := absentFromDisk(layout, fallback, policyTestPath)
+
+			Expect(strings.Count(text, "WARNING")).To(Equal(2), "text:\n%s", text)
+			Expect(text).To(ContainSubstring("WARNING: the project policy project.json is on disk and not committed at HEAD; this scan used it.\n"))
+		})
+	}
+
+	It("keeps a verdict with no findings qualified when the policy HEAD selects is absent on disk", func() {
+		text := absentFromDisk(policyLayouts[0], nil, policyTestPath)
+
+		Expect(text).NotTo(ContainSubstring("\n" + policyUnqualifiedClear + "\n"))
+	})
 })

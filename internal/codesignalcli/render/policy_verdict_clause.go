@@ -17,8 +17,6 @@ func policyVerdictClause(report *codesignal.Report) string {
 	switch effectivePolicyCause(policy) {
 	case codesignal.PolicyCauseNotCommitted:
 		return "the project policy on disk is not committed at HEAD"
-	case codesignal.PolicyCauseMissingOnDisk:
-		return "the project policy is missing on disk and the committed copy was used"
 	case codesignal.PolicyCauseHeadUnreadable:
 		return "HEAD's copy of the project policy could not be read"
 	}

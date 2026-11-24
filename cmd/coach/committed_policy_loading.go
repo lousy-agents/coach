@@ -6,19 +6,15 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// loadCommittedPolicy reads the policy the analyzed revision holds for source, refusing one that is not usable. A
-// discovered source names a path discovery found committed, and an empty one means nothing is. It is the policy a scan
-// uses when the working tree selects none, so a missing or unusable file, a path that cannot name a policy, and a file
-// inside a submodule checkout keep the refusal they always had.
-func loadCommittedPolicy(dir, revision string, source policyref.Ref, ports scanPorts) (committedPolicy, error) {
-	if source.Path == "" {
-		return committedPolicy{}, nil
+// refuseExplicitPolicyMissingOnDisk refuses a named policy the working tree does not hold: the loader judges the path on
+// disk, so a missing file, a path that cannot name a policy, and a file inside a submodule checkout are refused. A
+// discovered policy deleted on disk is never read from the commit, so it has no refusal here.
+func refuseExplicitPolicyMissingOnDisk(dir, revision string, source policyref.Ref, ports scanPorts) error {
+	if !source.Explicit || source.Path == "" {
+		return nil
 	}
-	content, err := ports.loader(source.JudgedOnDisk())(dir, revision, source.Path)
-	if err != nil {
-		return committedPolicy{}, err
-	}
-	return committedPolicy{path: source.Path, content: content}, nil
+	_, err := ports.loader(source.JudgedOnDisk())(dir, revision, source.Path)
+	return err
 }
 
 // readHeadCopy is what the revision holds at the path of a policy that is usable on disk. It is read for disclosure

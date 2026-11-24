@@ -2,6 +2,7 @@ package codesignalcli
 
 import (
 	"path/filepath"
+	"slices"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -15,12 +16,12 @@ import (
 // filter keeps. A root is judged only by its own paths. The scope filter runs
 // once for the source of every root that a configuration file or the policy did
 // not already decide.
-func (v *WorktreeView) hidesInScope(hiddenByRoot map[string][]string, policyPath string) map[string]string {
+func (v *WorktreeView) hidesInScope(hiddenByRoot map[string][]string, policyPaths ...string) map[string]string {
 	verdicts := make(map[string]string, len(hiddenByRoot))
 	sourcesByRoot := map[string][]gitrepo.SelectedFile{}
 	var allSources []gitrepo.SelectedFile
 	for root, hidden := range hiddenByRoot {
-		configHidden, sources := classifyHidden(hidden, policyPath)
+		configHidden, sources := classifyHidden(hidden, policyPaths...)
 		switch {
 		case configHidden:
 			verdicts[root] = codesignal.HidesInScopeYes
@@ -43,9 +44,9 @@ func (v *WorktreeView) hidesInScope(hiddenByRoot map[string][]string, policyPath
 
 // classifyHidden separates the hidden paths the overlay or the policy reads
 // directly from the source files whose scope is still to be decided.
-func classifyHidden(hidden []string, policyPath string) (configHidden bool, sources []gitrepo.SelectedFile) {
+func classifyHidden(hidden []string, policyPaths ...string) (configHidden bool, sources []gitrepo.SelectedFile) {
 	for _, name := range hidden {
-		if name == policyPath || (!withinNodeModules(name) && projectmodel.IsConfigInput(name)) {
+		if slices.ContainsFunc(policyPaths, func(policy string) bool { return gitrepo.SamePath(name, policy) }) || (!withinNodeModules(name) && projectmodel.IsConfigInput(name)) {
 			return true, nil
 		}
 		if language, ok := semantics.LanguageForExtension(filepath.Ext(name)); ok && !withinNodeModules(name) {
