@@ -276,7 +276,10 @@ except for the policy-candidate document on the guided-authoring path.
   spelling, compared case-folded on every file system, so the answer is the same
   whatever the file system or `core.ignorecase`. The message names the spelling
   on disk and the path Coach reads and says in words to rename the file on disk
-  or pass the spelling on disk; it prints no command. A spelling that differs
+  or pass the spelling on disk; it prints no command. For a policy git tracks,
+  it adds to rename it with git's own move: on macOS, where git ignores case, a
+  rename made on disk alone is not recorded, and a Linux CI checkout keeps the
+  old spelling. A spelling that differs
   only from the one committed at `HEAD` is disclosed with a WARNING, not
   refused, so a rename that fixes the case works before you record it. See the
   [CLI contract](./docs/cli-codesignal.md#commands).
