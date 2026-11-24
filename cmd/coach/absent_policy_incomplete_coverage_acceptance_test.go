@@ -15,7 +15,7 @@ const failOnIncompleteCoverageFlag = "--fail-on-incomplete-coverage"
 // committed. An agent that deletes the policy must not get a clean exit from the hook that exists to catch it.
 var _ = Describe("a policy HEAD selects that is absent on disk counts as incomplete coverage (#168)", func() {
 	for _, mode := range scopePolicyModes {
-		It("#168: under "+mode.name+", a canonical policy committed at HEAD and deleted on disk exits 3 with --fail-on-incomplete-coverage and prints the report", func() {
+		It("#168: under "+mode.name+", a canonical policy committed at HEAD and deleted on disk, with no policy read, exits 3 with --fail-on-incomplete-coverage and prints the report", func() {
 			repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, goLayerPolicyConfigJSON})
 			Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
 			expectGitStatusContains(repo, " D "+coachConfigPath)
@@ -31,9 +31,10 @@ var _ = Describe("a policy HEAD selects that is absent on disk counts as incompl
 			Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
 
 			plain, plainStderr, plainExit := mode.run(repo, base, "--format=json")
-			flagged, _, _ := mode.run(repo, base, "--format=json", failOnIncompleteCoverageFlag)
+			flagged, flaggedStderr, flaggedExit := mode.run(repo, base, "--format=json", failOnIncompleteCoverageFlag)
 
 			Expect(plainExit).To(Equal(0), "stdout=%s stderr=%s", plain, plainStderr)
+			Expect(flaggedExit).To(Equal(3), "stdout=%s stderr=%s", flagged, flaggedStderr)
 			plainReport, flaggedReport := decodeCoachReport(plain), decodeCoachReport(flagged)
 			expectDiagnosticKind(plainReport, "project_policy_absent_on_disk", coachConfigPath)
 			Expect(flaggedReport.Summary).To(Equal(plainReport.Summary))
@@ -50,7 +51,7 @@ var _ = Describe("a policy HEAD selects that is absent on disk counts as incompl
 			Expect(warningLinesNaming(stdout, coachConfigPath)).NotTo(BeEmpty(), "text:\n%s", stdout)
 		})
 
-		It("#168: under "+mode.name+", the deleted canonical policy with a root project.json read instead exits 3, because the policy HEAD selects was not read", func() {
+		It("#168: under "+mode.name+", a deleted canonical policy with a committed root project.json read instead exits 0 with the flag, because a project policy was read", func() {
 			repo, base := diskPolicyRepo(
 				scopePolicyFile{coachConfigPath, diskPolicyWithoutForbiddenImports},
 				scopePolicyFile{legacyConfigPath, goLayerPolicyConfigJSON},
@@ -59,10 +60,24 @@ var _ = Describe("a policy HEAD selects that is absent on disk counts as incompl
 
 			stdout, stderr, exitCode := mode.run(repo, base, "--format=json", failOnIncompleteCoverageFlag)
 
-			Expect(exitCode).To(Equal(3), "stdout=%s stderr=%s", stdout, stderr)
+			Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
 			report := decodeCoachReport(stdout)
 			expectDiagnosticKind(report, "project_policy_absent_on_disk", coachConfigPath)
-			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "project.json was read and applied; the exit is for the policy that was not")
+			Expect(diskPolicyLayerViolations(report)).To(HaveLen(1), "project.json was read and applied")
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Not(BeNil())))
+		})
+
+		It("#168: under "+mode.name+", a deleted canonical policy with an untracked root project.json read instead exits 0 with the flag, because a project policy was read", func() {
+			repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, diskPolicyWithoutForbiddenImports})
+			Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
+			overwriteOnDisk(repo, legacyConfigPath, goLayerPolicyConfigJSON)
+			expectGitStatusContains(repo, "?? "+legacyConfigPath)
+
+			stdout, stderr, exitCode := mode.run(repo, base, "--format=json", failOnIncompleteCoverageFlag)
+
+			Expect(exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
+			expectDiagnosticKind(decodeCoachReport(stdout), "project_policy_absent_on_disk", coachConfigPath)
+			Expect(scopePolicyScopeOf(stdout)).To(HaveKeyWithValue("policy", Not(BeNil())))
 		})
 
 		It("#168: under "+mode.name+", a deleted root project.json that HEAD selects exits 3", func() {

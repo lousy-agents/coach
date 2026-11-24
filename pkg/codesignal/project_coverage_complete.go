@@ -34,7 +34,7 @@ func RequiredCoverageIncomplete(report *Report) bool {
 	if report == nil {
 		return false
 	}
-	if hasWorktreeScanIncomplete(report.Scope, report.Diagnostics) || hasProjectPolicyAbsentOnDisk(report.Diagnostics) {
+	if hasWorktreeScanIncomplete(report.Scope, report.Diagnostics) || hasPolicyAbsentWithNoneRead(report.Scope, report.Diagnostics) {
 		return true
 	}
 	if report.ProjectProvenance != nil {
@@ -85,11 +85,12 @@ func hasProjectBackendUnavailable(diags []Diagnostic) bool {
 	})
 }
 
-// hasProjectPolicyAbsentOnDisk reports whether the policy the revision selects was not read because the working tree
-// lacks it. Unlike the worktree kinds it counts in a committed scan too, because the scan applied other rules than the
-// repository committed whatever mode it ran in.
-func hasProjectPolicyAbsentOnDisk(diags []Diagnostic) bool {
-	return slices.ContainsFunc(diags, func(d Diagnostic) bool {
+// hasPolicyAbsentWithNoneRead reports whether the policy the revision selects is absent on disk and no other policy was
+// read in its place, so the scan ran file-local and applied none of the rules the repository committed. A policy read
+// from disk instead keeps the diagnostic but not the exit status. Unlike the worktree kinds it counts in a committed
+// scan too.
+func hasPolicyAbsentWithNoneRead(scope Scope, diags []Diagnostic) bool {
+	return scope.Policy == nil && slices.ContainsFunc(diags, func(d Diagnostic) bool {
 		return d.Kind == DiagKindProjectPolicyAbsentOnDisk
 	})
 }

@@ -18,6 +18,8 @@ var _ = Describe("coach codesignal refuses an unusable root project.json that st
 		description string
 		words       []string
 		make        func(repo string)
+		// needsExistingFile is a state that changes a file that is already there, so an untracked fixture creates it first.
+		needsExistingFile bool
 	}
 	replaceWith := func(body string) func(repo string) {
 		return func(repo string) { overwriteOnDiskCreatingParents(repo, legacyConfigPath, body) }
@@ -38,14 +40,14 @@ var _ = Describe("coach codesignal refuses an unusable root project.json that st
 		DeferCleanup(func() { _ = os.Chmod(path, 0o644) })
 	}
 	scenarios := []unusableFallback{
-		{"invalid JSON", []string{"not a valid project policy"}, replaceWith("{bad")},
-		{"a schema the policy rejects", []string{"not a valid project policy"}, replaceWith(`{"schema_version":"9","roots":["."]}`)},
+		{"invalid JSON", []string{"not a valid project policy"}, replaceWith("{bad"), false},
+		{"a schema the policy rejects", []string{"not a valid project policy"}, replaceWith(`{"schema_version":"9","roots":["."]}`), false},
 		{"a directory", []string{"not_a_regular_file"}, inPlace(func(path string) {
 			Expect(os.Mkdir(path, 0o755)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(path, "kept"), nil, 0o644)).To(Succeed(), "git lists a directory only when it holds a file")
-		})},
-		{"a symbolic link", []string{"symbolic_link"}, inPlace(func(path string) { Expect(os.Symlink("/etc/hostname", path)).To(Succeed()) })},
-		{"a file that cannot be read", []string{"unreadable_on_disk"}, unreadable},
+		}), false},
+		{"a symbolic link", []string{"symbolic_link"}, inPlace(func(path string) { Expect(os.Symlink("/etc/hostname", path)).To(Succeed()) }), false},
+		{"a file that cannot be read", []string{"unreadable_on_disk"}, unreadable, true},
 	}
 
 	for _, mode := range scopePolicyModes {
@@ -67,7 +69,7 @@ var _ = Describe("coach codesignal refuses an unusable root project.json that st
 			It("#168: a deleted canonical policy beside an uncommitted root project.json that is "+scenario.description+" exits 2 as project_config_invalid under "+mode.name, func() {
 				repo, base := diskPolicyRepo(scopePolicyFile{coachConfigPath, diskPolicyWithoutForbiddenImports})
 				Expect(os.Remove(filepath.Join(repo, coachConfigPath))).To(Succeed())
-				if scenario.description == "a file that cannot be read" {
+				if scenario.needsExistingFile {
 					overwriteOnDiskCreatingParents(repo, legacyConfigPath, goLayerPolicyConfigJSON)
 				}
 				scenario.make(repo)

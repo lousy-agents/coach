@@ -26,7 +26,8 @@ func judgeDiscoveredOnDisk(dir, revision string, discovery projectconfig.Selecti
 	if err := discovery.SubmoduleRefusal(); err != nil {
 		return projectconfig.DiskSelection{}, err
 	}
-	revisionSelectsCanonical := discovery.Path == projectconfig.CanonicalPath || discovery.Fatal != nil
+	// Discovery refuses (Fatal) only the canonical path, so discoveredSource names the canonical policy for it too.
+	revisionSelectsCanonical := discoveredSource(discovery).Path == projectconfig.CanonicalPath
 	return judgeOnDisk(dir, diskQuestion{
 		matters: func(path string) bool {
 			return path == projectconfig.CanonicalPath || path == discovery.Path || (path == projectconfig.DefaultPath && revisionSelectsCanonical)

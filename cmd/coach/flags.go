@@ -67,7 +67,7 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 		checkProject:             &countingBoolFlag{},
 		prepareCompiler:          &countingBoolFlag{},
 		noInteractive:            flags.Bool("no-interactive", false, "treat this invocation as non-interactive even if a controlling terminal is attached: a scan's interactive compiler-setup and guided-policy-authoring offers are skipped in favor of the plain message-only remediation a piped invocation gets, and --suggest-project-config/--prepare-compiler refuse instead of prompting (also honored via a non-empty CI environment variable)"),
-		failOnIncompleteCoverage: flags.Bool("fail-on-incomplete-coverage", false, "exit 3 when required project coverage (model or bypass, on any analyzed side) is incomplete; the report is still written to stdout"),
+		failOnIncompleteCoverage: flags.Bool("fail-on-incomplete-coverage", false, "exit 3 when required project coverage (model or bypass, on any analyzed side) is incomplete, or when no project policy was read because the policy HEAD selects is absent on disk; the report is still written to stdout"),
 		worktree:                 flags.Bool("worktree", false, "experimental: analyze uncommitted supported files from the working tree on top of the analyzed revision"),
 	}
 	flags.Var(h.suggestProjectConfig, "suggest-project-config", "generate a project-config candidate JSON from Go module/workspace discovery at HEAD (requires --baseline; human-reviewed candidate only, never auto-applied); combined with --project-language typescript, runs an interactive guided-authoring session over discovered TypeScript roots instead of emitting a Go candidate directly")
