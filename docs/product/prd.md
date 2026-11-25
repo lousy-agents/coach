@@ -79,7 +79,7 @@ In scope:
 - project policy that the user writes, read from disk as ESLint and Biome read their configuration, and disclosed when it differs from the policy at `HEAD` (section 9 records what has shipped); file-local analysis when none is selected
 - consented setup for a missing TypeScript compiler when a terminal is present
 - an honest report when analysis is incomplete
-- agent self-review before commit: a coding agent runs `coach codesignal --worktree` from a harness hook (Claude Code, OpenAI Codex or GitHub Copilot) to review its own uncommitted work, and is told its new findings (`lifecycle: introduced`) to guide it to the structural problems it introduced; the findings stay advisory; Coach ships the CLI behaviour and documents an example hook, not a hosted hook service
+- agent self-review before commit: a coding agent runs `coach codesignal --worktree` from a harness hook (Claude Code, OpenAI Codex or GitHub Copilot) to review its own uncommitted work, and is told its new findings (`lifecycle: introduced`) to guide it to the structural risks Coach flagged in what it introduced; the findings stay advisory; Coach ships the CLI behaviour and documents an example hook, not a hosted hook service
 
 Out of scope in this era:
 

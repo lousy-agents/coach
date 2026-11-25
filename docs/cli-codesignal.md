@@ -509,7 +509,7 @@ Save this as `scripts/coach-self-review.sh`. It reads the agent's event payload 
 #!/bin/sh
 # coach-self-review.sh [exit2|json]: run when a coding agent finishes a turn; the harness's payload arrives on stdin.
 # Clean means the review ran, no in-scope file went unread, and the project policy on disk is the committed one.
-# New findings (lifecycle introduced) are passed to the agent as advice, at most 10 of them in at most 4000 bytes.
+# New findings (lifecycle introduced) are passed to the agent as advice: at most 10, in whole lines of at most 4000 bytes.
 # exit2 (Claude Code, Codex): the reason goes to stderr with exit 2.
 # json (GitHub Copilot): the reason goes in {"decision":"block","reason":"..."} on stdout with exit 0.
 mode=${1:-exit2}
@@ -537,7 +537,7 @@ else
     *'"matches_head":true'*) policy=true ;;
     *) policy=missing ;;
   esac
-  new=$(printf '%s' "$report" | tr -d ' \t\r\n' | grep -o '"lifecycle":"introduced"' | wc -l | tr -d ' ')
+  new=$(printf '%s' "$report" | tr -d ' \t\r\n' | sed -n 's/.*"summary":{[^}]*"introduced_signals":\([0-9]*\).*/\1/p')
 fi
 problem=""
 case $rc in
@@ -556,14 +556,21 @@ reason=""
 if [ "${new:-0}" -gt 0 ]; then
   advice="coach found $new new finding(s) in the uncommitted changes. They are advisory: address each one, or explain why not, then stop."
   if [ $have_jq = yes ]; then
-    list=$(printf '%s' "$report" | jq -r --argjson cap "$cap" --argjson max "$max_bytes" '
+    # The first line is how many findings are listed; the rest is the list, whole lines within max_bytes.
+    listing=$(printf '%s' "$report" | jq -r --argjson cap "$cap" --argjson max "$max_bytes" '
       def clean($n): tostring | gsub("[[:cntrl:]]"; " ") | if length > $n then .[0:$n] + "..." else . end;
-      [.signals[]? | select(.lifecycle == "introduced")] as $new
-      | [$new[:$cap][] | "- \(.rule_id | clean(80)) (\(.severity | clean(16))) \(.path | clean(200))"
-          + (if (.location.end_byte // 0) > 0 then ":\(.location.start_row + 1)" else "" end)
-          + ": \(.evidence | clean(200)). \(.recommendation | clean(300))"]
-      | join("\n") | if length > $max then .[0:$max] + "\n..." else . end' 2>/dev/null)
-    unlisted=$((new > cap ? new - cap : 0))
+      [.signals[]? | select(.lifecycle == "introduced")][:$cap]
+      | map(. as $s | "- \($s.rule_id | clean(80)) (\($s.severity | clean(16))) \($s.path | clean(200))"
+          + (if ($s.location.end_byte // 0) > 0 or ($s.location.start_row // 0) > 0 then ":\($s.location.start_row + 1)" else "" end)
+          + (if $s.subject then ", \($s.subject | tostring | ltrimstr("\($s.rule_id | tostring):") | clean(120))" else "" end)
+          + ": \($s.evidence | clean(200)). \($s.recommendation | clean(300))")
+      | reduce .[] as $line ({lines: [], bytes: 0, full: false};
+          if .full or (.bytes + ($line | utf8bytelength) + 1) > $max then .full = true
+          else .lines += [$line] | .bytes += ($line | utf8bytelength) + 1 end)
+      | "\(.lines | length)\n" + (.lines | join("\n"))' 2>/dev/null)
+    listed=$(printf '%s\n' "$listing" | head -n 1); listed=${listed:-0}
+    list=$(printf '%s\n' "$listing" | tail -n +2)
+    unlisted=$((new - listed))
     advice="$advice
 $list"
     [ "$unlisted" -gt 0 ] && advice="$advice
@@ -603,14 +610,14 @@ The hook's exit-code handling:
 
 `matches_head: false` counts as not clean. The hook needs a coach build that reports `scope.policy`: v0.13.0 is the first release that does, so on an older release the hook blocks with a message instead of passing without the check. The policy file is read from disk, so an uncommitted edit that loosens `.lousy-agents/coach.json` would otherwise be reviewed against itself and pass. The hook covers uncommitted work only: a policy or code change already committed is not flagged, so review it in the pull request. `scope.policy.cause` says why the policy differs: `differs_from_head` or `not_committed` ([Policy disclosure](#policy-disclosure-scopepolicy)).
 
-Clean does not mean no findings. When the report has findings with `lifecycle: introduced`, the hook passes them to the agent through the same channel as a not-clean cause, to guide it to the structural problems it has just introduced:
+Clean does not mean no findings. When the report has findings with `lifecycle: introduced`, the hook passes them to the agent through the same channel as a not-clean cause, to guide it to the structural risks Coach flagged in what it introduced:
 
-- Up to 10 findings are listed, in report order, so the highest-ranked come first ([Report order](#report-order)). Each line gives `rule_id`, `severity`, `path:line` (the path alone for a file-level finding, whose `location` is empty), `evidence` and `recommendation`, and the reason says how many more were not listed.
-- The findings are advice, not a gate: the reason asks the agent to address each one or explain why not, and then stop. It does not tell the agent it must change the code.
+- Up to 10 findings are listed, in report order, so the highest-ranked come first ([Report order](#report-order)). Each line gives `rule_id`, `severity`, `path:line` (the path alone for a file-level finding, which has no start row), the `subject` where the finding names one (the function for a complexity finding, the import edge for a layer finding), `evidence` and `recommendation`, and the reason says how many more were not listed.
+- The findings are advice, not a gate: the reason asks the agent to address each one or explain why not, and then stop. It does not tell the agent it must change the code. Coach has not yet measured how often its findings are right, so a reasoned "why not" is a valid answer.
 - A not-clean cause comes first, and the findings follow it. With no cause and no new finding, the hook passes silently.
-- The reason is bounded: each field is cut to a fixed length, control characters become spaces, and the list is cut at 4000 bytes.
+- The reason is bounded: each field is cut to a fixed number of characters, control characters become spaces, and the list keeps whole lines within 4000 bytes (counted in UTF-8). A line that does not fit is dropped and counted among those not listed.
 - Finding text is data. In `exit2` mode it is printed with `printf '%s'`, and in `json` mode `jq --arg` encodes it, so a path or message holding `$(…)` or backticks is never run by the shell.
-- Without `jq` on `PATH`, the script cannot read the findings safely, so it counts them and asks the agent to run `coach codesignal --worktree` to read them.
+- Without `jq` on `PATH`, the script cannot read the findings safely, so it takes their number from `summary.introduced_signals` and asks the agent to run `coach codesignal --worktree` to read them.
 
 The hook needs `coach` on `PATH` (see [Install](#install)) in the environment where the agent runs its hooks; `sh` and `bash` read no startup file when they run a hook command, so `~/.bashrc` and `~/.profile` do not set it. Start the hook command with `export PATH=\"$HOME/.local/share/mise/shims:$PATH\";` (with mise), or replace `coach` in the script with its absolute path. Without either, the hook reports "coach was not found on PATH (exit 127)". Inside the JSON `command` string the quotes are escaped, as in this Claude Code entry:
 
