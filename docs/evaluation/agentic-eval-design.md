@@ -516,7 +516,7 @@ Further rules:
 
 ## 10. Running it: local mise tasks
 
-Everything runs as local `mise` tasks that a developer starts before committing. No scheduled run and no shared runner are involved. CI does not run the evaluation; hooking `eval-detection` into a CI leaf later is a separate decision (decision 15.11).
+Everything runs as local `mise` tasks that a developer starts before committing. Each task carries a `description` in `mise.toml`, following the file's conventions. No scheduled run and no shared runner are involved. CI does not run the evaluation; hooking `eval-detection` into a CI leaf later is a separate decision (decision 15.11).
 
 | Task | What it runs | Model or network | Expected wall time | Expected cost | What "pass" means before a commit |
 | --- | --- | --- | --- | --- | --- |
@@ -540,6 +540,7 @@ Each of these tasks **refuses with a clear message** when an input is missing. N
 | Input | Used by | When it is missing or wrong |
 | --- | --- | --- |
 | Docker: `docker info` succeeds; gVisor is used if `runsc` is registered | `eval-agent*` | Refuse: "Docker is required for the agent and grading sandboxes" |
+| The pinned toolchain images, present locally at their recorded digests | `eval-agent*` | Refuse, naming each missing digest and the `mise run` task that builds it. Never fall back to another image or run a smaller variant |
 | `ANTHROPIC_API_KEY` | `eval-agent*` | Refuse |
 | `EVAL_BUDGET_USD` | `eval-agent*` | Refuse when it is unset. Before any trial, print the estimate: the trial count × the $5 cap, and the trial count × the running mean cost if earlier results exist. Refuse if the cap-based estimate exceeds the budget, unless `EVAL_BUDGET_MODE=mean` is set |
 | `EVAL_MODEL` | `eval-agent*` | Refuse; there is no default model |
@@ -568,7 +569,7 @@ Every task writes `eval/results/<run_id>/` and adds `/eval/results/` to `.gitign
   - the `coach` binary's SHA-256;
   - the image digests, the private-repository SHA and the fixture SHA;
   - the model, the `claude` CLI version and the prompt and settings hashes;
-  - the parameters (T, instances, K, arms, seed);
+  - the parameters (T, instances, K, arms) and every seed: the instance-sampling seed, the trial order seed and #260's sample seed;
   - `cost_usd` and the wall time;
   - the results table, as per-arm rates ± SE, paired effects with CIs, and, for detection, per-row outcomes.
 - **`trials.jsonl`**: one trial record per line (section 7).
@@ -719,7 +720,9 @@ The row may be written only if the cost ratio against `control` is at most 1.3, 
 | H4 with H2, confirmatory tier | The claim row above, scoped to the rule families Coach checks, fixture evidence and one model | The repeat-use test: PRD §4 says "a hook's scans do not" count |
 | H3 | The pre-commit gate (`eval-detection`); per-shape recall and known misses for #260 and #205 | Precision, and the security precision gate, which PRD §12 requires "on a named corpus". Only #260's real corpus provides that |
 | H1 (secondary) | Exploratory product evidence | Any release claim |
-| `eval-agent` (development panel) | A developer's local feedback on a change | Any claim |
+| `eval-agent` (development panel) | A developer's local feedback on a change, and drift tracking by comparing saved results across commits (`eval-compare`) | Any claim |
+
+**Claims come only from `eval-agent-study`.**
 
 ## 14. Threats to validity
 
@@ -736,7 +739,7 @@ Grouped under the four headings in b.7, plus contamination.
 **Internal**
 - The extra turn and the rule text are isolated by `generic_review` (yoked) and `rules_in_prompt`.
 - Coach's output tokens are covered by reporting cost beside every effect (b.5).
-- Drift is controlled by pinning the model, CLI, image digest, Coach hash, hook script and settings.
+- Drift is controlled by pinning the model, CLI, image digest, Coach hash, hook script and settings. Drift over time is tracked by comparing saved results across commits (`eval-compare`); there is no scheduled run.
 - Treatment leakage is controlled by the binary placement and by recording leakage.
 - Faked grading is countered by an unprivileged runner, grades assembled outside the container, an all-IDs-pass rule, and a G2 guard. One gap remains: code run by the tests could forge runner output. Transcript reading covers it.
 
