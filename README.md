@@ -55,9 +55,9 @@ Copy [`scripts/coach-self-review.sh`](./docs/cli-codesignal.md#the-check) from t
 - every in-scope file was read (exit `3` means part of the project or working tree went unread);
 - the project policy on disk is the committed one (`scope.policy.matches_head` is not `false`), so an agent cannot loosen `.lousy-agents/coach.json` and have its work reviewed against the loosened policy while the edit is uncommitted. With no policy, this check always passes.
 
-A policy or code change the agent commits is not flagged; review committed changes in the pull request with `--base`. Findings stay advisory: the hook does not block on them and does not pass them to the agent. When the review is not clean, the hook asks the agent for at most one extra turn, to tell you why. It needs Coach v0.13.0 or later, the first release that reports `scope.policy`, on the `PATH` of the shell the agent runs its hooks in, which may not read `~/.bashrc`.
+A policy or code change the agent commits is not flagged; review committed changes in the pull request with `--base`. Findings stay advisory: the hook does not block on them and does not pass them to the agent. When the review is not clean, the hook asks the agent for at most one extra turn, to tell you why. It needs Coach v0.13.0 or later, the first release that reports `scope.policy`, on the `PATH` of the shell the agent runs its hooks in, which may not read `~/.bashrc`. With mise, put its shims on `PATH` where a non-interactive shell reads it, for example in `~/.profile` or `~/.zshenv`: `export PATH="$HOME/.local/share/mise/shims:$PATH"`.
 
-The script takes one argument, how the agent expects "not clean" to be reported: `exit2` for Claude Code and Codex, `json` for Copilot. Each snippet below checks that the script is there and exits `1`, which none of the three treats as a block, if it is not. The Claude Code wiring has been run in Claude Code; the Codex and Copilot wiring is written from their documentation and has not been run in those agents.
+The script takes one argument, how the agent expects "not clean" to be reported: `exit2` for Claude Code and Codex, `json` for Copilot. Each snippet below checks that the script is there and, if it is not, exits `1`, which Claude Code and Copilot document as non-blocking; the Codex documentation names only exit `0` and `2` for `Stop`. The Claude Code wiring has been run in Claude Code; the Codex and Copilot wiring is written from their documentation and has not been run in those agents.
 
 | Agent | Event | Config file | How "not clean" is reported |
 | --- | --- | --- | --- |
@@ -104,7 +104,7 @@ The script takes one argument, how the agent expects "not clean" to be reported:
 }
 ```
 
-**GitHub Copilot**, in `.github/hooks/coach-self-review.json`. The cloud agent runs on GitHub's infrastructure: it reads this file from the default branch, needs `coach` installed in its environment (for example in its setup steps), and counts the extra turn against the job's timeout. Copilot hooks in Visual Studio Code are not covered.
+**GitHub Copilot**, in `.github/hooks/coach-self-review.json`. The cloud agent runs on GitHub's infrastructure: it reads this file from the default branch, needs `coach` installed in its environment (for example in its setup steps), and counts the extra turn against the job's timeout. The cloud agent [pushes its changes to its pull request](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/start-copilot-sessions), so this hook may find little uncommitted work there; review its pull request with `coach codesignal --base <default branch>`. Copilot hooks in Visual Studio Code are not covered.
 
 ```json
 {
