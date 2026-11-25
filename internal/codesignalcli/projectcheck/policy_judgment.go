@@ -54,7 +54,7 @@ func judgePolicy(run gitrepo.Runner, dir, revision string, policy policyref.Ref)
 // --project-config the user never passed.
 func wordedForThePolicy(check projectreadiness.Check, policy policyref.Ref, path string) projectreadiness.Check {
 	if !policy.JudgedOnDisk() {
-		check.CauseText = projectconfig.WordedAsTheDefaultPolicy(check.CauseText, check.PolicyCause, path)
+		check.CauseText = projectconfig.WordedAsTheDefaultPolicy(check.CauseText, path)
 	}
 	return check
 }
