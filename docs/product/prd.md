@@ -79,7 +79,7 @@ In scope:
 - project policy that the user writes, read from disk as ESLint and Biome read their configuration, and disclosed when it differs from the policy at `HEAD` (section 9 records what has shipped); file-local analysis when none is selected
 - consented setup for a missing TypeScript compiler when a terminal is present
 - an honest report when analysis is incomplete
-- agent self-review before commit: a coding agent runs `coach codesignal --worktree` from a harness hook (Claude Code first) to review its own uncommitted work; Coach ships the CLI behaviour and documents an example hook, not a hosted hook service
+- agent self-review before commit: a coding agent runs `coach codesignal --worktree` from a harness hook (Claude Code, OpenAI Codex or GitHub Copilot) to review its own uncommitted work, and is told its new findings (`lifecycle: introduced`) to guide it to the structural problems it introduced; the findings stay advisory; Coach ships the CLI behaviour and documents an example hook, not a hosted hook service
 
 Out of scope in this era:
 
@@ -390,8 +390,8 @@ Known remaining risks from the evaluation and the epic:
 - A committed scan's result depends on the project policy file on disk, as with ESLint and Biome configuration. The JSON report's `scope.policy` names the policy the scan used (`path`, `digest`), and its `matches_head` says whether the policy selected from disk is that one, and its `cause` says how the two relate; `scope.policy` is `null` when the scan used no policy. Text output prints a `policy:` line and, when the policy used is not the committed one, a WARNING and a qualified verdict. A local edit can change a local run's result. CI enforces the policy committed in the change under test. A change that edits the policy is reviewed like an ESLint configuration change.
 - A worktree scan is a local, pre-commit check. It is not a pull-request check.
 - `--worktree` reads the project policy from the working tree, as every scan does. An uncommitted policy file, whether edited or untracked, is applied, disclosed in `scope.policy` and the text WARNING, and qualifies the verdict.
-- Agent self-review before commit (section 5) is a bet. No example hook is documented yet.
-- An agent that edits the policy can hide its own violations, because the scan reads the policy on disk. The example hook shall treat `scope.policy.matches_head: false` as not reviewed-clean: it tells the agent and surfaces it to the user. The mechanics belong in the hook documentation.
+- Agent self-review before commit (section 5) is a bet. The example hook is documented in the CLI contract's agent self-review hook section; it passes new findings to the agent as advice, not as a gate.
+- An agent that edits the policy can hide its own violations, because the scan reads the policy on disk. The example hook shall treat `scope.policy.matches_head: false` as not reviewed-clean: it tells the agent, ahead of any new findings, and surfaces it to the user. The mechanics belong in the hook documentation.
 - `project_provenance.package_manager` is read from `HEAD`, even when a listed `package.json` is read from disk. Threading the overlay through the package-manager read is a follow-up ([#608](https://github.com/lousy-agents/coach/issues/608)).
 - Under `--worktree`, the in-process line diff can mark a different line as changed than git does on repetitive text, about 7% on a repetitive corpus. `changed` is a field on each signal, and the diff may mark a neighbouring signal `changed` when a function is inserted between two others. It over-marks only, and never under-marks, apart from line-ending-only changes ([#611](https://github.com/lousy-agents/coach/issues/611)).
 - `--worktree` must run from the repository root.
