@@ -497,9 +497,50 @@ foreign-repository TypeScript journey.
 
 ## Agent self-review hook (preview)
 
-The hook in the [README](../README.md#agent-self-review-preview) runs `coach codesignal --worktree` when a Claude Code session is about to stop. It blocks the stop with a message when the review did not run or was not clean. `--worktree` is a documented flag, described in [Uncommitted work](#uncommitted-work---worktree). The PRD change that brought this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730).
+The hook in the [README](../README.md#run-the-review-when-your-coding-agent-finishes) runs `coach codesignal --worktree` when a coding agent finishes a turn. When the review did not run or was not clean, it asks the agent to continue once and tell the user why. `--worktree` is described in [Uncommitted work](#uncommitted-work---worktree). Coach ships the CLI behaviour; the hook is an example to copy, and Coach runs no hook service.
 
-Each flag in the hook's command has a reason:
+The hook has two layers: one script that decides whether the review is clean, the same for every agent, and a few lines of configuration that wire it to each agent's end-of-turn event.
+
+### The check
+
+Save this as `scripts/coach-self-review.sh`. It reads the agent's event payload on stdin and takes one argument, the way the agent expects "not clean" to be reported: `exit2` (exit `2`, reason on stderr) or `json` (a `{"decision":"block","reason":...}` object on stdout, exit `0`).
+
+```sh
+#!/bin/sh
+# coach-self-review.sh [exit2|json]: run when a coding agent finishes a turn; the harness's payload arrives on stdin.
+# Clean means the review ran, no in-scope file went unread, and the project policy on disk is the committed one.
+# exit2 (Claude Code, Codex): not clean is exit 2 with the reason on stderr.
+# json (GitHub Copilot): not clean is {"decision":"block","reason":"..."} on stdout and exit 0.
+mode=${1:-exit2}
+case "$(cat | tr -d ' \n')" in *'"stop_hook_active":true'*) exit 0 ;; esac
+root=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}
+if cd "${root:-.}" 2>/dev/null; then
+  report=$(coach codesignal --worktree --no-interactive --fail-on-incomplete-coverage --format json); rc=$?
+else
+  report=""; rc=2
+fi
+flat=$(printf '%s' "$report" | tr -d ' \n')
+problem=""
+case $rc in
+  0) case $flat in
+       *'"policy":null'*|*'"matches_head":true'*) ;;
+       *'"matches_head":false'*) problem="the project policy on disk differs from HEAD" ;;
+       *) problem="coach did not report scope.policy, so the policy check cannot run" ;;
+     esac ;;
+  1|2|127) problem="the review did not run (exit $rc)" ;;
+  *) problem="the review is incomplete: a project or working-tree input was not analyzed (exit $rc)" ;;
+esac
+[ -z "$problem" ] && exit 0
+reason="coach self-review is not clean: $problem. Tell the user."
+if [ "$mode" = json ]; then
+  printf '{"decision":"block","reason":"%s"}\n' "$reason"
+  exit 0
+fi
+echo "$reason" >&2
+exit 2
+```
+
+Each flag in the command has a reason:
 
 - `--no-interactive` makes the run unattended. Without it, a TypeScript scan could open a setup prompt that no one answers. With it, the scan falls through to message-only remediation ([--no-interactive](#commands)).
 - `--fail-on-incomplete-coverage` turns incomplete coverage into exit `3`, so an unread part of the tree cannot read as clean ([Exit codes](#exit-codes)).
@@ -507,20 +548,41 @@ Each flag in the hook's command has a reason:
 
 The hook's exit-code handling:
 
-| Exit | What the hook does |
+| Coach exit | What the hook does |
 | --- | --- |
 | `0` | The review ran. It is clean unless `scope.policy.matches_head` is `false`. A report with no `scope.policy` key makes the hook block, because the policy check could not run. `"policy":null` (no policy read) passes, and a policy that `HEAD` selects and the working tree lacks is exit `3` below, not this row. |
 | `1`, `2`, `127` | The review did not run: an operational failure (`1`), a usage error such as running outside the repository root (`2`), or `coach` not on `PATH` (`127`). The hook says so and blocks. |
 | `3` | Required coverage is incomplete: a project-level gap, part of the in-scope working tree was not read, or the policy `HEAD` selects is absent on disk and no project policy was read. Not clean. |
 | any other | Not clean. |
 
-`matches_head: false` counts as not clean. The hook needs a coach build that reports `scope.policy`: the v0.12.0 release does not, so on that release the hook blocks with a message instead of passing without the check. The policy file is read from disk, so an uncommitted edit that loosens `.lousy-agents/coach.json` would otherwise be reviewed against itself and pass. The hook covers uncommitted work only: a policy or code change already committed is not flagged, so review it in the pull request. `scope.policy.cause` says why the policy differs: `differs_from_head` or `not_committed` ([Policy disclosure](#policy-disclosure-scopepolicy)).
+`matches_head: false` counts as not clean. The hook needs a coach build that reports `scope.policy`: v0.13.0 is the first release that does, so on an older release the hook blocks with a message instead of passing without the check. The policy file is read from disk, so an uncommitted edit that loosens `.lousy-agents/coach.json` would otherwise be reviewed against itself and pass. The hook covers uncommitted work only: a policy or code change already committed is not flagged, so review it in the pull request. `scope.policy.cause` says why the policy differs: `differs_from_head` or `not_committed` ([Policy disclosure](#policy-disclosure-scopepolicy)).
 
 Clean does not mean no findings. The hook does not block on findings, which stay advisory, and it passes no findings to the agent: its message only says whether the review ran and was clean.
 
-Claude Code sets `stop_hook_active` to `true` in the hook's input when a Stop hook has already continued the session. On that second attempt the hook exits `0`, so it cannot block the same stop forever. It enforces one nudge per stop, not a guarantee. Claude Code does not pass stderr from a hook that exits `0` to the model, so the reason is not shown to Claude on that attempt. The first block carries it. Claude Code also caps consecutive stop-hook continuations, as described in the hooks reference.
+The hook needs `coach` on `PATH` (see [Install](#install)) in the environment where the agent runs its hooks. It runs from the repository root: `CLAUDE_PROJECT_DIR` when Claude Code sets it, otherwise the root `git rev-parse --show-toplevel` gives.
 
-The hook needs `coach` on `PATH` (see [Install](#install)) and uses `CLAUDE_PROJECT_DIR` as the repository root. To test it by hand, pipe input to it, for example `echo '{}' | sh .claude/hooks/coach-self-review.sh`, because the hook reads its input from stdin.
+### Loop guard
+
+Each agent below puts `stop_hook_active` in the payload of its end-of-turn event and sets it to `true` when a hook has already made the agent continue that turn. On that second attempt the script exits `0` without a review, so it asks for one continuation per turn and cannot block the same stop forever. It enforces one nudge, not a guarantee. Copilot ends the turn after 8 consecutive `block` continuations, and Claude Code also caps consecutive stop-hook continuations, as its hooks reference describes; the Codex hooks documentation states no cap.
+
+### Wiring per agent
+
+The configuration for each agent is in the [README](../README.md#run-the-review-when-your-coding-agent-finishes). What each agent does with it, from its own documentation:
+
+- **Claude Code** ([hooks reference](https://code.claude.com/docs/en/hooks)). The `Stop` hook in `.claude/settings.json` runs when Claude finishes responding. It uses the exec form (`command` and `args`), which spawns `sh` with no shell and expands `${CLAUDE_PROJECT_DIR}`. Exit `2` sends Claude back to keep working, with stderr as the reason; Claude does not see stderr from a hook that exits `0`. The default timeout is 600 seconds.
+- **OpenAI Codex** ([hooks](https://learn.chatgpt.com/docs/hooks)). The `Stop` hook in a trusted project's `.codex/hooks.json` runs when a turn stops. Hooks are on by default, and Codex runs a non-managed hook only after you review and trust it (`/hooks`). Exit `2` with the reason on stderr makes Codex continue, with the reason as a new prompt; exit `0` with no output lets it stop. A `Stop` hook that prints to stdout on exit `0` must print JSON, so the script prints nothing when the review is clean.
+- **GitHub Copilot** ([hooks configuration](https://docs.github.com/en/copilot/reference/hooks-configuration), [use hooks with the CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-hooks), [use hooks with the cloud agent](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/use-hooks)). The `agentStop` hook in `.github/hooks/*.json` runs when the main agent finishes a turn, in Copilot CLI and in the Copilot cloud agent. Exit `2` there is only a warning shown to the user, so the script runs in `json` mode: `"decision": "block"` forces another turn with `reason` as its prompt. The cloud agent reads the file from the default branch, runs only the `bash` command, counts the extra turn against the job's timeout, and needs `coach` installed in its environment. The default `timeoutSec` is 30 seconds, which is why the example sets 600. Hooks in Visual Studio Code are in public preview and are not covered here.
+
+### Test the hook by hand
+
+Pipe a payload to the script from the repository root, because it reads its input from stdin:
+
+```sh
+echo '{"stop_hook_active":false}' | sh scripts/coach-self-review.sh exit2; echo "exit $?"
+echo '{"stop_hook_active":false}' | sh scripts/coach-self-review.sh json; echo "exit $?"
+```
+
+On a clean working tree both print `exit 0` and nothing else. After an uncommitted edit to `.lousy-agents/coach.json`, the first prints the reason on stderr and `exit 2`, and the second prints the `block` object and `exit 0`. With `"stop_hook_active":true`, both exit `0` without running a review.
 
 ## Git version
 
