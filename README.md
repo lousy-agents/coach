@@ -45,25 +45,25 @@ If no rule matches, the report says `No active CodeSignal findings.` That means 
 coach codesignal --worktree
 ```
 
-Findings in the files you changed are marked `lifecycle: introduced`. Nothing leaves your machine, and nothing is written to your repository. `--worktree` covers uncommitted work only; review committed changes with `--base` in the pull request.
+Findings in the files you changed are marked `lifecycle: introduced`. Coach sends nothing anywhere and writes nothing to your repository. `--worktree` covers uncommitted work only; review committed changes in the pull request with `--base`.
 
 ### Run the review when your coding agent finishes
 
-One script, `scripts/coach-self-review.sh`, decides whether the review is clean, for any agent; copy it from [the check](./docs/cli-codesignal.md#the-check) in the CLI contract. It runs `coach codesignal --worktree --no-interactive --fail-on-incomplete-coverage --format json` and calls the review clean when:
+Copy [`scripts/coach-self-review.sh`](./docs/cli-codesignal.md#the-check) from the CLI contract into your repository. It runs `coach codesignal --worktree --no-interactive --fail-on-incomplete-coverage --format json` and calls the review clean when:
 
 - Coach ran and exited `0` (exit `1`, `2` or `127` means the review did not run);
 - every in-scope file was read (exit `3` means part of the project or working tree went unread);
-- the project policy on disk is the committed one (`scope.policy.matches_head` is not `false`), so an agent cannot loosen `.lousy-agents/coach.json` and review its work against the loosened policy.
+- the project policy on disk is the committed one (`scope.policy.matches_head` is not `false`), so an agent cannot loosen `.lousy-agents/coach.json` and have its work reviewed against the loosened policy while the edit is uncommitted. With no policy, this check always passes.
 
-Findings stay advisory: the hook does not block on them and does not pass them to the agent. When the review is not clean, the hook keeps the agent working for one more turn, to tell you why. It needs Coach v0.13.0 or later, the first release that reports `scope.policy`; with an older Coach the hook blocks and says so.
+A policy or code change the agent commits is not flagged; review committed changes in the pull request with `--base`. Findings stay advisory: the hook does not block on them and does not pass them to the agent. When the review is not clean, the hook asks the agent for at most one extra turn, to tell you why. It needs Coach v0.13.0 or later, the first release that reports `scope.policy`, on the `PATH` of the shell the agent runs its hooks in, which may not read `~/.bashrc`.
 
-Each agent wires the script to its own end-of-turn event. The Claude Code wiring has been run in Claude Code; the Codex and Copilot wiring is written from their documentation and has not been run in those agents.
+The script takes one argument, how the agent expects "not clean" to be reported: `exit2` for Claude Code and Codex, `json` for Copilot. Each snippet below checks that the script is there and exits `1`, which none of the three treats as a block, if it is not. The Claude Code wiring has been run in Claude Code; the Codex and Copilot wiring is written from their documentation and has not been run in those agents.
 
 | Agent | Event | Config file | How "not clean" is reported |
 | --- | --- | --- | --- |
-| Claude Code | `Stop` | `.claude/settings.json` | exit `2`, reason on stderr (`exit2` mode) |
-| OpenAI Codex | `Stop` | `.codex/hooks.json` | exit `2`, reason on stderr (`exit2` mode) |
-| GitHub Copilot (CLI and cloud agent) | `agentStop` | `.github/hooks/coach-self-review.json` | `{"decision":"block","reason":...}` on stdout (`json` mode) |
+| Claude Code | `Stop` | `.claude/settings.json` | exit `2`, reason on stderr (`exit2`) |
+| OpenAI Codex | `Stop` | `.codex/hooks.json` | exit `2`, reason on stderr (`exit2`) |
+| GitHub Copilot (CLI and cloud agent) | `agentStop` | `.github/hooks/coach-self-review.json` | `{"decision":"block","reason":...}` on stdout (`json`) |
 
 **Claude Code**, in `.claude/settings.json`:
 
@@ -75,7 +75,7 @@ Each agent wires the script to its own end-of-turn event. The Claude Code wiring
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PROJECT_DIR}/scripts/coach-self-review.sh\" exit2"
+            "command": "f=\"${CLAUDE_PROJECT_DIR}/scripts/coach-self-review.sh\"; if [ -f \"$f\" ]; then sh \"$f\" exit2; else echo \"coach self-review: $f not found\" >&2; exit 1; fi"
           }
         ]
       }
@@ -94,7 +94,7 @@ Each agent wires the script to its own end-of-turn event. The Claude Code wiring
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"$(git rev-parse --show-toplevel)/scripts/coach-self-review.sh\" exit2",
+            "command": "f=\"$(git rev-parse --show-toplevel 2>/dev/null)/scripts/coach-self-review.sh\"; if [ -f \"$f\" ]; then sh \"$f\" exit2; else echo \"coach self-review: $f not found\" >&2; exit 1; fi",
             "timeout": 600
           }
         ]
@@ -104,7 +104,7 @@ Each agent wires the script to its own end-of-turn event. The Claude Code wiring
 }
 ```
 
-**GitHub Copilot**, in `.github/hooks/coach-self-review.json` (the cloud agent reads it from the default branch, and needs `coach` installed in its environment):
+**GitHub Copilot**, in `.github/hooks/coach-self-review.json`. The cloud agent runs on GitHub's infrastructure: it reads this file from the default branch, needs `coach` installed in its environment (for example in its setup steps), and counts the extra turn against the job's timeout. Copilot hooks in Visual Studio Code are not covered.
 
 ```json
 {
@@ -113,7 +113,7 @@ Each agent wires the script to its own end-of-turn event. The Claude Code wiring
     "agentStop": [
       {
         "type": "command",
-        "bash": "sh scripts/coach-self-review.sh json",
+        "bash": "f=scripts/coach-self-review.sh; if [ -f \"$f\" ]; then sh \"$f\" json; else echo \"coach self-review: $f not found\" >&2; exit 1; fi",
         "cwd": ".",
         "timeoutSec": 600
       }
@@ -122,7 +122,7 @@ Each agent wires the script to its own end-of-turn event. The Claude Code wiring
 }
 ```
 
-The script, why each flag is there, the full exit-code handling, and how to test the hook by hand are in the [agent self-review hook](./docs/cli-codesignal.md#agent-self-review-hook-preview) section of the CLI contract.
+The script, why each flag is there, the full exit-code handling, and how to test the hook by hand are in the [agent self-review hook](./docs/cli-codesignal.md#agent-self-review-hook) section of the CLI contract.
 
 ## Learn more
 

@@ -495,7 +495,7 @@ Still being built. Do not expect these to work yet: unattended package-manager
 setup for the scanned project, Bun as a project runtime, and a packaged
 foreign-repository TypeScript journey.
 
-## Agent self-review hook (preview)
+## Agent self-review hook
 
 The hook in the [README](../README.md#run-the-review-when-your-coding-agent-finishes) runs `coach codesignal --worktree` when a coding agent finishes a turn. When the review did not run or was not clean, it asks the agent to continue once and tell the user why. `--worktree` is described in [Uncommitted work](#uncommitted-work---worktree). Coach ships the CLI behaviour; the hook is an example to copy, and Coach runs no hook service.
 
@@ -512,19 +512,32 @@ Save this as `scripts/coach-self-review.sh`. It reads the agent's event payload 
 # exit2 (Claude Code, Codex): not clean is exit 2 with the reason on stderr.
 # json (GitHub Copilot): not clean is {"decision":"block","reason":"..."} on stdout and exit 0.
 mode=${1:-exit2}
-case "$(cat | tr -d ' \n')" in *'"stop_hook_active":true'*) exit 0 ;; esac
+case "$(cat | tr -d ' \t\r\n')" in *'"stop_hook_active":true'*) exit 0 ;; esac
 root=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}
 if cd "${root:-.}" 2>/dev/null; then
   report=$(coach codesignal --worktree --no-interactive --fail-on-incomplete-coverage --format json); rc=$?
 else
   report=""; rc=2
 fi
-flat=$(printf '%s' "$report" | tr -d ' \n')
+# policy: "null" (no policy read), "true" or "false" (scope.policy.matches_head), or "missing" (no scope.policy).
+if command -v jq >/dev/null 2>&1; then
+  policy=$(printf '%s' "$report" | jq -r 'if ((.scope // {}) | has("policy")) | not then "missing"
+    elif .scope.policy == null then "null"
+    elif (.scope.policy | has("matches_head")) then (.scope.policy.matches_head | tostring)
+    else "missing" end' 2>/dev/null) || policy=missing
+else
+  case $(printf '%s' "$report" | tr -d ' \t\r\n') in
+    *'"matches_head":false'*) policy=false ;;
+    *'"policy":null'*) policy=null ;;
+    *'"matches_head":true'*) policy=true ;;
+    *) policy=missing ;;
+  esac
+fi
 problem=""
 case $rc in
-  0) case $flat in
-       *'"policy":null'*|*'"matches_head":true'*) ;;
-       *'"matches_head":false'*) problem="the project policy on disk differs from HEAD" ;;
+  0) case $policy in
+       null|true) ;;
+       false) problem="the project policy on disk differs from HEAD" ;;
        *) problem="coach did not report scope.policy, so the policy check cannot run" ;;
      esac ;;
   1|2|127) problem="the review did not run (exit $rc)" ;;
@@ -544,7 +557,7 @@ Each flag in the command has a reason:
 
 - `--no-interactive` makes the run unattended. Without it, a TypeScript scan could open a setup prompt that no one answers. With it, the scan falls through to message-only remediation ([--no-interactive](#commands)).
 - `--fail-on-incomplete-coverage` turns incomplete coverage into exit `3`, so an unread part of the tree cannot read as clean ([Exit codes](#exit-codes)).
-- `--format json` lets the hook read `scope.policy.matches_head`.
+- `--format json` lets the hook read `scope.policy.matches_head`. With `jq` on `PATH`, the script reads that one field. Without `jq`, it falls back to matching the report's text, which a field elsewhere in the report that happens to read `"matches_head":true` or `"policy":null` can mislead.
 
 The hook's exit-code handling:
 
@@ -559,19 +572,21 @@ The hook's exit-code handling:
 
 Clean does not mean no findings. The hook does not block on findings, which stay advisory, and it passes no findings to the agent: its message only says whether the review ran and was clean.
 
-The hook needs `coach` on `PATH` (see [Install](#install)) in the environment where the agent runs its hooks. It runs from the repository root: `CLAUDE_PROJECT_DIR` when Claude Code sets it, otherwise the root `git rev-parse --show-toplevel` gives.
+The hook needs `coach` on `PATH` (see [Install](#install)) in the environment where the agent runs its hooks; that shell may not read `~/.bashrc`, so install `coach` where a non-interactive shell finds it. It runs from the repository root: `CLAUDE_PROJECT_DIR` when Claude Code sets it, otherwise the root `git rev-parse --show-toplevel` gives.
 
 ### Loop guard
 
-Each agent below puts `stop_hook_active` in the payload of its end-of-turn event and sets it to `true` when a hook has already made the agent continue that turn. On that second attempt the script exits `0` without a review, so it asks for one continuation per turn and cannot block the same stop forever. It enforces one nudge, not a guarantee. Copilot ends the turn after 8 consecutive `block` continuations, and Claude Code also caps consecutive stop-hook continuations, as its hooks reference describes; the Codex hooks documentation states no cap.
+Each agent below puts `stop_hook_active` in the payload of its end-of-turn event and sets it to `true` when a hook has already made the agent continue that turn. On that second attempt the script exits `0` without a review, so it asks for at most one extra turn and cannot block the same stop forever. The guard reads the payload with its spaces, tabs and line breaks removed. It enforces one nudge, not a guarantee. Copilot ends the turn after 8 consecutive `block` continuations, and Claude Code also caps consecutive stop-hook continuations, as its hooks reference describes; the Codex hooks documentation states no cap.
 
 ### Wiring per agent
 
 The configuration for each agent is in the [README](../README.md#run-the-review-when-your-coding-agent-finishes). What each agent does with it, from its own documentation. The Claude Code wiring has been run in Claude Code; the Codex and Copilot wiring is written from their documentation and has not been run in those agents.
 
+Each snippet checks that the script exists before it runs it. A missing script, or a Codex hook run where `git rev-parse` finds no repository, makes the snippet print "coach self-review: … not found" and exit `1`. That cannot become a loop: exit `1` is not a block in any of the three. Claude Code treats it as a non-blocking error, Copilot logs it and continues, and the Codex documentation names only exit `0` and exit `2` for `Stop`, so it is not a continuation there either. Without the check, `sh` would exit `2` with "cannot open", which Claude Code and Codex read as a block, before the script's loop guard could run.
+
 - **Claude Code** ([hooks reference](https://code.claude.com/docs/en/hooks)). The `Stop` hook in `.claude/settings.json` runs when Claude finishes responding. It uses the shell form, with `${CLAUDE_PROJECT_DIR}` in double quotes as the reference asks of a placeholder in shell form, so a missing script fails visibly. Exit `2` sends Claude back to keep working, with stderr as the reason; Claude does not see stderr from a hook that exits `0`. The default timeout is 600 seconds.
 - **OpenAI Codex** ([hooks](https://learn.chatgpt.com/docs/hooks)). The `Stop` hook in a trusted project's `.codex/hooks.json` runs when a turn stops. Hooks are on by default, and Codex runs a non-managed hook only after you review and trust it (`/hooks`). Exit `2` with the reason on stderr makes Codex continue the turn; exit `0` with no output lets it stop. A `Stop` hook that prints to stdout on exit `0` must print JSON, so the script prints nothing when the review is clean.
-- **GitHub Copilot** ([hooks configuration](https://docs.github.com/en/copilot/reference/hooks-configuration), [use hooks with the CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-hooks), [use hooks with the cloud agent](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/use-hooks)). The `agentStop` hook in `.github/hooks/*.json` runs when the main agent finishes a turn, in Copilot CLI and in the Copilot cloud agent. Exit `2` there is only a warning shown to the user, so the script runs in `json` mode: `"decision": "block"` forces another turn with `reason` as its prompt. The cloud agent reads the file from the default branch, runs the `bash` command (or the cross-platform `command` field as a fallback), counts the extra turn against the job's timeout, and needs `coach` installed in its environment. The default `timeoutSec` is 30 seconds, which is why the example sets 600. Hooks in Visual Studio Code are in public preview and are not covered here.
+- **GitHub Copilot** ([hooks configuration](https://docs.github.com/en/copilot/reference/hooks-configuration), [use hooks with the CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-hooks), [use hooks with the cloud agent](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/use-hooks)). The `agentStop` hook in `.github/hooks/*.json` runs when the main agent finishes a turn, in Copilot CLI and in the Copilot cloud agent. Exit `2` there is only a warning shown to the user, so the script runs in `json` mode: `"decision": "block"` forces another turn with `reason` as its prompt. The cloud agent runs on GitHub's infrastructure, so Coach runs there, not on your machine: it reads the file from the default branch, runs the `bash` command (or the cross-platform `command` field as a fallback), counts the extra turn against the job's timeout, and needs `coach` installed in its environment, for example in its setup steps. The default `timeoutSec` is 30 seconds, which is why the example sets 600. Hooks in Visual Studio Code are in public preview and are not covered here.
 
 ### Test the hook by hand
 
