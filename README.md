@@ -37,17 +37,35 @@ This scans the Go, TypeScript, and TSX files that ship at `HEAD` and prints the 
 
 If no rule matches, the report says `No active CodeSignal findings.` That means no rule matched the committed code, not that the code is clean. [What you should see](./docs/cli-codesignal.md#what-you-should-see) describes the full output.
 
-## Agent self-review (preview)
+## Review work before you commit
 
-`--worktree` reviews uncommitted edits against `HEAD`, so a coding agent can check its own changes before commit. Run it from the repository root:
+`--worktree` reviews the changes you have not committed yet: edited, staged and new files, read from disk and compared with your last commit. Run it from the repository root, before each commit or after each turn of a coding agent:
 
 ```sh
-coach codesignal --worktree --no-interactive --fail-on-incomplete-coverage --format json
+coach codesignal --worktree
 ```
 
-The hook needs a coach build that reports `scope.policy`. v0.12.0 does not, so there the hook blocks and says so. `--worktree` is a documented flag of the CLI contract. The PRD change that brought this job into scope is [#730](https://github.com/lousy-agents/coach/pull/730). Coach ships the CLI behaviour. The hook below is an example to copy. Coach does not run a hosted hook service. The hook reports only whether the review ran and was clean. It does not pass findings to the agent.
+Findings in the files you changed are marked `lifecycle: introduced`. Coach sends nothing anywhere and writes nothing to your repository. `--worktree` covers uncommitted work only; review committed changes in the pull request with `--base`.
 
-To run the review when Claude Code finishes a response, add this to `.claude/settings.json`:
+### Run the review when your coding agent finishes
+
+Copy [`scripts/coach-self-review.sh`](./docs/cli-codesignal.md#the-check) from the CLI contract into your repository. It runs `coach codesignal --worktree --no-interactive --fail-on-incomplete-coverage --format json` and calls the review clean when:
+
+- Coach ran and exited `0` (exit `1`, `2` or `127` means the review did not run);
+- every in-scope file was read (exit `3` means part of the project or working tree went unread);
+- the project policy on disk is the committed one (`scope.policy.matches_head` is not `false`), so an agent cannot loosen `.lousy-agents/coach.json` and have its work reviewed against the loosened policy while the edit is uncommitted. With no policy, this check always passes.
+
+A policy or code change the agent commits is not flagged; review committed changes in the pull request with `--base`. Findings stay advisory: the hook does not block on them and does not pass them to the agent. When the review is not clean, the hook asks the agent for at most one extra turn, to tell you why. It needs Coach v0.13.0 or later, the first release that reports `scope.policy`, on the `PATH` of the shell the agent runs its hooks in, which may not read `~/.bashrc`. `sh` and `bash` read no startup file when they run a hook command, so with mise, start the hook command with `export PATH="$HOME/.local/share/mise/shims:$PATH";`, or replace `coach` in the script with its absolute path.
+
+The script takes one argument, how the agent expects "not clean" to be reported: `exit2` for Claude Code and Codex, `json` for Copilot. Each snippet below checks that the script is there and, if it is not, exits `1`, which Claude Code and Copilot document as non-blocking; the Codex documentation names only exit `0` and `2` for `Stop`. The Claude Code wiring has been run in Claude Code; the Codex and Copilot wiring is written from their documentation and has not been run in those agents.
+
+| Agent | Event | Config file | How "not clean" is reported |
+| --- | --- | --- | --- |
+| Claude Code | `Stop` | `.claude/settings.json` | exit `2`, reason on stderr (`exit2`) |
+| OpenAI Codex | `Stop` | `.codex/hooks.json` | exit `2`, reason on stderr (`exit2`) |
+| GitHub Copilot (CLI and cloud agent) | `agentStop` | `.github/hooks/coach-self-review.json` | `{"decision":"block","reason":...}` on stdout (`json`) |
+
+**Claude Code**, in `.claude/settings.json`:
 
 ```json
 {
@@ -57,8 +75,7 @@ To run the review when Claude Code finishes a response, add this to `.claude/set
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/coach-self-review.sh"]
+            "command": "f=\"${CLAUDE_PROJECT_DIR}/scripts/coach-self-review.sh\"; if [ -f \"$f\" ]; then sh \"$f\" exit2; else echo \"coach self-review: $f not found\" >&2; exit 1; fi"
           }
         ]
       }
@@ -67,32 +84,45 @@ To run the review when Claude Code finishes a response, add this to `.claude/set
 }
 ```
 
-and save this as `.claude/hooks/coach-self-review.sh`:
+**OpenAI Codex**, in `.codex/hooks.json` (review and trust the hook with `/hooks` before it runs):
 
-```sh
-#!/bin/sh
-# "Clean" means the review ran, no in-scope file went unread, and the project policy on disk is the committed one.
-cd "${CLAUDE_PROJECT_DIR:-.}" || exit 2
-block=2
-case "$(cat | tr -d ' \n')" in *'"stop_hook_active":true'*) block=0 ;; esac
-report=$(coach codesignal --worktree --no-interactive --fail-on-incomplete-coverage --format json); rc=$?
-flat=$(printf '%s' "$report" | tr -d ' \n')
-problem=""
-case $rc in
-  0) case $flat in
-       *'"policy":null'*|*'"matches_head":true'*) ;;
-       *'"matches_head":false'*) problem="the project policy on disk differs from HEAD" ;;
-       *) problem="coach did not report scope.policy, so the policy check cannot run" ;;
-     esac ;;
-  1|2|127) problem="the review did not run (exit $rc)" ;;
-  *) problem="the review is incomplete: a project or working-tree input was not analyzed (exit $rc)" ;;
-esac
-[ -z "$problem" ] && exit 0
-echo "coach self-review is not clean: $problem. Tell the user." >&2
-exit $block
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"$(git rev-parse --show-toplevel 2>/dev/null)/scripts/coach-self-review.sh\"; if [ -f \"$f\" ]; then sh \"$f\" exit2; else echo \"coach self-review: $f not found\" >&2; exit 1; fi",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
 
-An uncommitted policy edit counts as not clean. The hook covers uncommitted work only: a policy or code change the agent has already committed is not flagged, so review committed changes in the pull request. The reasoning and the exit-code handling are in the [agent self-review hook](./docs/cli-codesignal.md#agent-self-review-hook-preview) section.
+**GitHub Copilot**, in `.github/hooks/coach-self-review.json`. The cloud agent runs on GitHub's infrastructure: it reads this file from the default branch, needs `coach` installed in its environment (for example in its setup steps), and counts the extra turn against the job's timeout. The cloud agent [pushes its changes to its pull request](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/use-cloud-agent-on-github), so this hook may find little uncommitted work there; review its pull request with `coach codesignal --base <default branch>`. Copilot hooks in Visual Studio Code are not covered.
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "f=scripts/coach-self-review.sh; if [ -f \"$f\" ]; then sh \"$f\" json; else echo \"coach self-review: $f not found\" >&2; exit 1; fi",
+        "cwd": ".",
+        "timeoutSec": 600
+      }
+    ]
+  }
+}
+```
+
+The script, why each flag is there, the full exit-code handling, and how to test the hook by hand are in the [agent self-review hook](./docs/cli-codesignal.md#agent-self-review-hook) section of the CLI contract.
 
 ## Learn more
 
