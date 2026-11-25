@@ -104,7 +104,7 @@ The script takes one argument, how the agent expects "not clean" to be reported:
 }
 ```
 
-**GitHub Copilot**, in `.github/hooks/coach-self-review.json`. The cloud agent runs on GitHub's infrastructure: it reads this file from the default branch, needs `coach` installed in its environment (for example in its setup steps), and counts the extra turn against the job's timeout. The cloud agent [pushes its changes to its pull request](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/start-copilot-sessions), so this hook may find little uncommitted work there; review its pull request with `coach codesignal --base <default branch>`. Copilot hooks in Visual Studio Code are not covered.
+**GitHub Copilot**, in `.github/hooks/coach-self-review.json`. The cloud agent runs on GitHub's infrastructure: it reads this file from the default branch, needs `coach` installed in its environment (for example in its setup steps), and counts the extra turn against the job's timeout. The cloud agent [pushes its changes to its pull request](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/use-cloud-agent-on-github), so this hook may find little uncommitted work there; review its pull request with `coach codesignal --base <default branch>`. Copilot hooks in Visual Studio Code are not covered.
 
 ```json
 {
