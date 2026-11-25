@@ -223,7 +223,7 @@ Deviations are recorded, and a negative result is published (b.6).
 
 ### Kinds
 
-- **Detection fixtures.** One-module repositories, for H3, the CI leaf and #260 recall.
+- **Detection fixtures.** One-module repositories, for H3 (`mise run eval-detection`) and #260 recall.
 - **Feature templates** (confirmatory). Each has:
   - an application and a feature request;
   - hidden FAIL_TO_PASS tests (a.4) and visible PASS_TO_PASS tests;
@@ -325,7 +325,7 @@ The harness has Inspect's task = dataset + solver + scorer shape (a.3), but Insp
 The agent sandbox is an OCI container under Docker, with gVisor `runsc` recommended (**our choice**).
 - It starts from the language's pinned image and a fresh copy of the instance, with one neutral initial commit and no history from other trials (a.1, a.3).
 - Its only egress is a proxy that allows the model API host (**our choice**; a.3 shows only that `network_mode: none` limits a container, which does not support an allowlist).
-- Its only credential is a per-run eval API key, with a spend cap enforced outside the agent, plus `--max-budget-usd` (**our choice**).
+- Its only credential is the developer's `ANTHROPIC_API_KEY`, passed in as an environment variable, with `--max-budget-usd` per trial and the run budget in section 10. A key used only for evaluation, with a spend limit set on the account, is recommended (**our choice**).
 - The manifest, the hidden suite, the predicates, the oracle and the graders are never present (a.6 T.5, d.6).
 
 ### Grading sandbox
@@ -503,7 +503,7 @@ Further rules:
 
 ## 9. Placement
 
-- **Fixtures and the tracking panel.** These are public detection fixtures and public tracking-panel templates.
+- **Fixtures and the development panel.** These are the public detection fixtures and the public templates that `eval-agent` runs (section 10).
   - Their in-repository home would be `eval/testdata/fixtures/{go,ts,tsx}/<id>/`, each with its own `go.mod` or `package.json`.
   - The Go command skips `testdata` and nested modules. This was checked: `go list ./...` in a scratch module lists neither.
   - The source-layout check skips `testdata` (`internal/sourcelayout/check.go:22–25`), and so does Go root discovery (`pkg/projectmodel/go_root_discovery_walk.go:94`).
@@ -514,38 +514,72 @@ Further rules:
   - The graders import no `pkg/` package. Predicates evaluated by Coach call the pinned binary.
 - **Private material.** Hidden suites, hidden test IDs, predicates, oracles and confirmatory held-out templates live in a separate private repository, pinned by SHA (a.6 T.5, b.5, b.8).
 
-## 10. Tiers, continuous running and cost
+## 10. Running it: local mise tasks
 
-| Tier | What runs | Where and when | Status of results |
-| --- | --- | --- | --- |
-| Detection | H3, as `mise run eval-detection` | A CI leaf in `status.needs`, on every PR | Regression gate |
-| Tracking panel | The 12 pilot templates, 1 instance each, K = 3, four feature arms | A self-hosted scheduled workflow, weekly, **outside** `status.needs` | **Non-confirmatory**; drift only |
-| Confirmatory | A rotated held-out template set, never run before | The same self-hosted runner, per release, owner-funded | The only tier that may support a claim |
+Everything runs as local `mise` tasks that a developer starts before committing. No scheduled run and no shared runner are involved. CI does not run the evaluation; hooking `eval-detection` into a CI leaf later is a separate decision (decision 15.11).
 
-**Panel drift metrics** (per arm, week over week):
-- the G1 rate;
-- `coach_findings_after`;
-- the count of candidates with no verdict yet;
-- cost.
+| Task | What it runs | Model or network | Expected wall time | Expected cost | What "pass" means before a commit |
+| --- | --- | --- | --- | --- | --- |
+| `eval-detection` | H3 over every detection fixture (section 8), against a `coach` built from the working tree | No model, no network | Seconds to low minutes (**our estimate**) | $0 | **Gating.** Exit 0 only if every row's outcome holds. A miss, a false positive, an unadjudicated unmatched finding, or a promoted `known_miss` exits 1 with the row IDs. This is the pre-commit default |
+| `eval-agent` | The agentic eval on a fixed small panel: the 12 pilot templates, 1 instance each, the feature task family, four arms, K = `EVAL_TRIALS` (default 1) | Model, via an egress proxy | About 1 h for 48 trials at 4 in parallel, assuming 5 min a trial (**our estimate**) | About $96 at $2 a trial; at most $240 at the $5 cap | **Not gating on results.** It prints per-arm rates and paired effects with 95% CIs, and they inform the developer only. It exits 1 only on an **integrity failure** (**our choice**), listed below |
+| `eval-agent-study` | The same task with the preregistered confirmatory parameters: T, instances, K, the impossible variants, and `EVAL_TASK_FAMILY=feature` or `refactor` | Model, via an egress proxy | Feature: about 2,940 trials; at 8 in parallel and 5 min a trial, about 31 h (**our estimate**) | Feature ≈ $5,900 (cap $14,700); refactor ≈ $1,000 (cap $2,520) | Not gating. It is run on demand before a release or a claim. Only its output can feed the claim row (section 13). Integrity failures exit 1 |
+| `eval-census` | #260's census (`coach-eval census`) over the pinned real corpus, with the committed adjudications | No model; network only to fetch pinned corpus SHAs that are not yet cloned | Minutes for 6 repositories (**our estimate**) | $0 | Not gating. It writes the census report. It exits 1 if any repository is `analysis_failed` without a recorded owner disposition, or if a pinned SHA cannot be reached |
+| `eval-compare` | Compares two results files | None | Seconds | $0 | Informational (below) |
 
-Verdicts are reused through `dedup_key`, so only new candidates need a human.
+**Integrity failures** (`eval-agent` and `eval-agent-study`). Each of these means the pipeline is broken, never that Coach is bad, so each exits 1:
+- an oracle scores below 1;
+- a baseline scores above 0;
+- the Stop hook did not fire in `coach` or `generic_review`, or fired in another arm;
+- the private-repository SHA does not match the protocol;
+- any trial ends `harness_error` twice.
 
-**Secrets.** The scheduled job alone holds two secrets:
-- a read-only token for the private repository;
-- the capped eval API key.
+### Inputs and refusals
 
-Neither secret is available to PR workflows.
+Each of these tasks **refuses with a clear message** when an input is missing. None silently skips, unlike tasks that "skip gracefully" when Docker is absent.
 
-**Cost.** These figures are **our estimates**, not measurements; the pilot replaces them. The cap is B = $5 per trial, and planning assumes $2 per trial.
+| Input | Used by | When it is missing or wrong |
+| --- | --- | --- |
+| Docker: `docker info` succeeds; gVisor is used if `runsc` is registered | `eval-agent*` | Refuse: "Docker is required for the agent and grading sandboxes" |
+| `ANTHROPIC_API_KEY` | `eval-agent*` | Refuse |
+| `EVAL_BUDGET_USD` | `eval-agent*` | Refuse when it is unset. Before any trial, print the estimate: the trial count × the $5 cap, and the trial count × the running mean cost if earlier results exist. Refuse if the cap-based estimate exceeds the budget, unless `EVAL_BUDGET_MODE=mean` is set |
+| `EVAL_MODEL` | `eval-agent*` | Refuse; there is no default model |
+| `EVAL_TRIALS` | `eval-agent` | Default 1. `eval-agent-study` takes K from the protocol |
+| The pinned `claude` CLI version | `eval-agent*` | Refuse on a version mismatch |
+| `EVAL_ORACLE_DIR`: a local clone of the private repository | `eval-agent*` | Refuse when it is unset, when `git -C "$EVAL_ORACLE_DIR" rev-parse HEAD` differs from the protocol's pinned SHA, or when the clone has local changes |
+| `EVAL_FIXTURES_DIR` (only while decision 15.10 keeps fixtures in a separate repository) | `eval-detection`, `eval-agent*` | Refuse when it is unset or at the wrong SHA. `eval-detection` never fetches anything |
+| Corpus clones | `eval-census` | Clone once at the pinned SHA; refuse if that SHA is unreachable |
 
-| Run | Trials | At $2 per trial | At the $5 cap |
-| --- | --- | --- | --- |
-| Feature, confirmatory: T = 105 × 2 instances × K = 3 × 4 arms | 2,520 | ≈ $5,040 | $12,600 |
-| Feature impossible variants: 105 × K = 1 × 4 arms (**our choice**) | 420 | ≈ $840 | $2,100 |
-| Refactor, secondary: 24 × 2 × 3 × 3 arms | 432 | ≈ $860 | $2,160 |
-| Refactor impossible variants: 24 × 1 × 3 arms | 72 | ≈ $140 | $360 |
-| Tracking panel, per week: 12 × 3 × 4 | 144 | ≈ $290 | $720 |
-| Detection tier | 0 | $0 (no model) | $0 |
+**Budget enforcement during a run.** The harness adds up the cost from each trial's `stream-json` usage. It launches no trial whose cap would overrun the remaining budget. A run stopped this way is marked `incomplete_budget`, and its results are labelled incomplete.
+
+### How the private oracle reaches a local machine
+
+1. The developer clones the private repository once, with their own Git credentials, and checks out the pinned SHA. The task only verifies the clone; it never fetches.
+2. The harness reads the clone from the host. It mounts **only that trial's** hidden suite and predicates, read-only, into the **grading** container (section 7).
+3. The agent container gets a copy of the instance tree and nothing else from the host: no bind mount of the repository, the clone, `HOME` or the Docker socket (a.6 T.5, d.6).
+4. The oracle refactor and oracle implementation are used only by the instance-validation step, which runs in a grading container.
+
+### Results files and comparing runs
+
+Every task writes `eval/results/<run_id>/` and adds `/eval/results/` to `.gitignore`. The directory holds:
+- **`run.json`**, which carries:
+  - `run_id` (a UTC timestamp plus a random suffix);
+  - `task`;
+  - `coach_sha`, with `worktree_dirty` and a SHA-256 of `git diff HEAD`, because a pre-commit run evaluates uncommitted work;
+  - the `coach` binary's SHA-256;
+  - the image digests, the private-repository SHA and the fixture SHA;
+  - the model, the `claude` CLI version and the prompt and settings hashes;
+  - the parameters (T, instances, K, arms, seed);
+  - `cost_usd` and the wall time;
+  - the results table, as per-arm rates ± SE, paired effects with CIs, and, for detection, per-row outcomes.
+- **`trials.jsonl`**: one trial record per line (section 7).
+- **The transcripts.**
+
+`mise run eval-compare -- <run_a> <run_b>` prints:
+- **For detection:** rows whose outcome changed between the two runs.
+- **For agent runs:** per-arm rates and paired effects side by side, and the difference between runs. That difference is computed only over templates present in both runs, paired by template (a.7, b.1).
+- **Fields that make the runs not comparable:** a different model, CLI version, image digest, prompt hash, private-repository SHA or parameter set is flagged at the top. A comparison across a flagged difference is labelled as such, not suppressed.
+
+Adjudication verdicts are reused across runs through `dedup_key`, so a later run needs human time only for new candidates.
 
 ## 11. Manifest and adjudication schema (shared with #260)
 
@@ -678,14 +712,14 @@ The new claim row on `docs/product/evaluations/codesignal-pilot-readiness.html` 
 - the date;
 - the HEAD the result was produced at.
 
-The row may be written only if the cost ratio against `control` is at most 1.3, a hard gate (decision 15.4). Tracking-panel results never appear in it.
+The row may be written only if the cost ratio against `control` is at most 1.3, a hard gate (decision 15.4). Only `eval-agent-study` output can fill it. `eval-agent` panel results never appear in it.
 
 | Result | Can feed | Cannot feed |
 | --- | --- | --- |
 | H4 with H2, confirmatory tier | The claim row above, scoped to the rule families Coach checks, fixture evidence and one model | The repeat-use test: PRD §4 says "a hook's scans do not" count |
-| H3 | The CI regression gate; per-shape recall and known misses for #260 and #205 | Precision, and the security precision gate, which PRD §12 requires "on a named corpus". Only #260's real corpus provides that |
+| H3 | The pre-commit gate (`eval-detection`); per-shape recall and known misses for #260 and #205 | Precision, and the security precision gate, which PRD §12 requires "on a named corpus". Only #260's real corpus provides that |
 | H1 (secondary) | Exploratory product evidence | Any release claim |
-| Tracking panel | Drift alerts | Any claim |
+| `eval-agent` (development panel) | A developer's local feedback on a change | Any claim |
 
 ## 14. Threats to validity
 
@@ -732,7 +766,7 @@ Grouped under the four headings in b.7, plus contamination.
    *Recommend:* name the humans and their hours before preregistration, and cap T at that.
 4. **Cost ceiling, a hard gate.** *Recommend:* the claim row is written only if `coach`'s mean cost per trial is at most 1.3× `control`'s (**our choice**). Above that, the result is reported in the run report and not as a claim.
 5. **Permitted wording for a positive result.** *Recommend:* "In a controlled evaluation on T seeded Go and TypeScript feature templates with one model, agents running Coach's self-review hook introduced X (95% CI a–b) percentage points fewer adjudicated defects in the structural rule families Coach checks (layering, complexity, hidden input mutation, check-then-act, constructor coupling) than [comparator], with feature tests passing at a non-inferior rate." Do not use "prevents", "finds all" or any unscoped wording.
-6. **T and the budget.** *Recommend:* pilot first, then fix T (section 5), and approve the budget per tier (section 10).
+6. **T and the budget.** *Recommend:* pilot first, then fix T (section 5). Approve a standing `eval-agent` budget per developer, and approve each `eval-agent-study` run's budget separately (section 10).
 7. **Thresholds marked our choice.** *Recommend:* ratify before preregistration:
    - the H2 margin of −0.05, with H2 at one-sided 0.025;
    - the 15-point minimum effect;
@@ -746,4 +780,5 @@ Grouped under the four headings in b.7, plus contamination.
    - refactor T = 24.
 8. **`n/a` coverage cells.** *Recommend:* accept look-alike `must_not_fire` rows.
 9. **`architecture.*` in #260.** *Recommend:* include them now that #253 is closed, scored by the exact edge sets.
-10. **Where public fixtures live. This must be resolved before any fixture merges.** Coach's self-scan has no path exclusion (section 9). *Recommend:* keep public fixtures in a separate public repository, pinned by SHA and fetched by the `eval-detection` leaf, until a Coach path exclusion exists. That exclusion is a Coach behaviour change, so open its own issue. Only then move the fixtures to `eval/testdata/`. Either way, this repository's census manifest excludes `eval/testdata/**`.
+10. **Where public fixtures live. This must be resolved before any fixture merges.** Coach's self-scan has no path exclusion (section 9). *Recommend:* keep public fixtures in a separate public repository, pinned by SHA and read from a local clone (`EVAL_FIXTURES_DIR`) by `eval-detection`, until a Coach path exclusion exists. That exclusion is a Coach behaviour change, so open its own issue. Only then move the fixtures to `eval/testdata/`. Either way, this repository's census manifest excludes `eval/testdata/**`.
+11. **CI.** *Recommend:* leave it out of scope. `eval-detection` is fast, offline and deterministic, so it could later become a CI leaf in `status.needs` if the owner wants a shared gate. The agentic tasks stay local.
