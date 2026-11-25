@@ -49,7 +49,7 @@ Findings in the files you changed are marked `lifecycle: introduced`. Nothing le
 
 ### Run the review when your coding agent finishes
 
-One script, [`scripts/coach-self-review.sh`](./docs/cli-codesignal.md#the-check), decides whether the review is clean, for any agent. It runs `coach codesignal --worktree --no-interactive --fail-on-incomplete-coverage --format json` and calls the review clean when:
+One script, `scripts/coach-self-review.sh`, decides whether the review is clean, for any agent; copy it from [the check](./docs/cli-codesignal.md#the-check) in the CLI contract. It runs `coach codesignal --worktree --no-interactive --fail-on-incomplete-coverage --format json` and calls the review clean when:
 
 - Coach ran and exited `0` (exit `1`, `2` or `127` means the review did not run);
 - every in-scope file was read (exit `3` means part of the project or working tree went unread);
@@ -57,7 +57,7 @@ One script, [`scripts/coach-self-review.sh`](./docs/cli-codesignal.md#the-check)
 
 Findings stay advisory: the hook does not block on them and does not pass them to the agent. When the review is not clean, the hook keeps the agent working for one more turn, to tell you why. It needs Coach v0.13.0 or later, the first release that reports `scope.policy`; with an older Coach the hook blocks and says so.
 
-Each agent wires the script to its own end-of-turn event:
+Each agent wires the script to its own end-of-turn event. The Claude Code wiring has been run in Claude Code; the Codex and Copilot wiring is written from their documentation and has not been run in those agents.
 
 | Agent | Event | Config file | How "not clean" is reported |
 | --- | --- | --- | --- |
@@ -75,8 +75,7 @@ Each agent wires the script to its own end-of-turn event:
         "hooks": [
           {
             "type": "command",
-            "command": "sh",
-            "args": ["${CLAUDE_PROJECT_DIR}/scripts/coach-self-review.sh", "exit2"]
+            "command": "sh \"${CLAUDE_PROJECT_DIR}/scripts/coach-self-review.sh\" exit2"
           }
         ]
       }
