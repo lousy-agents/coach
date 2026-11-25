@@ -573,7 +573,26 @@ The hook's exit-code handling:
 
 Clean does not mean no findings. The hook does not block on findings, which stay advisory, and it passes no findings to the agent: its message only says whether the review ran and was clean.
 
-The hook needs `coach` on `PATH` (see [Install](#install)) in the environment where the agent runs its hooks; `sh` and `bash` read no startup file when they run a hook command, so `~/.bashrc` and `~/.profile` do not set it. Start the hook command with `export PATH="$HOME/.local/share/mise/shims:$PATH";` (with mise), or replace `coach` in the script with its absolute path. Without either, the hook reports "coach was not found on PATH (exit 127)". It runs from the repository root: `CLAUDE_PROJECT_DIR` when Claude Code sets it, otherwise the root `git rev-parse --show-toplevel` gives.
+The hook needs `coach` on `PATH` (see [Install](#install)) in the environment where the agent runs its hooks; `sh` and `bash` read no startup file when they run a hook command, so `~/.bashrc` and `~/.profile` do not set it. Start the hook command with `export PATH=\"$HOME/.local/share/mise/shims:$PATH\";` (with mise), or replace `coach` in the script with its absolute path. Without either, the hook reports "coach was not found on PATH (exit 127)". Inside the JSON `command` string the quotes are escaped, as in this Claude Code entry:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export PATH=\"$HOME/.local/share/mise/shims:$PATH\"; f=\"${CLAUDE_PROJECT_DIR}/scripts/coach-self-review.sh\"; if [ -f \"$f\" ]; then sh \"$f\" exit2; else echo \"coach self-review: $f not found\" >&2; exit 1; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The hook runs from the repository root: `CLAUDE_PROJECT_DIR` when Claude Code sets it, otherwise the root `git rev-parse --show-toplevel` gives.
 
 ### Loop guard
 
