@@ -109,10 +109,18 @@ There is none on the primary path. If an exploratory dimension, such as "does th
 
 The sizing table in b ("Sizing") shows that a paired design needs about 79 fixtures to detect a 20-point gap when the arms disagree on 40% of fixtures. It needs about 236 fixtures for a 10-point gap at a 30% disagreement rate. Those are placeholders, not measurements.
 
+A hand-built set cannot reach that size, and adding trials per fixture cannot make up for too few fixtures (b.1). So the confirmatory set is **generated from templates** (section 5, "Generating refactor fixtures"), and the hand-built fixtures are the templates themselves.
+
 The plan:
 
-1. **Pilot.** Run 12 fixtures (4 per language) × K = 5 × 2 arms. The pilot is exploratory and never counted in the confirmatory result (b.6). It measures the disagreement rate q and the within-fixture variance.
-2. **Power calculation.** Use Miller's paired formula (a.7, b.1) with the measured q to fix F for 80% power at the minimum effect the owner cares about. If F is beyond what can be built, the protocol states the minimum detectable effect that the buildable F gives. The report then claims nothing smaller (a.7).
+1. **Pilot: pipeline validation only.** Run each template's base instance (12 templates, 4 per language) × K = 5 × 2 arms, plus the oracle and both baselines.
+   - The pilot shows that every stage works end to end: sandbox, agent run, graders, trial records and the analysis script.
+   - Its success rates are never reported as a result and never count toward the confirmatory test (b.6).
+   - Its disagreement rate q and within-fixture variance are recorded as planning inputs for step 2 only.
+2. **Power calculation.** Use Miller's paired formula (a.7, b.1) with the pilot's q to fix F for 80% power at the minimum effect the owner names.
+   - The b sizing table's placeholders put F at about 80–100 for a 20-point gap.
+   - Generated instances that share a template are clustered, so the effective sample lies between the template count T and F. Miller's cluster-adjusted formula (Appendix C) must be read before F is fixed; no track has read it yet (a.7, b.1).
+   - If the F the budget allows is smaller, the protocol states the minimum detectable effect it gives, and the report claims nothing smaller (a.7).
 3. **Preregistration.** Commit a dated protocol file before the first confirmatory trial (b.6). It states H1–H3, the estimators, F, K, the exclusion rules (section 6) and the stopping rule (all F × K trials, no early stop). Any deviation is recorded with its reason, and a negative result is published (b.6).
 
 ## 5. Fixture specification
@@ -188,6 +196,24 @@ Its contents:
 - **Target predicates:** 3–8 private predicates (d.4), all failing on the seeded tree and all passing on the oracle.
 - **An oracle refactor:** a reference tree that must score `success = 1` (a.6 T.9). It is kept private (d.4).
 - **An impossible variant:** the same fixture with one predicate that cannot be met without breaking a hidden test. Any success on it means gaming (d.6). Impossible variants are reported apart from the main fixtures and never count toward H1.
+
+### Generating refactor fixtures from templates
+
+The confirmatory set is a **template × seed set × surface variant** matrix:
+
+- **Template (T).** A hand-written refactor fixture as specified above: an application, its API surface, visible and hidden tests, a layer model, and slots where defects can be seeded. The 12 pilot fixtures are the 12 templates.
+- **Seed set (S).** Which catalogue shapes fill the template's slots, chosen from the rules that apply to its language. Each seed set has its own target predicates and oracle, derived from the template's per-slot predicates and per-slot oracle fragments.
+- **Surface variant (V).** Transformations that leave the seeded structure unchanged: renaming identifiers and the domain vocabulary, moving files within a layer, reordering declarations, and formatting.
+
+**Example size.** 12 templates × 2 seed sets × 4 variants = 96 instances, within the 80–100 range. The counts are **our choice** and are owner inputs (section 11).
+
+**Rules for the generator:**
+- **Expectations come from the generator, not from Coach.** The generator maps each manifest row's path, subject and line range through the same transformation it applies to the code. No expectation is derived by running Coach (#260 "False-green trap").
+- **Every instance is validated automatically before use.** The oracle must score 1, and the do-nothing and delete baselines must score 0. The hidden suite must fail the template's wrong-but-plausible patch, mapped through the variant (a.6, b.8). An instance that fails any check is dropped, counted, and its template is fixed.
+- **Humans validate every template and a sample of instances.** Two humans validate each template and each seed set (a.5). They also check a random sample of 2 instances per template; the sample size is **our choice**. Their judgements are recorded as adjudication rows (section 8).
+- **Seeds must sit in real control and data flow.** Injected defects are found at different rates from natural ones, and SATE lists being "embedded in existing control and data flows" as a quality criterion for injected bugs (c.6). Each seed slot is written into code the application actually runs.
+- **Every row records its seed method** (`hand_written` for a template slot, `mutation` for a generated variant), so recall can be split by provenance (c.7).
+- **Instances are clustered by template.** Pairing is still per instance: both arms run on the same instance. The SE is clustered on the template (a.7, b.1).
 
 ### Protection against "pass by deleting code"
 
@@ -397,6 +423,7 @@ Grouped under the four standard headings (b.7).
 **External**
 - Fixtures are simpler than real repositories (c.5). Claims stop at the fixtures' languages, sizes and defect families (b.7).
 - The result holds for one model and one agent harness (b.7). A second model is an exploratory replication.
+- Generated instances vary only in surface form, so the 12 templates bound how far the result generalises. Results are also reported per template.
 
 **Conclusion**
 - A small F limits what can be detected. The pilot-then-power plan states the minimum detectable effect (a.7, b.1).
@@ -417,7 +444,11 @@ Grouped under the four standard headings (b.7).
    - K = 5;
    - κ ≥ 0.6 for agreement and for an LLM judge;
    - the fixture size of 300–1500 lines.
-2. The minimum effect worth detecting for H1. This sets F after the pilot.
+2. **The fixture count and the trial budget.** Both are owner inputs; the design does not set them.
+   - The minimum effect worth detecting for H1 sets F after the pilot (section 4, "Sizing").
+   - The matrix shape decides how F is reached (T × S × V; 12 × 2 × 4 = 96 in the example).
+   - The confirmatory run costs F × K × arms agent trials: 96 × 5 × 2 = 960 in the example, plus the pilot's 12 × 5 × 2 = 120. The oracle and the baselines are scripted and need no model.
+   - The total cost is that trial count × the per-trial cap in item 5. Cost per arm is reported next to every accuracy figure (b.5).
 3. Whether the rules-in-prompt arm is confirmatory or exploratory.
 4. The `n/a` cells in the coverage table: the requirement of "every PRD rule ID, per language" cannot be met there. Look-alike `must_not_fire` rows are proposed instead.
 5. Budget per trial (`--max-budget-usd`) and the total run budget.
