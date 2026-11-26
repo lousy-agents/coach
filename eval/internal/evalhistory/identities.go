@@ -4,9 +4,9 @@ package evalhistory
 // the unit's index, blaming each file once however many units it holds.
 func unitIdentities(repoDir, since string, units []Unit) (map[lineIdentity]int, error) {
 	owner := map[lineIdentity]int{}
-	blamed := map[string][]lineIdentity{}
+	blames := &fileBlames{repoDir: repoDir, rev: since, byPath: map[string][]lineIdentity{}}
 	for index, unit := range units {
-		all, err := blameOnce(blamed, repoDir, since, unit.Path)
+		all, err := blames.of(unit.Path)
 		if err != nil {
 			return nil, err
 		}
@@ -21,13 +21,19 @@ func unitIdentities(repoDir, since string, units []Unit) (map[lineIdentity]int, 
 	return owner, nil
 }
 
-func blameOnce(blamed map[string][]lineIdentity, repoDir, rev, path string) ([]lineIdentity, error) {
-	if all, ok := blamed[path]; ok {
+// fileBlames blames each path at one revision once, however many units ask.
+type fileBlames struct {
+	repoDir, rev string
+	byPath       map[string][]lineIdentity
+}
+
+func (blames *fileBlames) of(path string) ([]lineIdentity, error) {
+	if all, ok := blames.byPath[path]; ok {
 		return all, nil
 	}
-	all, err := blameFile(repoDir, rev, path)
+	all, err := blameFile(blames.repoDir, blames.rev, path)
 	if err == nil {
-		blamed[path] = all
+		blames.byPath[path] = all
 	}
 	return all, err
 }
