@@ -34,6 +34,8 @@ if [ "$mode" = "hang-orphan" ]; then setsid sleep 20 & echo $! > "$GREMLINS_PIDF
 if [ "$mode" = "empty" ]; then exit 0; fi
 if [ "$mode" = "empty-base" ] && [ ! -d tests/feature ]; then exit 0; fi
 if [ "$mode" = "empty-hidden" ] && [ -d tests/feature ]; then exit 0; fi
+if [ "$mode" = "one-base" ] && [ -d tests/feature ]; then exit 0; fi
+if [ "$mode" = "one-hidden" ] && [ ! -d tests/feature ]; then exit 0; fi
 if [ "$mode" = "unreadable" ]; then mkdir "$out"; exit 0; fi
 if [ "$mode" = "bad-once" ]; then
   if [ -e "$GREMLINS_STATE" ]; then mode=good; else : > "$GREMLINS_STATE"; mode=bad; fi
@@ -44,6 +46,7 @@ mixed='{"type":"A","status":"KILLED","line":1,"column":1},{"type":"A","status":"
 if [ "$mode" = "mixed" ]; then
   if [ -e "$GREMLINS_STATE" ]; then mutations="$mixed"; else : > "$GREMLINS_STATE"; mutations="$good"; fi
 elif [ "$mode" = "bad" ]; then mutations="$bad"; else mutations="$good"; fi
+case "$mode" in one-base|one-hidden) mutations='{"type":"A","status":"KILLED","line":1,"column":1}';; esac
 printf '{"files":[{"file_name":"%s","mutations":[%s]}]}' "$file" "$mutations" > "$out"
 `
 
@@ -154,6 +157,8 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 		Entry("both suites have valid mutants", "good"),
 		Entry("only the PASS_TO_PASS suite is empty", "empty-base"),
 		Entry("only the FAIL_TO_PASS suite is empty", "empty-hidden"),
+		Entry("exactly one valid mutant in the PASS_TO_PASS suite and none in the other", "one-base"),
+		Entry("exactly one valid mutant in the FAIL_TO_PASS suite and none in the other", "one-hidden"),
 	)
 
 	It("regenerates a program that a binary of the earlier validation version cached without mutation_vacuous, and records it (#902, AC-32)", func() {
