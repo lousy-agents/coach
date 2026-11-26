@@ -6,27 +6,42 @@ import (
 	"unicode"
 )
 
-// allocatingBuiltins are calls that build a value without reaching outside
-// the constructor, so they do not make it do work.
-var allocatingBuiltins = map[string]bool{"append": true, "cap": true, "len": true, "make": true, "new": true}
-
 const (
 	constructorAssignsOnly = "assigns_only"
 	constructorDoesWork    = "does_work"
 )
 
-// constructorShapeOf classifies a New… function: assigns_only when its body
-// is only assignments and returns with no call but an allocating builtin,
-// does_work otherwise (Hevery's "constructor does real work"). Any other
-// function is no constructor, "".
-func constructorShapeOf(function *ast.FuncDecl) string {
+// outwardCall is one entry of the closed list of APIs that reach outside
+// the process (the chief's ruling on #872, matching #876). Name is a
+// package-level function, a selector path below the package such as
+// DefaultClient.Do, a prefix ending in *, or * for the whole package.
+type outwardCall struct {
+	path string
+	name string
+}
+
+var outwardCalls = []outwardCall{
+	{"os", "Getenv"}, {"os", "LookupEnv"}, {"os", "Open*"}, {"os", "Create"},
+	{"os", "ReadFile"}, {"os", "WriteFile"}, {"os", "Mkdir*"},
+	{"os/exec", "*"},
+	{"net", "Dial*"}, {"net", "Listen*"},
+	{"net/http", "Get"}, {"net/http", "Post"}, {"net/http", "Head"},
+	{"net/http", "DefaultClient.Do"}, {"net/http", "ListenAndServe*"},
+	{"database/sql", "Open"},
+	{"syscall", "*"},
+}
+
+// constructorShapeOf classifies a New… function: does_work when its body
+// calls an outward API (Hevery's "constructor does real work"),
+// assigns_only otherwise. Any other function is no constructor, "".
+func constructorShapeOf(file *ast.File, function *ast.FuncDecl) string {
 	switch {
 	case !isConstructorName(function):
 		return ""
-	case onlyAssigns(function.Body):
-		return constructorAssignsOnly
+	case callsOutward(file, function.Body):
+		return constructorDoesWork
 	}
-	return constructorDoesWork
+	return constructorAssignsOnly
 }
 
 func (c *constructorShapes) add(shape string) {
@@ -44,28 +59,52 @@ func isConstructorName(function *ast.FuncDecl) bool {
 		(rest == "" || unicode.IsUpper([]rune(rest)[0]))
 }
 
-func onlyAssigns(body *ast.BlockStmt) bool {
-	for _, statement := range body.List {
-		switch statement.(type) {
-		case *ast.AssignStmt, *ast.DeclStmt, *ast.ReturnStmt:
-		default:
-			return false
-		}
-	}
-	return !callsOutward(body)
-}
-
-func callsOutward(body *ast.BlockStmt) bool {
+func callsOutward(file *ast.File, body *ast.BlockStmt) bool {
 	outward := false
 	ast.Inspect(body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return !outward
-		}
-		if ident, isIdent := call.Fun.(*ast.Ident); !isIdent || !allocatingBuiltins[ident.Name] {
+		if call, ok := n.(*ast.CallExpr); ok && isOutward(file, call.Fun) {
 			outward = true
 		}
 		return !outward
 	})
 	return outward
+}
+
+func isOutward(file *ast.File, fun ast.Expr) bool {
+	pkg, rest, ok := packageSelector(fun)
+	if !ok {
+		return false
+	}
+	for _, entry := range outwardCalls {
+		if importName(file, entry.path) == pkg && matchesName(entry.name, rest) {
+			return true
+		}
+	}
+	return false
+}
+
+// packageSelector splits pkg.A.B into pkg and "A.B" when the expression
+// starts at a bare identifier.
+func packageSelector(expr ast.Expr) (string, string, bool) {
+	var names []string
+	for {
+		selector, ok := expr.(*ast.SelectorExpr)
+		if !ok {
+			break
+		}
+		names = append([]string{selector.Sel.Name}, names...)
+		expr = selector.X
+	}
+	ident, ok := expr.(*ast.Ident)
+	if !ok || len(names) == 0 {
+		return "", "", false
+	}
+	return ident.Name, strings.Join(names, "."), true
+}
+
+func matchesName(pattern, name string) bool {
+	if prefix, ok := strings.CutSuffix(pattern, "*"); ok {
+		return strings.HasPrefix(name, prefix)
+	}
+	return pattern == name
 }

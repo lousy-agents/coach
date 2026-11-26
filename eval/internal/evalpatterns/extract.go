@@ -44,7 +44,7 @@ func (p *profile) measureFile(fset *token.FileSet, file *ast.File) {
 	for _, function := range functionsWithBodies(file) {
 		p.Shapes.Nesting.add(maxNesting(function.Body))
 		p.Dimensions.Entry.add(entryKindOf(file, function))
-		p.Shapes.Constructor.add(constructorShapeOf(function))
+		p.Shapes.Constructor.add(constructorShapeOf(file, function))
 	}
 	for _, score := range cognitiveComplexity(fset, file) {
 		p.Shapes.Cognitive.add(score)
