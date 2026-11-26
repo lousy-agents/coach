@@ -20,19 +20,18 @@ const (
 func lockLedger(path string) (func(), error) {
 	lockPath := path + ".lock"
 	deadline := time.Now().Add(ledgerLockWait)
-	for {
-		taken, err := tryLock(lockPath)
-		if err != nil {
-			return nil, err
-		}
-		if taken {
-			return func() { os.Remove(lockPath) }, nil
-		}
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("census ledger %s is locked by %s; remove it if no census is running", path, lockPath)
-		}
+	taken, err := tryLock(lockPath)
+	for err == nil && !taken && time.Now().Before(deadline) {
 		time.Sleep(ledgerLockPoll)
+		taken, err = tryLock(lockPath)
 	}
+	switch {
+	case err != nil:
+		return nil, err
+	case !taken:
+		return nil, fmt.Errorf("census ledger %s is locked by %s; remove it if no census is running", path, lockPath)
+	}
+	return func() { os.Remove(lockPath) }, nil
 }
 
 // tryLock creates the lock file, reporting false when another writer holds it.
