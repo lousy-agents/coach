@@ -11,7 +11,6 @@ import (
 	"github.com/lousy-agents/coach/eval/internal/evalcensus"
 	"github.com/lousy-agents/coach/eval/internal/evalharness"
 	"github.com/lousy-agents/coach/eval/internal/evalhistory"
-	"github.com/lousy-agents/coach/eval/internal/evalpatterns"
 )
 
 func main() {
@@ -36,7 +35,7 @@ var commands = map[string]func(args []string, stdout, stderr io.Writer) int{
 		return evalharness.HookHealth(args, os.Stdin, stdout, stderr)
 	},
 	"antipatterns": evalharness.Antipatterns,
-	"patterns":     evalpatterns.Patterns,
+	"patterns":     patterns,
 	"trend":        evalharness.Trend,
 }
 
