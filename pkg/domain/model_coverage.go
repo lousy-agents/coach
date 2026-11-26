@@ -43,6 +43,11 @@ func CanonicalCoverage(in Coverage) Coverage {
 	}
 	out := in
 	diagnostics := append([]Diagnostic(nil), in.Diagnostics...)
+	for i := range diagnostics {
+		if diagnostics[i].Message == "" {
+			diagnostics[i].Message = DefaultDiagnosticMessage(diagnostics[i].Code)
+		}
+	}
 	sort.SliceStable(diagnostics, func(i, j int) bool {
 		if diagnostics[i].Code != diagnostics[j].Code {
 			return diagnostics[i].Code < diagnostics[j].Code
