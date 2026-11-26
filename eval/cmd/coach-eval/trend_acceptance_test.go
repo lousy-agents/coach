@@ -120,10 +120,9 @@ var _ = Describe("eval-compare trend mode", func() {
 
 	When("the ledger holds census lines for the same cell", func() {
 		It("trends only the pre_run, study and baseline lines", func() {
-			census := withPath(trendRecord("run-x", 0.1), "solver.model", "claude-other-model")
 			writeLedger(ledger,
 				ledgerLine("pre_run", "2026-11-01", "cell-a", trendRecord("run-1", 0.5)),
-				ledgerLine("census", "2026-11-02", "cell-a", census),
+				ledgerLine("census", "2026-11-02", "cell-a", censusRunRecord("census-x")),
 				ledgerLine("pre_run", "2026-11-03", "cell-a", trendRecord("run-2", 0.75)),
 			)
 

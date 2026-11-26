@@ -13,8 +13,8 @@ const (
 	ledgerLockPoll = 10 * time.Millisecond
 )
 
-// lockLedger takes the ledger's lock file, so concurrent writers load,
-// check and append one at a time and a record_id is never written twice. A
+// lockLedger takes the ledger's lock file, so concurrent writers check and
+// append one at a time and a record_id is never written twice. A
 // lock file works on every host the census runs on; one left by a crashed
 // writer is reported by name once the wait runs out.
 func lockLedger(path string) (func(), error) {
@@ -29,7 +29,7 @@ func lockLedger(path string) (func(), error) {
 	case err != nil:
 		return nil, err
 	case !taken:
-		return nil, fmt.Errorf("census ledger %s is locked by %s; remove it if no census is running", path, lockPath)
+		return nil, fmt.Errorf("ledger %s is locked by %s; remove it if no eval writer is running", path, lockPath)
 	}
 	return func() { os.Remove(lockPath) }, nil
 }
