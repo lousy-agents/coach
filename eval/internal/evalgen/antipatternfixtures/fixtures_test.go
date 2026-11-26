@@ -117,3 +117,23 @@ func exitOf(err error) int {
 	}
 	return -1
 }
+
+// allFiles is every file name under dir, by slash path.
+func allFiles(dir string) []string {
+	GinkgoHelper()
+	var names []string
+	for name := range tree(dir) {
+		names = append(names, name)
+	}
+	return names
+}
+
+// allContents is the content of every file under dir.
+func allContents(dir string) []string {
+	GinkgoHelper()
+	var contents []string
+	for _, content := range tree(dir) {
+		contents = append(contents, content)
+	}
+	return contents
+}

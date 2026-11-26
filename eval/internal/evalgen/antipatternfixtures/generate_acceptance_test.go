@@ -3,7 +3,6 @@ package antipatternfixtures_test
 import (
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -26,14 +25,9 @@ var _ = Describe("profile-derived anti-pattern fixtures (#872 Task 5)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ids(out)).To(Equal([]string{"arrow-code", "constructor-does-real-work", "god-file", "spaghetti-conditional"}))
 			Expect(result.Emitted).To(HaveLen(4))
+			Expect(allFiles(out)).To(HaveEach(Or(Equal("expect.json"), HaveSuffix(".txt"))))
 			for _, id := range ids(out) {
-				files := tree(filepath.Join(out, id))
-				Expect(files).To(HaveKey("expect.json"))
-				Expect(files).To(HaveKey("bad/go.mod.txt"))
-				Expect(files).To(HaveKey("good/go.mod.txt"))
-				for name := range files {
-					Expect(name == "expect.json" || strings.HasSuffix(name, ".txt")).To(BeTrue(), name)
-				}
+				Expect(tree(filepath.Join(out, id))).To(SatisfyAll(HaveKey("expect.json"), HaveKey("bad/go.mod.txt"), HaveKey("good/go.mod.txt")))
 			}
 		})
 
@@ -42,11 +36,9 @@ var _ = Describe("profile-derived anti-pattern fixtures (#872 Task 5)", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			for _, id := range ids(out) {
-				expect := readExpect(out, id)
-				Expect(expect.ID).To(Equal(id))
-				Expect(expect.Seed).To(Equal("profile:" + profileIdentity))
-				Expect(expect.Source).To(ContainSubstring("#871"))
-				Expect(expect.Source).To(ContainSubstring(id))
+				Expect(readExpect(out, id)).To(SatisfyAll(
+					HaveField("ID", id), HaveField("Seed", "profile:"+profileIdentity),
+					HaveField("Source", SatisfyAll(ContainSubstring("#871"), ContainSubstring(id)))))
 			}
 		})
 
@@ -70,12 +62,8 @@ var _ = Describe("profile-derived anti-pattern fixtures (#872 Task 5)", func() {
 			_, err := generate(everyShape(), out)
 			Expect(err).NotTo(HaveOccurred())
 
-			for _, id := range ids(out) {
-				for name, content := range tree(filepath.Join(out, id)) {
-					Expect(name).NotTo(ContainSubstring("secret-label"))
-					Expect(content).NotTo(ContainSubstring("secret-label"))
-				}
-			}
+			Expect(allFiles(out)).To(HaveEach(Not(ContainSubstring("secret-label"))))
+			Expect(allContents(out)).To(HaveEach(Not(ContainSubstring("secret-label"))))
 		})
 	})
 
