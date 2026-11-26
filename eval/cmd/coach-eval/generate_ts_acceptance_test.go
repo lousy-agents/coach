@@ -66,30 +66,14 @@ var _ = Describe("a generated TypeScript program tree", func() {
 		It("holds one root tsconfig and a package.json, and no other project file the grader refuses (781 constraint)", func() {
 			Expect(filesMatching(tree, `(^|/)tsconfig[^/]*\.json$`)).To(Equal([]string{"tsconfig.json"}))
 			Expect(filesMatching(tree, `(^|/)package\.json$`)).To(Equal([]string{"package.json"}))
-			config := string(tree["tsconfig.json"])
-			for _, refused := range []string{`"references"`, `"paths"`, `"baseUrl"`, `"extends"`} {
-				Expect(config).NotTo(ContainSubstring(refused))
-			}
-			manifest := string(tree["package.json"])
-			for _, refused := range []string{`"imports"`, `"exports"`} {
-				Expect(manifest).NotTo(ContainSubstring(refused))
-			}
+			Expect(string(tree["tsconfig.json"])).NotTo(MatchRegexp(`"(references|paths|baseUrl|extends)"`))
+			Expect(string(tree["package.json"])).NotTo(MatchRegexp(`"(imports|exports)"`))
 		})
 
 		It("imports only by relative, static specifiers that name a file of the tree (781 constraint)", func() {
 			for path, source := range tree {
-				if !strings.HasSuffix(path, ".ts") {
-					continue
-				}
-				Expect(string(source)).NotTo(MatchRegexp(`\brequire\(|import\(`), path)
-				for _, specifier := range specifiersOf(source) {
-					if specifier == "node:test" || specifier == "node:assert/strict" {
-						continue
-					}
-					Expect(specifier).To(MatchRegexp(`^\.{1,2}/`), path)
-					Expect(strings.Count(specifier, "../")).To(BeNumerically("<=", 1), path+" stays 2 below the deep-import threshold of 3")
-					resolved := resolveRelative(path, specifier)
-					Expect(tree).To(HaveKey(resolved), path+" imports "+specifier)
+				if strings.HasSuffix(path, ".ts") {
+					expectRelativeStaticImports(tree, path, source)
 				}
 			}
 		})
@@ -100,11 +84,7 @@ var _ = Describe("a generated TypeScript program tree", func() {
 
 			Expect(policy.Language).To(Equal("typescript"))
 			Expect(policy.Roots).To(Equal([]string{"."}))
-			Expect(policy.Layers).To(HaveLen(cell.layers))
-			for _, layer := range policy.Layers {
-				Expect(layer.Prefixes).To(Equal([]string{"src/" + layer.Name}))
-				Expect(filesMatching(tree, `^src/`+layer.Name+`/[a-z]+\.ts$`)).To(HaveLen(cell.packages))
-			}
+			expectLayersUnderSrc(tree, policy, cell)
 			Expect(policy.ForbiddenImports).To(HaveLen(1))
 			Expect(policy.RequiredLayer).NotTo(BeEmpty())
 		})
@@ -116,9 +96,7 @@ var _ = Describe("a generated TypeScript program tree", func() {
 		})
 
 		It("names none of the hidden machinery and holds no hidden test", func() {
-			for path, source := range tree {
-				Expect(leakageWords.FindString(path+"\n"+string(source))).To(BeEmpty(), path)
-			}
+			expectNoLeakage(tree)
 			Expect(tree).NotTo(HaveKey(MatchRegexp(`^tests/`)))
 		})
 	})
@@ -137,4 +115,30 @@ func resolveRelative(from, specifier string) string {
 		}
 	}
 	return strings.Join(parts, "/")
+}
+
+func expectRelativeStaticImports(tree map[string][]byte, path string, source []byte) {
+	ExpectWithOffset(1, string(source)).NotTo(MatchRegexp(`\brequire\(|import\(`), path)
+	for _, specifier := range specifiersOf(source) {
+		if strings.HasPrefix(specifier, "node:") {
+			continue
+		}
+		ExpectWithOffset(1, specifier).To(MatchRegexp(`^\.{1,2}/`), path)
+		ExpectWithOffset(1, strings.Count(specifier, "../")).To(BeNumerically("<=", 1), path+" stays 2 below the deep-import threshold of 3")
+		ExpectWithOffset(1, tree).To(HaveKey(resolveRelative(path, specifier)), path+" imports "+specifier)
+	}
+}
+
+func expectLayersUnderSrc(tree map[string][]byte, policy typeScriptPolicy, cell programCell) {
+	ExpectWithOffset(1, policy.Layers).To(HaveLen(cell.layers))
+	for _, layer := range policy.Layers {
+		ExpectWithOffset(1, layer.Prefixes).To(Equal([]string{"src/" + layer.Name}))
+		ExpectWithOffset(1, filesMatching(tree, `^src/`+layer.Name+`/[a-z]+\.ts$`)).To(HaveLen(cell.packages))
+	}
+}
+
+func expectNoLeakage(tree map[string][]byte) {
+	for path, source := range tree {
+		ExpectWithOffset(1, leakageWords.FindString(path+"\n"+string(source))).To(BeEmpty(), path)
+	}
 }

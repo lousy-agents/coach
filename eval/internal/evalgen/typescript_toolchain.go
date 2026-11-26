@@ -37,24 +37,31 @@ func ResolveTypeScriptTools(workingDir string) (TypeScriptTools, error) {
 
 func locateTSC(workingDir string) (string, error) {
 	if named := os.Getenv("EVAL_TSC"); named != "" {
-		if _, err := os.Stat(named); err != nil {
-			return "", fmt.Errorf("EVAL_TSC names %s, which does not exist", named)
-		}
-		return named, nil
+		return existing(named, fmt.Errorf("EVAL_TSC names %s, which does not exist", named))
 	}
-	installed := filepath.Join("js", "semantics", "node_modules", ".bin", "tsc")
-	for dir := workingDir; ; dir = filepath.Dir(dir) {
-		if _, err := os.Stat(filepath.Join(dir, "eval", "go.mod")); err == nil {
-			candidate := filepath.Join(dir, installed)
-			if _, err := os.Stat(candidate); err != nil {
-				return "", fmt.Errorf("the pinned TypeScript compiler is not installed at %s: run `mise run js-install`, or set EVAL_TSC", candidate)
-			}
-			return candidate, nil
-		}
-		if filepath.Dir(dir) == dir {
-			return "", fmt.Errorf("no TypeScript compiler: set EVAL_TSC, or run from a checkout that has js/semantics/node_modules installed")
+	root, found := checkoutRoot(workingDir)
+	if !found {
+		return "", fmt.Errorf("no TypeScript compiler: set EVAL_TSC, or run from a checkout that has js/semantics/node_modules installed")
+	}
+	candidate := filepath.Join(root, "js", "semantics", "node_modules", ".bin", "tsc")
+	return existing(candidate, fmt.Errorf("the pinned TypeScript compiler is not installed at %s: run `mise run js-install`, or set EVAL_TSC", candidate))
+}
+
+func existing(path string, missing error) (string, error) {
+	if _, err := os.Stat(path); err != nil {
+		return "", missing
+	}
+	return path, nil
+}
+
+// checkoutRoot is the nearest directory at or above dir that holds the eval module.
+func checkoutRoot(dir string) (string, bool) {
+	for current := dir; filepath.Dir(current) != current; current = filepath.Dir(current) {
+		if _, err := os.Stat(filepath.Join(current, "eval", "go.mod")); err == nil {
+			return current, true
 		}
 	}
+	return "", false
 }
 
 func requirePinnedVersion(tsc string) error {

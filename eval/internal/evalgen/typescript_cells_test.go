@@ -1,7 +1,7 @@
 package evalgen_test
 
 import (
-	"bytes"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -22,46 +22,46 @@ func isProduction(path string) bool {
 // TypeScript toolchain.
 func TestEveryTypeScriptCellIsBranchFreeAndDeterministic(t *testing.T) {
 	for index := 0; index < evalgen.CellCount; index++ {
-		cell, err := evalgen.CellFromIndex(index)
-		if err != nil {
-			t.Fatal(err)
-		}
 		for _, seed := range []int64{0, 3} {
-			first, err := evalgen.GenerateTypeScript(cell, seed)
-			if err != nil {
-				t.Fatalf("cell %d seed %d: %v", index, seed, err)
-			}
-			second, _ := evalgen.GenerateTypeScript(cell, seed)
-			if first.ID != second.ID || !sameTree(first.Tree, second.Tree) {
-				t.Fatalf("cell %d seed %d: two generations differ", index, seed)
-			}
-			assertProduction(t, index, seed, first)
+			assertCellAndSeed(t, index, seed)
 		}
 	}
+}
+
+func assertCellAndSeed(t *testing.T, index int, seed int64) {
+	t.Helper()
+	cell, err := evalgen.CellFromIndex(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := evalgen.GenerateTypeScript(cell, seed)
+	if err != nil {
+		t.Fatalf("cell %d seed %d: %v", index, seed, err)
+	}
+	second, _ := evalgen.GenerateTypeScript(cell, seed)
+	if first.ID != second.ID || !sameTree(first.Tree, second.Tree) {
+		t.Fatalf("cell %d seed %d: two generations differ", index, seed)
+	}
+	assertProduction(t, index, seed, first)
 }
 
 func assertProduction(t *testing.T, index int, seed int64, program evalgen.Program) {
 	t.Helper()
 	for _, files := range []map[string][]byte{program.Tree, program.Solution} {
-		for path, source := range files {
-			if isProduction(path) && refusedShapes.Match(source) {
-				t.Fatalf("cell %d seed %d: %s holds %q", index, seed, path, refusedShapes.Find(source))
-			}
-		}
+		assertNoRefusedShape(t, index, seed, files)
 	}
 	if _, goModule := program.Tree["go.mod"]; goModule {
 		t.Fatalf("cell %d seed %d: a TypeScript program holds go.mod", index, seed)
 	}
 }
 
-func sameTree(a, b map[string][]byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for path, content := range a {
-		if !bytes.Equal(content, b[path]) {
-			return false
+func assertNoRefusedShape(t *testing.T, index int, seed int64, files map[string][]byte) {
+	t.Helper()
+	for path, source := range files {
+		if isProduction(path) && refusedShapes.Match(source) {
+			t.Fatalf("cell %d seed %d: %s holds %q", index, seed, path, refusedShapes.Find(source))
 		}
 	}
-	return true
 }
+
+func sameTree(a, b map[string][]byte) bool { return reflect.DeepEqual(a, b) }
