@@ -277,6 +277,21 @@ var _ = Describe("the Go layer-bypass detector", func() {
 		Entry("pairs that give a layer below the required layer but none above it", `{"from":"store","to":"usecases"}`),
 	)
 
+	When("the policy gives no layer above or below the required layer and the tree holds a file that does not parse", func() {
+		It("returns the reason without loading the program, so it neither refuses nor searches", func() {
+			policy := `{"schema_version":"1","roots":["."],"layers":[` +
+				`{"name":"usecases","prefixes":["pkg/usecases"]},` +
+				`{"name":"api","prefixes":["pkg/api"]}],` +
+				`"forbidden_imports":[],"required_layer":"usecases"}`
+			root := bypassTree(policy, map[string]string{"pkg/zzz/broken.go": "package zzz\n\nfunc broken( {\n"})
+
+			report, err := evaldetect.GoLayerBypass(root, loadPolicy(root))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Bypasses).To(BeEmpty())
+			Expect(report.Reason).To(Equal("the policy's forbidden_imports give no layer above or below the required layer"))
+		})
+	})
+
 	When("a package does not type-check", func() {
 		It("refuses the program, naming the package, rather than grading it in part", func() {
 			root := bypassTree(bypassPolicy("usecases", false), map[string]string{
