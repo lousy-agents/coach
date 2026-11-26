@@ -355,7 +355,13 @@ run = [
 # Runs the eval module's compare command. Arguments after `--` reach the command.
 [tasks.eval-compare]
 description = "Compare two coach-eval runs by run id; exit 0 comparable, 2 a run missing or invalid, 4 not comparable"
-run = 'go -C eval run ./cmd/coach-eval compare "$@"'
+run = """
+set -eu
+bin_dir=$(mktemp -d)
+trap 'rm -rf "$bin_dir"' EXIT
+go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
+"$bin_dir/coach-eval" compare "$@"
+"""
 
 # The single authoritative "everything CI proves" task. No longer the ship gate
 # -- GHA runs these as parallel required jobs -- but still the way to prove the
