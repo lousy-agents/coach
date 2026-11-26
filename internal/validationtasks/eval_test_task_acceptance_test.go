@@ -19,11 +19,17 @@ var _ = Describe("the eval-test mise task", func() {
 		toml = string(raw)
 	})
 
-	It("runs the eval module's specs with the race detector and a timeout that holds a full run (AC-21)", func() {
+	It("runs the eval module's specs with the race detector and a timeout that holds a full run under load (AC-21)", func() {
 		body := taskBody(toml, "eval-test")
 
 		Expect(body).NotTo(BeEmpty(), "mise.toml defines [tasks.eval-test]")
-		Expect(body).To(ContainSubstring("go -C eval test -race -timeout 30m ./..."))
+		Expect(body).To(ContainSubstring("go -C eval test -race -timeout 45m ./..."))
+	})
+
+	It("installs the JS packages first, because the TypeScript specs fail in a fresh worktree without them (AC-21)", func() {
+		body := taskBody(toml, "eval-test")
+
+		Expect(body).To(ContainSubstring(`depends = ["js-install"]`))
 	})
 
 	It("says it is local only (AC-21)", func() {
