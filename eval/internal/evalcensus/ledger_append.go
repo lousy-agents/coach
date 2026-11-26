@@ -45,9 +45,14 @@ func appendLines(path string, records []Record) error {
 	if endsMidLine(file) {
 		lines = *bytes.NewBuffer(append([]byte{'\n'}, lines.Bytes()...))
 	}
-	if _, err := file.Write(lines.Bytes()); err != nil {
+	if _, err := writeLedger(file, lines.Bytes()); err != nil {
 		file.Close()
 		return err
 	}
 	return file.Close()
+}
+
+// writeLedger writes an append's bytes to the open ledger.
+var writeLedger = func(file *os.File, data []byte) (int, error) {
+	return file.Write(data)
 }
