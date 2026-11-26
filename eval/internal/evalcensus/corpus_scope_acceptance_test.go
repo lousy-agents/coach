@@ -131,15 +131,28 @@ var _ = Describe("the corpus manifest's scope", func() {
 		})
 	})
 
-	When("a repository's sample size is negative", func() {
-		It("refuses the manifest, naming the repository and the size", func() {
+	When("a repository's sample names a size", func() {
+		It("refuses the manifest by name, since the size is fixed at 30 and nothing honours a size key", func() {
 			manifest := scopedCorpus()
-			firstRepository(manifest)["sample"] = map[string]any{"seed": 7, "size": -1}
+			firstRepository(manifest)["sample"] = map[string]any{"seed": 7, "size": 30}
 
 			_, err := evalcensus.LoadCensusCorpus(writeJSON(manifest))
 
-			Expect(err).To(MatchError(ContainSubstring(`"coach"`)))
 			Expect(err).To(MatchError(ContainSubstring("size")))
 		})
 	})
+
+	DescribeTable("a repository's include or exclude glob is not repository-relative",
+		func(pattern string) {
+			manifest := scopedCorpus()
+			firstRepository(manifest)["include"] = []any{pattern}
+
+			_, err := evalcensus.LoadCorpus(writeJSON(manifest))
+
+			Expect(err).To(MatchError(ContainSubstring(`"coach"`)))
+		},
+		Entry("starts with ./", "./src/**"),
+		Entry("starts with /", "/src/**"),
+		Entry("climbs out with ../", "../src/**"),
+	)
 })

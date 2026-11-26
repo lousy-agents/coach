@@ -3,6 +3,7 @@ package evalcensus_test
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -158,24 +159,36 @@ var _ = Describe("the census's path scope and sample", func() {
 	})
 
 	When("a rule has more than 30 findings", func() {
-		It("draws 30 of them, under the frame sampled", func() {
+		It("draws 30 of them, under the frame random_30", func() {
 			statuses := statusesOf(nil, findingsReport(manyFindings(31)...))
 
 			status := statusFor(statuses, scopedRule)
-			Expect(status["frame"]).To(Equal("sampled"))
+			Expect(status["frame"]).To(Equal("random_30"))
 			Expect(status["sampled_keys"]).To(HaveLen(30))
 			Expect(status["findings"]).To(BeEquivalentTo(31))
 		})
 	})
 
-	When("the manifest names a sample size", func() {
-		It("draws that many findings instead of 30", func() {
-			statuses := statusesOf(map[string]any{"sample": map[string]any{"seed": 7, "size": 5}},
-				findingsReport(manyFindings(6)...))
+	When("a rule has 32 findings", func() {
+		It("draws 30 of them, so the draw is not one fewer than the rule has", func() {
+			statuses := statusesOf(nil, findingsReport(manyFindings(32)...))
 
 			status := statusFor(statuses, scopedRule)
-			Expect(status["frame"]).To(Equal("sampled"))
-			Expect(status["sampled_keys"]).To(HaveLen(5))
+			Expect(status["frame"]).To(Equal("random_30"))
+			Expect(status["sampled_keys"]).To(HaveLen(30))
+		})
+	})
+
+	When("the census draws a sample", func() {
+		It("never emits not_sampled, which the design keeps in its frame enum", func() {
+			raw, err := os.ReadFile("../evalharness/census_run.schema.json")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(raw)).To(ContainSubstring(`"not_sampled"`))
+
+			for _, count := range []int{0, 30, 31} {
+				statuses := statusesOf(nil, findingsReport(manyFindings(count)...))
+				Expect(statusFor(statuses, scopedRule)["frame"]).NotTo(Equal("not_sampled"))
+			}
 		})
 	})
 
@@ -204,14 +217,14 @@ var _ = Describe("the census's path scope and sample", func() {
 
 	When("a repository's sample is recorded", func() {
 		It("gives the seed and the size in the repository's summary JSON", func() {
-			raw := fmt.Sprintf(`{"id":"coach","sha":%q,"coach_exit":0,"sample":{"seed":7,"size":30},"statuses":[]}`, fixtureSHA)
+			raw := fmt.Sprintf(`{"id":"coach","sha":%q,"coach_exit":0,"sample":{"seed":7},"statuses":[]}`, fixtureSHA)
 			var result evalcensus.RepositoryResult
 			Expect(json.Unmarshal([]byte(raw), &result)).To(Succeed())
 
 			out, err := json.Marshal(result)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(string(out)).To(ContainSubstring(`"sample":{"seed":7,"size":30}`))
+			Expect(string(out)).To(ContainSubstring(`"sample":{"seed":7}`))
 		})
 	})
 
