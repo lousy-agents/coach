@@ -76,7 +76,7 @@ All tasks are defined in `mise.toml`; run them with `mise run <task>`, and list 
 | `ci-fast` | the implement/review loop's per-cycle check: Go slice plus agent-tooling suites, sidecar built first. Narrower than CI, but not quick: `cmd/coach` alone runs minutes |
 | `ci` | `ci-go` + `js-ci`. No `wasm-build`, and it builds the sidecar only after `test` has already run |
 | `ci-all` | sidecar-first Go slice + `js-ci` + `wasm-build` + `vulncheck`; not `platform-smoke` |
-| `test` | `go test -race ./...` |
+| `test` | `go test -race -timeout 25m ./...` |
 | `test-acceptance-fast` | the fast in-process Ginkgo/Gomega suites (offline, no real credentials) |
 
 Single test, Go side:
