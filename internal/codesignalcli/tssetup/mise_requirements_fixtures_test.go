@@ -47,6 +47,12 @@ func requireOrSkip(requirement string, cause error) {
 	}
 }
 
+type registryProbeMisconfigured struct{ error }
+
+func registryProbeOutcome(probeErr error, required bool) (skipReason, failure string) {
+	return outcomeWhenRequirementMissing("the public npm registry", probeErr, required)
+}
+
 // probeRegistry treats any 4xx or 5xx as unavailable: a 429 or a mirror that lacks the package would otherwise send the
 // real install on to fail as a false red. It reports why registryURL cannot be reached with the client's timeout and the process's proxy settings.
 func probeRegistry(client *http.Client, registryURL string) error {

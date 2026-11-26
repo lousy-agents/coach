@@ -13,6 +13,12 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+func serveStatus(status int) *httptest.Server {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) }))
+	DeferCleanup(server.Close)
+	return server
+}
+
 func ambientNpmConfigNames() []string {
 	var names []string
 	for _, entry := range os.Environ() {
@@ -117,24 +123,50 @@ var _ = Describe("a real-mise spec that cannot run says why, and cannot silently
 			Expect(probeRegistry(&http.Client{Timeout: 50 * time.Millisecond}, server.URL)).To(MatchError(ContainSubstring(server.URL)))
 		})
 
-		DescribeTable("answers with a status",
-			func(status int, unavailable bool) {
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) }))
-				DeferCleanup(server.Close)
+		DescribeTable("classifies the status it is answered with",
+			func(status int, wantErr, wantMisconfigured bool) {
+				server := serveStatus(status)
 
 				err := probeRegistry(server.Client(), server.URL)
 
-				if !unavailable {
+				if !wantErr {
 					Expect(err).To(Succeed())
 					return
 				}
 				Expect(err).To(MatchError(And(ContainSubstring(server.URL), ContainSubstring(strconv.Itoa(status)))))
+				var misconfigured *registryProbeMisconfigured
+				Expect(errors.As(err, &misconfigured)).To(Equal(wantMisconfigured))
 			},
-			Entry("304, below any error: reachable", http.StatusNotModified, false),
-			Entry("400, the lowest error: unavailable, because the control would run and fail as a false red", http.StatusBadRequest, true),
-			Entry("404, a mirror without the package: unavailable", http.StatusNotFound, true),
-			Entry("429, rate limited: unavailable", http.StatusTooManyRequests, true),
-			Entry("502, a server error: unavailable", http.StatusBadGateway, true),
+			Entry("200: reachable", http.StatusOK, false, false),
+			Entry("304, below any error: reachable", http.StatusNotModified, false, false),
+			Entry("400, the lowest other 4xx: a probe that is misconfigured", http.StatusBadRequest, true, true),
+			Entry("404, no such package at this URL: a probe that is misconfigured", http.StatusNotFound, true, true),
+			Entry("429, rate limited: unavailable, not misconfigured", http.StatusTooManyRequests, true, false),
+			Entry("500, the lowest server error: unavailable", http.StatusInternalServerError, true, false),
+			Entry("503: unavailable", http.StatusServiceUnavailable, true, false),
+		)
+
+		DescribeTable("what the spec does with the answer",
+			func(status int, required bool, wantSkip, wantFailure bool) {
+				server := serveStatus(status)
+
+				skipReason, failure := registryProbeOutcome(probeRegistry(server.Client(), server.URL), required)
+
+				Expect(skipReason != "").To(Equal(wantSkip), "skip reason %q", skipReason)
+				Expect(failure != "").To(Equal(wantFailure), "failure %q", failure)
+				named := skipReason + failure
+				if named != "" {
+					Expect(named).To(And(ContainSubstring(server.URL), ContainSubstring(strconv.Itoa(status))))
+				}
+			},
+			Entry("200, not required: runs", http.StatusOK, false, false, false),
+			Entry("200, required: runs", http.StatusOK, true, false, false),
+			Entry("404, not required: fails, because the probe URL is wrong", http.StatusNotFound, false, false, true),
+			Entry("404, required: fails", http.StatusNotFound, true, false, true),
+			Entry("429, not required: skips", http.StatusTooManyRequests, false, true, false),
+			Entry("429, required: fails", http.StatusTooManyRequests, true, false, true),
+			Entry("503, not required: skips", http.StatusServiceUnavailable, false, true, false),
+			Entry("503, required: fails", http.StatusServiceUnavailable, true, false, true),
 		)
 	})
 })
