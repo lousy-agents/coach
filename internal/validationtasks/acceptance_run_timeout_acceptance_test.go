@@ -3,49 +3,22 @@ package validationtasks
 import (
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-var (
-	fastStepTimeout  = regexp.MustCompile(`(?m)^\s*"go test -race -timeout (\d+)m \./\.\.\. -run Acceptance",?\s*$`)
-	distroRunTimeout = regexp.MustCompile(`(?m)^\s*run:\s*mise exec -- go run \./cmd/acceptance-ci-env -timeout (\d+)m \./\.\.\.\s*$`)
-	distroJobLimit   = regexp.MustCompile(`(?m)^    timeout-minutes:\s*(\d+)\s*$`)
-)
-
-func firstMinutes(pattern *regexp.Regexp, text string) (int, bool) {
-	match := pattern.FindStringSubmatch(text)
-	if match == nil {
-		return 0, false
-	}
-	minutes, err := strconv.Atoi(match[1])
-	return minutes, err == nil
-}
-
-func withoutCommentLines(text string) string {
-	var kept []string
-	for _, line := range strings.Split(text, "\n") {
-		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
-			kept = append(kept, line)
-		}
-	}
-	return strings.Join(kept, "\n")
-}
-
 func fastAcceptanceTimeout(toml string) (int, bool) {
-	return firstMinutes(fastStepTimeout, taskSteps(toml, "test-acceptance-fast"))
+	return taskGoTestTimeout(toml, "test-acceptance-fast")
 }
 
 func distroGitRunTimeout(yml string) (int, bool) {
-	return firstMinutes(distroRunTimeout, withoutCommentLines(jobBody(yml, "distro-git")))
+	return jobGoTestTimeout(yml, "distro-git")
 }
 
 func distroGitJobLimit(yml string) (int, bool) {
-	return firstMinutes(distroJobLimit, withoutCommentLines(jobBody(yml, "distro-git")))
+	return jobTimeoutMinutes(yml, "distro-git")
 }
 
 func mutated(text, old, replacement string) string {
