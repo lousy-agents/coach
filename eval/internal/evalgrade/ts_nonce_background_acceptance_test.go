@@ -1,6 +1,7 @@
 package evalgrade_test
 
 import (
+	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -56,5 +57,36 @@ test("never finishes", async () => { await new Promise(() => setInterval(() => {
 		Expect(took).To(BeNumerically("<", bound))
 		Expect(statusOf(run, "a.test.ts::finishes")).To(Equal([]string{"pass"}))
 		Expect(statusOf(run, "a.test.ts::never finishes")).NotTo(ContainElement("pass"))
+	})
+
+	It("says why it cut the run off when a test leaves a background process holding the streams open", func() {
+		run, _ := runWithin(map[string]string{"a.test.ts": header + `
+import { spawn } from "node:child_process";
+test("leaves a holder", () => {
+  spawn("sleep", ["120"], { detached: true, stdio: "inherit" }).unref();
+});
+`}, 3*time.Second)
+
+		Expect(run).To(HaveField("KillReason", Not(BeEmpty())))
+	})
+
+	It("says nothing was cut off when the run ends by itself", func() {
+		run, _ := runWithin(map[string]string{"a.test.ts": header + "test(\"one\", () => {});\n"}, 30*time.Second)
+
+		Expect(run).To(HaveField("KillReason", BeEmpty()))
+	})
+
+	It("kills a process the test left in node's own process group, so it cannot act after the run", func() {
+		marker := filepath.Join(GinkgoT().TempDir(), "survivor")
+		_, _ = runWithin(map[string]string{"a.test.ts": header + `
+import { spawn } from "node:child_process";
+test("leaves a child in the group", () => {
+  spawn("sh", ["-c", "sleep 6; touch ` + marker + `"], { stdio: "inherit" }).unref();
+});
+`}, 3*time.Second)
+
+		time.Sleep(9 * time.Second)
+
+		Expect(marker).NotTo(BeAnExistingFile())
 	})
 })
