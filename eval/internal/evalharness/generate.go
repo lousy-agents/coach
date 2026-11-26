@@ -35,7 +35,12 @@ func Generate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "coach-eval generate: %v\n", err)
 		return GenerateInputInvalid
 	}
-	output, err := produce(store, request)
+	tools, err := toolsFor(request.Language)
+	if err != nil {
+		fmt.Fprintf(stderr, "coach-eval generate: %v\n", err)
+		return GenerateInputInvalid
+	}
+	output, err := produce(store, request, tools)
 	if err != nil {
 		fmt.Fprintf(stderr, "coach-eval generate: %v\n", err)
 		return GenerateFailed
@@ -45,18 +50,18 @@ func Generate(args []string, stdout, stderr io.Writer) int {
 	return GenerateOK
 }
 
-func produce(store evalgen.Store, request GenerateRequest) (generateOutput, error) {
-	key := evalgen.Key(request.Cell, request.Seed, request.Panel)
+func produce(store evalgen.Store, request GenerateRequest, tools evalgen.TypeScriptTools) (generateOutput, error) {
+	key := evalgen.Key(request.Language, request.Cell, request.Seed, request.Panel)
 	location, manifest, intact := store.Lookup(key)
 	cache := "hit"
 	if request.NoCache || !intact {
 		cache = "miss"
-		program, err := evalgen.Generate(request.Cell, request.Seed)
+		program, err := generateProgram(request)
 		if err != nil {
 			return generateOutput{}, err
 		}
 		program.Manifest.Program.Panel = request.Panel
-		if err := evalgen.Validate(program); err != nil {
+		if err := validateProgram(program, tools); err != nil {
 			return generateOutput{}, fmt.Errorf("the generated program failed validation: %w", err)
 		}
 		if location, err = store.Save(key, program); err != nil {
