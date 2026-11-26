@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -114,6 +115,10 @@ var _ = Describe("the pinned Gremlins (design §6, step 6; §10)", func() {
 		output, err := exec.Command("go", "version", "-m", gremlins.Binary).Output()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(output)).To(ContainSubstring("github.com/go-gremlins/gremlins\tv0.6.0"))
+	})
+
+	It("bounds a run by thirty minutes when its caller sets no limit (AC-24)", func() {
+		Expect(evalharness.DefaultGremlinsLimit).To(Equal(30 * time.Minute))
 	})
 
 	It("refuses a binary built from another Gremlins version (AC-25)", func() {

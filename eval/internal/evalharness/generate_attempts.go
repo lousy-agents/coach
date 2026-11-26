@@ -15,7 +15,7 @@ func (r *generateRun) generateAndSave(cell evalgen.Cell, key string) (evalgen.Lo
 		if err != nil {
 			return evalgen.Location{}, evalgen.Manifest{}, err
 		}
-		rejection, err := r.validate(program, seed)
+		rejection, oracleFields, err := r.validate(program, seed)
 		if err != nil {
 			return evalgen.Location{}, evalgen.Manifest{}, err
 		}
@@ -32,7 +32,7 @@ func (r *generateRun) generateAndSave(cell evalgen.Cell, key string) (evalgen.Lo
 			continue
 		}
 		r.tally.accept()
-		program = withValidation(program, outcome.fields)
+		program = withValidation(withValidation(program, oracleFields), outcome.fields)
 		program.Manifest.Program.Panel = r.request.Panel
 		program.Manifest.Program.Replacements = replacement
 		program = withBaseFindings(r.coach, program)
