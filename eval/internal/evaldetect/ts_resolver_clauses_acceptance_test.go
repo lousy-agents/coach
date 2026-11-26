@@ -32,6 +32,12 @@ var _ = Describe("the TypeScript resolver's clauses", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(findings).To(ConsistOf(HaveField("Subject", layerViolation+":src/domain->src/app")))
 		},
+		Entry("an import in a .mts source", map[string]string{
+			"src/domain/d.mts": "import { A } from \"../app/a.js\";\n",
+		}),
+		Entry("an import in a .cts source", map[string]string{
+			"src/domain/d.cts": "import { A } from \"../app/a.js\";\n",
+		}),
 		Entry("a .mjs specifier naming a .mts source", map[string]string{
 			"src/app/m.mts": "export const M = 1;\n", "src/domain/d.ts": "import { M } from \"../app/m.mjs\";\n",
 		}),
