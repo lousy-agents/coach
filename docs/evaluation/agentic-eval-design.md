@@ -3,10 +3,10 @@
 Status: approved design v1; implementation follows the issue graph.
 
 Conventions:
-- Decisions marked **our choice** have no source behind them and need owner ratification.
+- Decisions marked **our choice** have no source behind them. The owner ratified them on 2026-11-26 ("Decisions taken"); the pilot may revise the 15.7b defaults.
 - Every claim about outside practice cites a ledger row (section 1).
 - A claim with no citation is about this repository, and names the file it was read from.
-- Repository facts were read at `main` = `ed0ac13`.
+- Repository facts were read at `main` = `ed0ac13`, and re-checked against `main` = `3ff4146` in the review of #776.
 
 ## Owner requirements: compliance
 
@@ -53,7 +53,7 @@ Six research tracks, read from primary sources on 25–26 Nov 2026. Rows are cit
 
 ### Departures from the sources
 
-These design implications in the ledgers are superseded here. Rows a.1, a.2, a.5 and b.4 also carry a note saying so. The a.6 and b.1 implications are not contradicted, only met another way, so their rows are unchanged.
+These source practices are departed from here. Rows a.1, a.2, a.5 and b.4 also carry a note saying so. The a.6 and b.1 implications are not contradicted, only met another way, so their rows are unchanged.
 
 | Source practice | Departure | Reason |
 | --- | --- | --- |
@@ -940,7 +940,7 @@ Each decision gives the recommendation and, where it matters, what changes if th
    - Report the introduced-issue rate beside it.
    - Never use "defects" without "structural", never "prevents", never "finds all".
 6. **Caps.** These go in the decision record (section 9). *Recommend:* standing caps for `eval-precommit-agent`, and per-study caps.
-7. **Thresholds marked our choice.** Ratify these before preregistration.
+7. **Thresholds marked our choice.** Ratified on 2026-11-26: 7a as the MVD, and 7b as the defaults below, which the pilot may revise.
    - **7a. Thresholds that move T or the claim:**
      - the design (full or MVD);
      - the confirmatory comparators;
@@ -979,16 +979,15 @@ Each decision gives the recommendation and, where it matters, what changes if th
 
 ### Residuals (what is still not autonomous)
 
-1. **#260 under option (b):** a sampled human tier.
-2. **Expert agreement, and labelled recall or precision, on real code.** These are follow-up issues and need humans.
-3. **One-time owner decisions:** 15.15, 15.14, and 7a and 7b.
-4. **During a study, which takes weeks to months:**
+1. **Expert agreement, and labelled recall or precision, on real code.** These are follow-up issues and need humans.
+2. **The one owner decision still open:** 15.15. The others were taken on 2026-11-26.
+3. **During a study, which takes weeks to months:**
    - the host must stay up;
    - a reboot needs a restart (the supervisor mode recovers from a killed process, not from a reboot);
    - re-login is needed when the credential expires;
    - the owner's subscription is busy throughout.
-5. **Online `eval-history`** uses the developer's GitHub login. Offline mode needs none.
-6. **A red `eval-precommit`** is ordinary engineering.
+4. **Online `eval-history`** uses the developer's GitHub login. Offline mode needs none.
+5. **A red `eval-precommit`** is ordinary engineering.
 
 ### Follow-up issues (named, not opened here)
 
