@@ -38,7 +38,16 @@ type TemplateInfo struct {
 	VisibleTests        []VisibleTest `json:"visible_tests"`
 	DependencyWhitelist []string      `json:"dependency_whitelist"`
 	OracleRef           string        `json:"oracle_ref"`
+	FollowOn            *FollowOnInfo `json:"follow_on,omitempty"`
 	LOCBand             [2]float64    `json:"loc_band"`
+}
+
+// FollowOnInfo names the follow-on slot: the entry must return Field beside FirstField. The request prose is
+// rendered from these by the harness.
+type FollowOnInfo struct {
+	Field      string `json:"field"`
+	FirstField string `json:"first_field"`
+	Entry      string `json:"entry"`
 }
 
 type APISymbol struct {
@@ -78,7 +87,7 @@ func buildManifest(g spec, p Program) Manifest {
 		Rows:       []any{},
 		Template: TemplateInfo{
 			TemplateID: hex.EncodeToString(templateSum[:]), APISurface: surface, VisibleTests: visibleTests(p.Tree),
-			DependencyWhitelist: []string{}, OracleRef: OracleID(p), LOCBand: [2]float64{0.7, 1.5},
+			DependencyWhitelist: []string{}, OracleRef: OracleID(p), FollowOn: &FollowOnInfo{Field: g.second, FirstField: g.field, Entry: entry}, LOCBand: [2]float64{0.7, 1.5},
 		},
 	}
 }

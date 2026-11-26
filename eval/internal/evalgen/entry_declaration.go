@@ -1,6 +1,10 @@
 package evalgen
 
-func entryDeclaration(g spec, solution bool) string {
+func entryDeclaration(g spec, at stage) string {
+	if at == followOnStage {
+		return followOnDeclaration(g)
+	}
+	solution := at == firstStage
 	fieldType := g.fieldType("lower.")
 	call := "lower.Load(id)." + g.field
 	arguments := "id string"

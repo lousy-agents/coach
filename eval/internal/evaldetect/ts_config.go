@@ -53,13 +53,14 @@ func readTSConfig(root, rel string, depth int) (tsCompilerPaths, error) {
 	if err != nil {
 		return tsCompilerPaths{}, err
 	}
-	return overrideTSConfig(merged, path.Dir(rel), file)
+	return overrideTSConfig(merged, rel, file)
 }
 
-func overrideTSConfig(merged tsCompilerPaths, dir string, file tsConfigFile) (tsCompilerPaths, error) {
+func overrideTSConfig(merged tsCompilerPaths, rel string, file tsConfigFile) (tsCompilerPaths, error) {
+	dir := path.Dir(rel)
 	options := file.CompilerOptions
 	if options.BaseURL != nil {
-		return tsCompilerPaths{}, fmt.Errorf("%w: %s/tsconfig: baseUrl, which TypeScript 7 removed; write paths relative to the config instead", ErrRefused, dir)
+		return tsCompilerPaths{}, fmt.Errorf("%w: %s: baseUrl, which TypeScript 7 removed; write paths relative to the config instead", ErrRefused, rel)
 	}
 	if options.Paths != nil {
 		if err := checkPathsPatterns(dir, options.Paths); err != nil {

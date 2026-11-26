@@ -39,4 +39,16 @@ func shapeOf(kind, fieldName string) fieldShape {
 	return fieldShape{"string", `"alpha"`, `"beta"`, `"beta"`}
 }
 
+// shapeOfSecond is the second field's shape: the first field's Go type with other values, so a follow-on that
+// reads one field where it should read the other still compiles and is caught only by what the tests assert.
+func shapeOfSecond(kind, firstFieldName string) fieldShape {
+	switch kind {
+	case "collection":
+		return fieldShape{"[]string", `[]string{"cyan", "pink"}`, `[]string{"onyx", "teal"}`, `["onyx","teal"]`}
+	case "nested":
+		return fieldShape{"{Q}" + firstFieldName, "{Q}" + firstFieldName + `{City: "Rome", Code: "00100"}`, "{Q}" + firstFieldName + `{City: "Pisa", Code: "56100"}`, `{"City":"Pisa","Code":"56100"}`}
+	}
+	return fieldShape{"string", `"gamma"`, `"delta"`, `"delta"`}
+}
+
 func qualify(text, qualifier string) string { return strings.ReplaceAll(text, "{Q}", qualifier) }

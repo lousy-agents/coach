@@ -17,9 +17,20 @@ func (g spec) entryName() string {
 	return "Set" + g.field
 }
 
-// entrySource is the entry package: its stub returns the zero value, and the clean oracle forwards to the
-// next package on the route. Both declare Describe so the visible tests do not depend on the entry.
-func entrySource(g spec, solution bool) []byte {
+// stage says how far the entry package has got: the stub returns the zero value, the first feature forwards
+// to the next package on the route, and the follow-on returns the second field beside the first.
+type stage int
+
+const (
+	stubStage stage = iota
+	firstStage
+	followOnStage
+)
+
+// entrySource is the entry package at a stage. Every stage declares Describe so the visible tests do not
+// depend on the entry.
+func entrySource(g spec, at stage) []byte {
+	solution := at != stubStage
 	lower := g.route[1]
 	std := []string{}
 	switch g.cell.Entry {
@@ -48,7 +59,7 @@ func entrySource(g spec, solution bool) []byte {
 		b.WriteString("\n\tlower \"" + g.module + "/" + lower.dir + "\"\n")
 	}
 	b.WriteString(")\n\nfunc Describe() string {\n\treturn \"" + g.route[0].layer + "/" + g.route[0].name + "\"\n}\n\n")
-	b.WriteString(entryDeclaration(g, solution))
+	b.WriteString(entryDeclaration(g, at))
 	source := b.String()
 	if len(std) == 0 && !importsLower {
 		source = strings.Replace(source, "import (\n)\n\n", "", 1)
