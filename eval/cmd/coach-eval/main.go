@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/lousy-agents/coach/eval/internal/evalcensus"
 	"github.com/lousy-agents/coach/eval/internal/evalharness"
 )
 
@@ -19,6 +20,9 @@ const exitTaskUnimplemented = 2
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "compare" {
 		return evalharness.Compare(stateHome(), args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "census" {
+		return evalcensus.Census(args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "trend" {
 		return evalharness.Trend(args[1:], stdout, stderr)
