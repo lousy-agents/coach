@@ -36,11 +36,11 @@ func git(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-// checkoutRepository clones repo into dir and checks out its SHA. The clone
+// CheckoutRepository clones repo into dir and checks out its SHA. The clone
 // copies objects without running the source's upload-pack, and its fresh
 // configuration defines no filter, so the source repository's own
 // configuration and hooks never run.
-func checkoutRepository(repo Repository, dir string) error {
+func CheckoutRepository(repo Repository, dir string) error {
 	if _, err := git("", "clone", "--quiet", "--no-checkout", "--no-hardlinks", repo.Path, dir); err != nil {
 		return fmt.Errorf("repository %q: %w", repo.ID, err)
 	}

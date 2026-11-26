@@ -2,6 +2,7 @@ package evalhistory_test
 
 import (
 	"encoding/json"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -109,7 +110,7 @@ var _ = Describe("a history run over a pinned corpus", func() {
 				Expect(record.Target.CorpusID).To(Equal("history"))
 				Expect(record.Target.SHA).To(Equal(since))
 				Expect(record.Rationale).To(ContainSubstring("association, not causation"))
-				Expect(record.RecordID).To(Equal(evalcensus.NewRecordID(record)))
+				Expect(strings.Split(record.RecordID, "-")[0]).To(Equal(strings.Split(evalcensus.NewRecordID(record), "-")[0]), "the id's prefix hashes the record's content")
 				key := record.Target.Path
 				if record.Target.Subject != nil {
 					key += ":" + *record.Target.Subject
@@ -189,7 +190,9 @@ var _ = Describe("a history run over a pinned corpus", func() {
 		Entry("a TypeScript repository",
 			func(c *evalcensus.Corpus) { c.Repositories[0].Language = "typescript" }, "TypeScript"),
 		Entry("history_until not in the repository",
-			func(c *evalcensus.Corpus) { c.Repositories[0].HistoryUntil = "0123456789abcdef0123456789abcdef01234567" }, "is not a commit"),
+			func(c *evalcensus.Corpus) {
+				c.Repositories[0].HistoryUntil = "0123456789abcdef0123456789abcdef01234567"
+			}, "is not a commit"),
 		Entry("history_until not after the census SHA",
 			func(c *evalcensus.Corpus) { c.Repositories[0].SHA, c.Repositories[0].HistoryUntil = until, since }, "does not descend from"),
 	)

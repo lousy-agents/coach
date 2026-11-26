@@ -1,66 +1,82 @@
 package evalhistory
 
 import (
-	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/lousy-agents/coach/eval/internal/evalcensus"
 )
 
-// Statement is what every history output says about its numbers.
-const Statement = "association, not causation: a flagged unit's later fix involvement compared with same-size controls"
+// ControlsPerFlagged is k, the controls drawn for each flagged unit.
+const ControlsPerFlagged = 3
 
-// Summary is one history run over a corpus.
-type Summary struct {
-	CorpusID           string                   `json:"corpus_id"`
-	Coach              evalcensus.CoachIdentity `json:"coach"`
-	Seed               int64                    `json:"seed"`
-	ControlsPerFlagged int                      `json:"controls_per_flagged"`
-	FixPattern         string                   `json:"fix_pattern"`
-	Statement          string                   `json:"statement"`
-	Repositories       []RepositoryHistory      `json:"repositories"`
-}
-
-// UnmappedFixes counts the fixes whose changed lines fall in no function,
-// and in no production file, as they stood at the census SHA.
-type UnmappedFixes struct {
-	Function int `json:"function"`
-	File     int `json:"file"`
-}
-
-// RepositoryHistory is one repository's history between Since and Until.
-type RepositoryHistory struct {
-	ID            string        `json:"id"`
-	Since         string        `json:"since"`
-	Until         string        `json:"until"`
-	CoachExit     int           `json:"coach_exit"`
-	Evidence      string        `json:"evidence,omitempty"`
-	Commits       int           `json:"commits"`
-	Fixes         int           `json:"fixes"`
-	MatchRate     float64       `json:"match_rate"`
-	UnmappedFixes UnmappedFixes `json:"unmapped_fixes"`
-	Rules         []RuleResult  `json:"rules"`
-}
-
-// RuleResult compares one rule's flagged units with their controls.
-type RuleResult struct {
-	RuleID           string   `json:"rule_id"`
-	Level            Level    `json:"level"`
-	Flagged          int      `json:"flagged"`
-	FlaggedInvolved  int      `json:"flagged_involved"`
-	Controls         int      `json:"controls"`
-	ControlsInvolved int      `json:"controls_involved"`
-	Shortfall        int      `json:"control_shortfall"`
-	Unplaced         int      `json:"unplaced_findings"`
-	RiskRatio        *float64 `json:"risk_ratio"`
-	Low              *float64 `json:"ci95_low"`
-	High             *float64 `json:"ci95_high"`
-	Reason           string   `json:"null_reason,omitempty"`
-}
-
-func (summary Summary) AnalysisFailed() bool { return false }
-
+// Run checks out every corpus repository and checks its history range
+// before scanning any, so an unusable input stops the run with nothing
+// scanned. It then compares each Go rule's flagged units with their
+// controls, repository by repository.
 func Run(corpus evalcensus.Corpus, coach string, seed int64) (Summary, error) {
-	return Summary{}, errors.New("not implemented")
+	if err := refuseUnusable(corpus); err != nil {
+		return Summary{}, err
+	}
+	identity, err := evalcensus.IdentifyCoach(coach)
+	if err != nil {
+		return Summary{}, err
+	}
+	workRoot, err := os.MkdirTemp("", "coach-eval-history")
+	if err != nil {
+		return Summary{}, err
+	}
+	defer os.RemoveAll(workRoot)
+	dirs, err := checkoutRanges(corpus, workRoot)
+	if err != nil {
+		return Summary{}, err
+	}
+	summary := Summary{
+		CorpusID: corpus.ID, Coach: identity, Seed: seed, ControlsPerFlagged: ControlsPerFlagged,
+		FixPattern: FixPattern.String(), Statement: Statement,
+	}
+	for i, repo := range corpus.Repositories {
+		summary.Repositories = append(summary.Repositories, repositoryHistory(corpus, repo, identity.Path, dirs[i], seed))
+	}
+	return summary, nil
 }
 
-func Records(summary Summary, date string) []evalcensus.Record { return nil }
+// refuseUnusable refuses a repository with no history range, and a
+// TypeScript repository, which Coach would scan by running the repository's
+// own compiler on the host until the pinned image (#832) exists.
+func refuseUnusable(corpus evalcensus.Corpus) error {
+	for _, repo := range corpus.Repositories {
+		if repo.HistoryUntil == "" {
+			return fmt.Errorf("repository %q has no history_until; pin the last commit the history reads", repo.ID)
+		}
+		if repo.Language == "typescript" {
+			return fmt.Errorf("repository %q is TypeScript, which the history scans only inside the pinned image (#832), because scanning it on the host would run its own compiler", repo.ID)
+		}
+	}
+	return nil
+}
+
+func checkoutRanges(corpus evalcensus.Corpus, workRoot string) ([]string, error) {
+	dirs := make([]string, len(corpus.Repositories))
+	for i, repo := range corpus.Repositories {
+		dirs[i] = filepath.Join(workRoot, fmt.Sprintf("%02d", i))
+		if err := evalcensus.CheckoutRepository(repo, dirs[i]); err != nil {
+			return nil, err
+		}
+		if err := checkRange(repo, dirs[i]); err != nil {
+			return nil, err
+		}
+	}
+	return dirs, nil
+}
+
+func checkRange(repo evalcensus.Repository, dir string) error {
+	if _, err := git(dir, "cat-file", "-e", repo.HistoryUntil+"^{commit}"); err != nil {
+		return fmt.Errorf("repository %q: history_until %s is not a commit in %s", repo.ID, repo.HistoryUntil, repo.Path)
+	}
+	if _, err := git(dir, "merge-base", "--is-ancestor", repo.SHA, repo.HistoryUntil); err != nil {
+		return fmt.Errorf("repository %q: history_until %s does not descend from the census SHA %s", repo.ID, repo.HistoryUntil, repo.SHA)
+	}
+	return nil
+}
