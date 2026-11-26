@@ -1,0 +1,15 @@
+package handler
+
+import (
+	"net/http"
+
+	"example.com/accounts/internal/service"
+)
+
+// Deposit is the HTTP handler for a deposit. It asks the service, which owns the rules, and never touches the
+// repository.
+func Deposit(w http.ResponseWriter, r *http.Request) {
+	if err := service.Deposit(r.URL.Query().Get("id")); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}

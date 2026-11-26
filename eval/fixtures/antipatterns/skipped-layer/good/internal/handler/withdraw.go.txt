@@ -1,0 +1,14 @@
+package handler
+
+import (
+	"net/http"
+
+	"example.com/accounts/internal/service"
+)
+
+// Withdraw is the HTTP handler for a withdrawal. It asks the service, which owns the rules.
+func Withdraw(w http.ResponseWriter, r *http.Request) {
+	if err := service.Withdraw(r.URL.Query().Get("id")); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
