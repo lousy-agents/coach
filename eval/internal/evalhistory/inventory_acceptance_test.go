@@ -122,6 +122,10 @@ var _ = Describe("mapping Coach's findings to units", func() {
 		Expect(flagged.Unplaced).To(BeZero())
 	})
 
+	It("refuses a rule the table does not hold when the comparison runs directly, naming the rule", func() {
+		Expect(evalhistory.CompareRulesFor([]string{"architecture.made_up"})).To(MatchError(ContainSubstring("architecture.made_up")))
+	})
+
 	It("refuses a rule the placement table does not hold, naming the rule", func() {
 		signals := []evalhistory.Signal{{RuleID: "architecture.made_up", Path: "p/p.go", StartRow: 6, EndRow: 9}}
 
