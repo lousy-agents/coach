@@ -63,7 +63,7 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["rule_id", "level", "flagged", "flagged_involved", "controls", "controls_involved", "control_shortfall", "unplaced_findings", "unplaced_reasons", "risk_ratio", "ci95_low", "ci95_high"],
+              "required": ["rule_id", "level", "flagged", "flagged_involved", "controls", "controls_involved", "control_shortfall", "unplaced_findings", "risk_ratio", "ci95_low", "ci95_high"],
               "properties": {
                 "rule_id": {"type": "string", "minLength": 1},
                 "level": {"enum": ["function", "file"]},
