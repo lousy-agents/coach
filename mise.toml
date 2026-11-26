@@ -375,6 +375,19 @@ go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 "$bin_dir/coach-eval" generate "$@"
 """
 
+# Scans the hand-authored Go anti-pattern fixtures (bad and good variants) with a coach built from this checkout.
+# Arguments after `--` reach the command.
+[tasks.eval-antipatterns]
+description = "Scan the Go anti-pattern fixtures with coach built from this checkout; exit 0 every covered fixture passes, 1 a covered fixture fails, 2 unusable input"
+run = """
+set -eu
+bin_dir=$(mktemp -d)
+trap 'rm -rf "$bin_dir"' EXIT
+go build -o "$bin_dir/coach" ./cmd/coach
+go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
+"$bin_dir/coach-eval" antipatterns --coach "$bin_dir/coach" --fixtures eval/fixtures/antipatterns "$@"
+"""
+
 # Prints the metric trend of one cell from the run ledger. Arguments after `--` reach the command.
 [tasks.eval-trend]
 description = "Trend one cell's metric from the run ledger; exit 0 a trend prints, 2 missing or invalid input, 4 no comparable adjacent pair"
