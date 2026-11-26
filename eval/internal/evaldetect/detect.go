@@ -2,6 +2,9 @@ package evaldetect
 
 import "errors"
 
+// ErrRefused marks input a detector does not support and will not guess at.
+var ErrRefused = errors.New("evaldetect: refused")
+
 // ErrGocognitUnavailable marks a pinned gocognit that cannot be built offline.
 var ErrGocognitUnavailable = errors.New("evaldetect: pinned gocognit unavailable offline")
 

@@ -132,6 +132,9 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 		return nil, err
 	}
 
+	head.coverage = withEmptyTSProjectsJudged(head.coverage, config.Roots)
+	head.phases.model = withEmptyTSProjectsJudged(head.phases.model, config.Roots)
+
 	result := &ProjectBackendResult{
 		HeadChanges:              head.changes,
 		HeadDiagnostics:          head.diagnostics,

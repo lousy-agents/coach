@@ -2,17 +2,18 @@ package evalharness
 
 import "strings"
 
-// breakReason names why a complete run cannot continue the open segment, or returns "" when it can.
-func breakReason(open bool, previous, run map[string]any, metric string) string {
+// breakReason names why a complete run cannot continue the open segment, and the comparable fields
+// that differ when the reason is a field mismatch. It returns "" when the run can continue.
+func breakReason(open bool, previous, run map[string]any, metric string) (string, []string) {
 	if open {
 		if fields := differingFields(previous, run); len(fields) > 0 {
-			return differReason(fields)
+			return differReason(fields), fields
 		}
 	}
 	if _, ok := metricValue(run, metric); !ok {
-		return "metric absent"
+		return "metric absent", nil
 	}
-	return ""
+	return "", nil
 }
 
 func differReason(fields []string) string {
