@@ -12,7 +12,8 @@ const (
 )
 
 // outwardCall is one entry of the closed list of APIs that reach outside
-// the process (the chief's ruling on #872, matching #876). Name is a
+// the process: all filesystem, environment, process, network and SQL I/O
+// (the chief's rulings on #872 and #887, matching #876). Name is a
 // package-level function, a selector path below the package such as
 // DefaultClient.Do, a prefix ending in *, or * for the whole package.
 type outwardCall struct {
@@ -21,13 +22,14 @@ type outwardCall struct {
 }
 
 var outwardCalls = []outwardCall{
-	{"os", "Getenv"}, {"os", "LookupEnv"}, {"os", "Open*"}, {"os", "Create"},
-	{"os", "ReadFile"}, {"os", "WriteFile"}, {"os", "Mkdir*"},
+	{"os", "Getenv"}, {"os", "LookupEnv"}, {"os", "Environ"}, {"os", "Open*"}, {"os", "Create*"},
+	{"os", "ReadFile"}, {"os", "WriteFile"}, {"os", "ReadDir"}, {"os", "Stat"}, {"os", "Lstat"},
+	{"os", "Mkdir*"}, {"os", "Remove*"},
 	{"os/exec", "*"},
 	{"net", "Dial*"}, {"net", "Listen*"},
-	{"net/http", "Get"}, {"net/http", "Post"}, {"net/http", "Head"},
-	{"net/http", "DefaultClient.Do"}, {"net/http", "ListenAndServe*"},
-	{"database/sql", "Open"},
+	{"net/http", "Get"}, {"net/http", "Head"}, {"net/http", "Post*"}, {"net/http", "Serve*"},
+	{"net/http", "ListenAndServe*"}, {"net/http", "DefaultClient.Do"},
+	{"database/sql", "Open"}, {"database/sql", "OpenDB"},
 	{"syscall", "*"},
 }
 
@@ -62,12 +64,29 @@ func isConstructorName(function *ast.FuncDecl) bool {
 func callsOutward(file *ast.File, body *ast.BlockStmt) bool {
 	outward := false
 	ast.Inspect(body, func(n ast.Node) bool {
-		if call, ok := n.(*ast.CallExpr); ok && isOutward(file, call.Fun) {
+		if call, ok := n.(*ast.CallExpr); ok && (isOutward(file, call.Fun) || isClientDo(file, call.Fun)) {
 			outward = true
 		}
 		return !outward
 	})
 	return outward
+}
+
+// isClientDo reports a Do call on an http.Client built in place, such as
+// (&http.Client{}).Do. A client held in a variable cannot be told apart from
+// any other Do by syntax alone.
+func isClientDo(file *ast.File, fun ast.Expr) bool {
+	selector, ok := fun.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "Do" {
+		return false
+	}
+	receiver := ast.Unparen(selector.X)
+	if address, isAddress := receiver.(*ast.UnaryExpr); isAddress {
+		receiver = address.X
+	}
+	literal, ok := receiver.(*ast.CompositeLit)
+	http := importName(file, "net/http")
+	return ok && http != "" && isSelector(literal.Type, http, "Client")
 }
 
 func isOutward(file *ast.File, fun ast.Expr) bool {
