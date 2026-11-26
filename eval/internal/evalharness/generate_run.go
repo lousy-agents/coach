@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 
+	"github.com/lousy-agents/coach/eval/internal/evaldetect"
 	"github.com/lousy-agents/coach/eval/internal/evalgen"
 )
 
@@ -28,6 +29,7 @@ type generateRun struct {
 	store   evalgen.Store
 	faults  faults
 	tools   evalgen.TypeScriptTools
+	coach   coachBinary
 	tally   rejectionTally
 }
 
@@ -44,7 +46,7 @@ func newGenerateRun(request GenerateRequest) (*generateRun, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &generateRun{request: request, store: store, faults: injected, tools: tools}, nil
+	return &generateRun{request: request, store: store, faults: injected, tools: tools, coach: findCoachBinary()}, nil
 }
 
 func (r *generateRun) produceAll() ([]generateOutput, error) {
@@ -60,7 +62,7 @@ func (r *generateRun) produceAll() ([]generateOutput, error) {
 }
 
 func (r *generateRun) produce(cell evalgen.Cell) (generateOutput, error) {
-	key := evalgen.Key(r.request.Language, cell, r.request.Seed, r.request.Panel)
+	key := r.fixtureKey(evalgen.Key(r.request.Language, cell, r.request.Seed, r.request.Panel))
 	location, manifest, intact := r.store.Lookup(key)
 	cache := "hit"
 	if r.request.NoCache || !intact {
@@ -88,4 +90,8 @@ func (r *generateRun) output(cell evalgen.Cell, location evalgen.Location, manif
 		output.Seed = &seed
 	}
 	return output
+}
+
+func (r *generateRun) fixtureKey(generatorKey string) string {
+	return FixtureKey(generatorKey, r.coach.hash, evaldetect.PinnedGocognitVersion)
 }
