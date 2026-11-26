@@ -47,7 +47,22 @@ var _ = Describe("the census rulings", func() {
 		Entry("an association given as a number", "flagged_vs_unflagged_association", `0.4`, true),
 		Entry("an association of agree", "flagged_vs_unflagged_association", `"agree"`, false),
 		Entry("an association of disagree", "flagged_vs_unflagged_association", `"disagree"`, false),
+		Entry("an association with no value", "flagged_vs_unflagged_association", ``, false),
+		Entry("an association whose value is not JSON", "flagged_vs_unflagged_association", `0.4x`, false),
+		Entry("an association of null", "flagged_vs_unflagged_association", `null`, false),
 	)
+
+	When("records are appended to a ledger whose last line ends in a newline", func() {
+		It("adds no blank line between them", func() {
+			path := ledgerPath()
+			Expect(evalcensus.AppendRecords(path, []evalcensus.Record{automatedRecord("r1", `"agree"`)})).To(Succeed())
+
+			Expect(evalcensus.AppendRecords(path, []evalcensus.Record{automatedRecord("r2", `"agree"`)})).To(Succeed())
+
+			Expect(readFile(path)).NotTo(ContainSubstring("\n\n"))
+			Expect(strings.Count(readFile(path), "\n")).To(Equal(2))
+		})
+	})
 
 	When("a write stops part way through", func() {
 		It("truncates the ledger back to its length before the append", func() {
