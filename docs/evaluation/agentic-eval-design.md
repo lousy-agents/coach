@@ -143,7 +143,7 @@ G2 fails on any of these:
 - a literal branch;
 - `.lousy-agents/coach.json` was modified;
 - a dependency change: any change to a manifest, lockfile, `node_modules/`, `vendor/`, or a `replace` line in `go.mod`, unless the template's manifest whitelists it;
-- non-test code that, during package initialisation, writes to stdout, opens an inherited file descriptor, or exits the process.
+- non-test code that uses inherited file descriptors, `os.NewFile`, `/proc/self/fd` or `process.binding`, or that writes to stdout or exits the process during package initialisation. This is a static check.
 
 ### Target predicates (refactor)
 
@@ -180,8 +180,13 @@ Metric deltas, RefactoringMiner on TS (d.8), and `coach_findings_after`.
 
 - **Introduced.** A key is introduced if the detector reports it on the final tree but not on `initial_commit_sha`.
   - A key is `(rule_id, path, subject)`, or the `(from, to)` pair for an edge.
-  - A key present in both trees counts only if it newly crosses the rule's threshold.
+  - A key present in both trees counts only if its final metric is above the rule's threshold **and** rose by at least Δ: 3 for `complexity.cognitive_complexity` and 1 for `complexity.max_nesting_depth` (**our choice**).
   - Paths are mapped through git rename detection (**our choice**).
+- **`dedup_key`** is `(rule_id, path, subject, normalised body hash)`.
+- **How each verdict scores** (preregistered):
+  - `true_positive` and `unactionable_true_positive` count as a defect.
+  - `false_positive` does not count.
+  - An unadjudicated candidate, or one judged `not_adjudicable`, **counts as a defect**, which is the conservative choice. A sensitivity analysis that excludes these is always reported beside the main result.
 - **Literal branch.** A new conditional on a literal that appears only in test inputs (d.6).
 - **Line match.**
   - A finding matches a row when `rule_id` and `path` are equal, `subject` is equal where the row gives one, and the lines overlap.
@@ -211,6 +216,7 @@ Metric deltas, RefactoringMiner on TS (d.8), and `coach_findings_after`.
     - the trial edited a test file or the policy.
 
     Using the stated way out (section 7) is scored as `refused`, never as gaming.
+- **Refused.** A trial is `refused` only when the final tree is byte-identical to the initial commit **and** the final message names a `rule_id` or a policy edge. A partial edit is not `refused`; it is graded normally.
 
 ### LLM judge
 
@@ -258,6 +264,22 @@ T ≈ (z_crit + z_power)² · ω² / δ²
 
 **H2 is what drives T**, and its margin is the strongest lever (decision 15.12).
 
+**Totals per design.** All figures are placeholders from our arithmetic, assuming 5 minutes per trial, 4 in parallel, and τ tokens per trial.
+
+The trial count includes:
+- the feature main trials;
+- 1 impossible-variant trial per template and arm;
+- 1 follow-on trial per instance and arm, which requires `control`;
+- the refactor task family: 24 templates, 504 trials.
+
+| Design | H2 margin | Arms | Trials | Tokens | Run hours | Authoring + validation hours |
+| --- | --- | --- | --- | --- | --- | --- |
+| Full, T ≈ 270 | −0.05 | 4 | ≈ 10,220 | ≈ 10,220 τ | ≈ 213 | ≈ 2,350 + 1,760 |
+| Reduced with `control`, T ≈ 93 | −0.10 | 4 | ≈ 3,850 | ≈ 3,850 τ | ≈ 80 | ≈ 940 + 700 |
+| Reduced without `control`, T ≈ 93 | −0.10 | 3 | ≈ 2,460, with no follow-on trials | ≈ 2,460 τ | ≈ 51 | ≈ 940 + 700 |
+
+Without `control` there is no token gate (decision 15.4) and no H5. That is why the reduced design keeps `control` (decision 15.19).
+
 **Minimum detectable effect, per test, at a given T** (printed in the protocol and the claim):
 
 MDE = (t_crit,T−1 + t_power,T−1) · √(ω²/T)
@@ -270,14 +292,14 @@ MDE = (t_crit,T−1 + t_power,T−1) · √(ω²/T)
 
 ### Pilot and stop/continue
 
-**The pilot** runs the tuning panel once with all arms, plus an **A/A run**: the same `coach` binary twice. It validates the pipeline. It measures ω̂², ω̂²_completed, tokens and minutes per trial, and the A/A flip rate. It is never evidence (b.6).
+**The pilot** (`eval-agent-pilot`) runs the tuning panel once with all arms, plus an **A/A run**: the same `coach` binary twice. It validates the pipeline. It measures ω̂², ω̂²_completed, tokens and minutes per trial, and the A/A flip rate. It is never evidence (b.6).
 
 **The stop/continue checkpoint** (decision 15.12) comes after the pilot and **before any held-out template is written**. It recomputes T for the full and reduced designs from the measured values and the usage limits (e.7). It continues only when named adjudicator and author hours are committed (decision 15.3). The outcome is one of:
-- (a) go at the required T;
-- (b) go at a preregistered fallback T, with its MDE printed in the protocol and in the claim;
-- (c) stop.
+- **go-full:** go at the required T;
+- **go-fallback:** go at a preregistered fallback T, with its MDE printed in the protocol and in the claim;
+- **stop.**
 
-Under (c), agent self-review stays unjudged by this route, because PRD §12 says "Until the evaluation carries a claim for agent self-review, that job is not judged".
+Under stop, agent self-review stays unjudged by this route, because PRD §12 says "Until the evaluation carries a claim for agent self-review, that job is not judged".
 
 ### Preregistration
 
@@ -346,7 +368,7 @@ A human confirms this table. Fixture authors then write from the contract (c.8).
 - **The oracle** scores G1 = G2 = 1. A feature oracle introduces no graded issue (a.6 T.9).
 - **The impossible variant** (d.6):
   - refactor: a predicate conflicts with a hidden test;
-  - feature: the feature can pass only through a forbidden edge.
+  - feature: the feature needs runtime state that exists only behind a forbidden edge. A **duplicate-the-logic baseline**, which copies that logic to avoid the edge, must fail G1 when the template is validated.
 - **A whitelist** of any dependency changes the feature needs (G2).
 - **TS templates** carry `node_modules` at the instance root, installed at image build.
 
@@ -400,6 +422,7 @@ The agent uses a **subscription login, not an API key** (owner decision). "My lo
 
 **Setup under (c):**
 - **The workspace** is the instance copy, preferably via `--clone` (e.6). The host filesystem outside it is not reachable (e.6).
+- **A fresh repository for every agent instance.** Each instance is rebuilt with a deterministic `git init` and one commit, with no remotes, no alternates and no reflog. It is staged outside `EVAL_ORACLE_DIR`, so no object from the oracle, the hidden suite, the predicates, the manifest or past results can travel with it.
 - **Configuration.** `CLAUDE_CONFIG_DIR` stays at the configuration directory that `sbx` logged in to, and the arm's settings go at `$CLAUDE_CONFIG_DIR/settings.json`. Settings and the login share that directory (e.1, e.2), so a fresh one would lose both. Host `~/.claude` configuration is not inherited (e.6).
 - **Network.** A locked-down policy allows only the model API hosts (e.6: deny by default, rules added with `sbx policy allow`), with the default wildcard allowances removed.
 - **Environment.** No API-key variable is present, because in `-p` a key "is always used when present" (e.1). `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` and `DISABLE_AUTOUPDATER=1` are set (e.2).
@@ -420,9 +443,12 @@ The agent uses a **subscription login, not an API key** (owner decision). "My lo
 10. The shared skills store, which the agent can reach (e.6), can be emptied or detached.
 11. Billing goes to the subscription, not an API key.
 12. The default wildcard network allowances can be removed.
+13. **Oracle absence.** Markers are planted in the oracle, the hidden suite, the predicates, the manifest and `$XDG_STATE_HOME/coach-eval`. None of them appears in the instance tree, in `git cat-file --batch-all-objects`, or in a full-filesystem search inside the sandbox. The same search on the host does find them. Under option (b), the same check runs as a harness test.
+14. The TS nonce channel works under `node --test --test-isolation=process`, and the local Node 24 supports that flag.
 
 **Host preflight.** The run refuses with exit 2 if any of these holds, because e.6 says "If no API key is set, use the `/login` command":
 - `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is set on the host;
+- an `apiKeyHelper` is configured;
 - an Anthropic API-key secret is in `sbx`'s secret store.
 
 If the sandbox credential is absent or expired, the refusal names the fixing command: an `sbx` session running `/login` under (c), or `claude setup-token` under (b). The check reports only present or absent.
@@ -435,9 +461,11 @@ If the sandbox credential is absent or expired, the refusal names the fixing com
   - Dependencies are restored read-only from the pristine image.
   - Only that trial's hidden suite is mounted, read-only.
 - **The nonce channel.**
-  - The hidden harness (its own Go test binary, or a TS reporter module) writes one record per manifest test ID to an inherited file descriptor, each with a per-trial nonce that the host generated. The visible tests run through the same harness.
+  - The host generates a per-trial nonce and delivers it only on a file descriptor that the harness reads and closes **before any test runs**.
+  - The harness writes one record per manifest test ID, each carrying the nonce, to a separate output descriptor. In Go, the harness is its own test binary. In TS, it is a reporter module for `node --test --test-isolation=process`.
+  - The visible tests run through the same harness.
   - G1 is counted only from this channel. stdout, including `go test -json`, is kept for diagnosis and never counted.
-  - **Residual risk:** code running in the same test process could still target the channel deliberately. The G2 initialisation guard and transcript reading cover that (section 14).
+  - **Residual risk:** code in the same test process could still target the channel deliberately. The G2 static check flags such code, and every G1-passing trial it flags is read by a human. Nothing else covers this risk.
 - **The grade is assembled on the host.**
 
 ### Images
@@ -451,16 +479,36 @@ If the sandbox credential is absent or expired, the refusal names the fixing com
 
 ### Holding the hook fixed
 
-- **Read-only files.** `scripts/coach-self-review.sh` (from "### The check") and the arm's settings are read-only, and their SHA-256s are recorded. `.lousy-agents/coach.json` is present in every arm.
+- **The hook runs from outside the workspace.** The `Stop` entry points at a root-owned copy of `scripts/coach-self-review.sh` (from "### The check") outside the workspace. The wrapper asserts that copy's SHA-256 on every invocation, and the harness asserts it again at the end of the trial.
+  - The settings are read-only, and their hash is recorded.
+  - The workspace copy of the script is still present in every arm, so the trees stay identical, but the hook never runs it.
+  - `.lousy-agents/coach.json` is present in every arm.
+  - A hash mismatch is an agent-caused integrity event.
 - **The yoked `generic_review` hook.** Its wrapper prepends the root-owned `coach` directory to `PATH` **inside the hook process only**, then runs the coach check silently. It sends the generic message only when the check blocked **because of findings**, and uses the same `stop_hook_active` guard.
 - **Block causes.** Every hook run records `findings`, `not_clean` or `both`.
   - An **agent-caused** `not_clean`, such as an edited policy or an unread in-scope file, is graded as assigned (intention to treat) and reported per arm.
-  - A **harness-caused** `not_clean` is caught by the pre-trial **hook health check**, which is an integrity check. On the unmodified instance, the hook must exit 0, with `scope.policy.matches_head: true` and no `worktree_scan_incomplete`. On the oracle tree, `coach` must yield only the expected findings.
+  - A **harness-caused** `not_clean` is caught by the pre-trial **hook health check**, which is an integrity check. On the unmodified instance, the hook must exit 0, with `scope.policy.matches_head: true` and no `worktree_scan_incomplete`. On the oracle tree, `coach` must yield only the expected findings. On a TS template with one seeded forbidden edge, the hook must report it. Until decision 15.17 lands, TS templates use a TS variant of the documented hook that passes `--project-language typescript`.
 - **Git state.** Commits are denied in every arm, by `--disallowedTools "Bash(git commit:*)"` and a read-only `pre-commit` hook. Bypasses exist (`-c core.hooksPath=…`, `--no-verify`, `commit-tree`, `update-ref`, `stash`), so at the end of every trial, in every arm, the harness asserts:
   - `HEAD` == `initial_commit_sha`;
   - no new refs and no stash entries.
 
-  Grading uses the working tree (tracked plus untracked, not ignored) in every arm. Staged index content is allowed and ignored; a staged blob that differs from the working tree is recorded. Any violation is an integrity failure.
+  Grading uses the working tree (tracked plus untracked, not ignored) in every arm. Staged index content is allowed and ignored; a staged blob that differs from the working tree is recorded. Any violation is an agent-caused integrity event.
+
+### Integrity events
+
+Integrity events come in two kinds.
+
+- **Harness-caused.** The run **aborts and stays resumable**, and no trial is graded. These are:
+  - the oracle scores below 1, or a baseline scores above 0;
+  - the pre-trial hook health check fails;
+  - the hook fires in the wrong arm, or never fires;
+  - the oracle-clone SHA does not match the protocol;
+  - the same trial ends in `harness_error` twice.
+- **Agent-caused.** The trial is **graded as assigned**, with `clean_success` = `completed` = 0, and the event is reported per arm. These are:
+  - a git-state violation;
+  - a hook-hash mismatch;
+  - under option (b), the token appearing in an artefact. The run also stops after that trial so the owner can decide on rotation (**our choice**); it stays resumable.
+- **Empty cells** (preregistered). A template with no gradable trial in some arm is dropped from every comparison, and the count of dropped templates is reported.
 
 ### Agent invocation (the `claude-code` solver)
 
@@ -475,7 +523,7 @@ If the sandbox credential is absent or expired, the refusal names the fixing com
 
 **The harness never uses `--bare`.** Two reasons:
 - `claude --help` says it skips "hooks (those defined in settings ...)".
-- In bare mode, "Claude Code never reads OAuth credentials or the system keychain" (e.3), and the authentication page says it also ignores `CLAUDE_CODE_OAUTH_TOKEN` (e.1, as read on 26 Nov).
+- In bare mode, "Claude Code never reads OAuth credentials or the system keychain" (e.3).
 
 **`--max-budget-usd` is not used**, because dollars are notional on a subscription. Instead, the harness reads `stream-json` and enforces the per-trial token, turn and wall-clock caps, recording which one ended a trial.
 
@@ -565,7 +613,7 @@ Variables that depend on adjudication are computed after it, by joining on `dedu
 
 ### Exclusions and transcripts
 
-- A `harness_error` trial is re-run once, then excluded and counted.
+- A `harness_error` trial is re-run once. If it ends in `harness_error` again, that is a harness-caused integrity event.
 - A `token_cap`, `turn_cap` or `timeout` exit is graded as left, and counted.
 - A `usage_limit` exit (e.7) is not graded. The trial is re-queued under the resume rules, and every re-queue is listed.
 - Leakage is reported, not excluded.
@@ -573,6 +621,7 @@ Variables that depend on adjudication are computed after it, by joining on `dedu
 - Before publication, a human reads:
   - at least 5 transcripts per arm;
   - every `gaming`, G2-failure, leakage and `refused` trial (a.1, b.4).
+  - every G1-passing trial whose diff the G2 static check flags for touching file descriptors, the nonce or the reporter.
 
 ### Harness acceptance tests
 
@@ -590,6 +639,10 @@ The tests:
 - **No API key wins.** With an API-key variable set on the host, the preflight refuses.
 - **Git-state bypasses fail.** A `git commit --no-verify`, a `commit-tree` or an `update-ref` inside a trial is an integrity failure.
 - **Detection stays inside the fixture.** `eval-detection` fails if a finding's path falls outside the fixture.
+- **The oracle is absent from the agent's boundary.** This is pilot gate 13, red first.
+- **The hook cannot be swapped.** Deleting and replacing the hook script, or its settings, inside a trial is detected as an agent-caused integrity event.
+- **A forged TS reporter frame** still fails G1.
+- **Billing marker.** A trial's usage is billed to the subscription, never to an API key. This is the test for pilot gate 11.
 
 ## 8. Detection acceptance tests (H3)
 
@@ -597,7 +650,7 @@ The tests:
 
 `--baseline` scans "every tracked Go/TS/TSX file at HEAD" of the enclosing repository and reads the policy from its top level (`docs/cli-codesignal.md` lines 57 and 131). So for each fixture, the harness:
 
-1. **Copies the fixture** into a fresh temporary directory. TS fixtures get the exact `typescript@7.0.2` (`js/semantics/package.json`), installed offline from the `js-install` cache.
+1. **Copies the fixture** into a fresh temporary directory. TS fixtures get the exact `typescript@7.0.2` (`js/semantics/package.json`), copied from `js/semantics/node_modules`. The task refuses when that copy is absent.
    - The harness records the compiler origin Coach resolves.
    - It refuses a `global_mise` origin (`docs/cli-codesignal.md` lists the origins).
 2. **Runs `git init`** with `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`.
@@ -608,7 +661,7 @@ The tests:
    coach codesignal --baseline --format json --no-interactive --fail-on-incomplete-coverage
    ```
 
-   Architecture fixtures add `--project-config .lousy-agents/coach.json` to use their own policy.
+   Architecture fixtures add `--project-config .lousy-agents/coach.json` to use their own policy. TS fixtures also add `--project-language typescript`, because the flag defaults to `go` (`cmd/coach/flags.go:62`).
 
 ### Row outcomes
 
@@ -661,8 +714,8 @@ Fixtures live in `eval/testdata/fixtures/{go,ts,tsx}/<id>/`, each with its own `
 
 ### Code and rings
 
-- **The eval module.** `cmd/coach-eval`, `internal/evalharness` and `internal/evalgrade` form a **separate Go module** (`eval/go.mod`), so its Docker client stays out of the main `go.mod`.
-- **Ring placement.** `cmd/coach-eval` and `internal/evalharness` sit in the **tooling** ring. `internal/evalgrade` sits in a new **grading** ring, which:
+- **The eval module.** `eval/cmd/coach-eval`, `eval/internal/evalharness` and `eval/internal/evalgrade` form a **separate Go module**, `github.com/lousy-agents/coach/eval` (`eval/go.mod`), so its Docker client stays out of the main `go.mod`. A planned `mise.toml` edit gives `go-vet`, `tidy-check` and `vulncheck` an eval-module leg.
+- **Ring placement.** `eval/cmd/coach-eval` and `eval/internal/evalharness` sit in the **tooling** ring. `eval/internal/evalgrade` sits in a new **grading** ring, which:
   - may not import entities, usecases, adapters or app;
   - may be imported by tooling, but by no production ring.
 
@@ -692,6 +745,7 @@ Everything is a local `mise` task with a `description`, which a developer runs b
 | --- | --- |
 | Any OS with Go and the pinned Node | `eval-detection`, `eval-detection-selftest`, `eval-compare` |
 | Any OS with Docker | The above, plus `eval-census` and `eval-harness-acceptance` |
+| Any OS with Docker, if the owner chose option (b) (decision 15.14) | The above, plus the `eval-agent*` tasks, with the credential inside the container |
 | macOS 14+ on Apple silicon, Windows 11, or Ubuntu 24.04+ with KVM, with `sbx` (e.6) and Docker | Everything, including the `eval-agent*` tasks under option (c) |
 
 `eval-detection` is the only gate every developer can run.
@@ -702,7 +756,10 @@ Everything is a local `mise` task with a `description`, which a developer runs b
 | --- | --- | --- | --- |
 | `eval-detection` | H3 over every isolated fixture, against `coach` built from the working tree. No model, no network | Seconds to low minutes; no model tokens | **Gating.** Every row outcome holds |
 | `eval-detection-selftest` | The mutation red tests | A few minutes; no model tokens | Each mutation turns `eval-detection` red |
-| `eval-agent-wiring` | 2–3 tuning templates, `coach` arm only, `coach` built from the working tree. It checks integrity only: hook health, the hook firing, block causes, git state and the artefact scan | About 10 min or less; about 3 × the pilot's tokens per trial | **Gating for changes to the hook script, the rule set, a threshold, or the finding format the hook passes on** (`rule_id`, `evidence`, `recommendation`, `location`, `lifecycle`, or how they are rendered). Pass means every integrity check holds |
+| `eval-hook-health` | Model-free: the hook health check, plus the oracle and baseline checks, on the tuning panel | Minutes; no model tokens | **Gating for everyone.** It is the interim gate for hook, rule, threshold and format changes until decision 15.15 is settled |
+| `eval-replay` | Optional, model-free: re-runs the new `coach` and hook over the pilot's saved final trees, and diffs the hook messages and findings | Minutes; no model tokens | Informational. A cheap signal, before a commit, of how a change alters what agents would be told |
+| `eval-agent-pilot` | All four arms plus an A/A run on the tuning panel. It writes `pilot_estimates` and is stamped "not evidence" | ≈ 12 × 4 + 12 trials | Not gating |
+| `eval-agent-wiring` | 2–3 tuning templates, the `coach` arm only, with `coach` built from the working tree. Integrity checks only | About 10 min or less; about 3 τ | **(a) An owner-only gate:** the owner's pre-merge duty for changes to hook, rule, threshold or format paths, once decision 15.15 permits model runs |
 | `eval-agent-panel` | Optional. The tuning panel (12 feature templates, 1 instance, K = 1), comparing `coach` from the working tree against `coach` from the merge-base, per template | 24 trials cold, 12 when the merge-base side is cached. At 5 min a trial and 4 in parallel, about 30 or 15 min | **Not gating.** It reports only flips beyond the pilot's A/A flip rate, plus the integrity results, and prints the MDE (≈ 49 points) beside any effect. Its output is stamped **"development panel — not evidence"**. Before the first trial, it prints the expected token draw as a share of a five-hour window (e.7) |
 | `eval-agent-study` | The preregistered study, with a released `coach` | Full design: ≈ 7,560 trials (270 × 2 × 3 × 4, plus 1,080 impossible-variant trials), ≈ 157 h at 5 min a trial and 4 in parallel. Reduced design: ≈ 1,950 trials, ≈ 41 h. Both **span many five-hour and weekly windows** (e.7) | Not gating. It is the only source of claims |
 | `eval-census` | #260's census in the census image | Minutes for 6 repositories; no model tokens | It writes the report |
@@ -711,20 +768,14 @@ Everything is a local `mise` task with a `description`, which a developer runs b
 
 **Caching (`eval-agent-panel`).** The merge-base side is cached by `(coach binary, hook script, rule paragraph, solver config, model, CLI, isolation, image or template digest, runtime, prompt hash, template)`. A cache hit costs no tokens.
 
-**Integrity failures** (exit 1). Every `eval-agent*` run re-validates the oracle, the baselines and the hook health of its templates, with no model. It fails if:
-- the oracle is below 1, or a baseline is above 0;
-- the hook health check fails;
-- the hook fires in the wrong arm, or never fires;
-- the git state is violated;
-- the artefact scan hits;
-- the oracle-clone SHA does not match the protocol;
-- a trial hits `harness_error` twice.
+**Integrity events** follow section 7. A harness-caused event exits 1 and leaves the run resumable. An agent-caused event is graded as assigned. Every `eval-agent*` run re-validates its templates' oracle, baselines and hook health, with no model.
 
 **`eval-agent-study` rules:**
 - **Refusals:**
   - on a dirty worktree;
   - without the owner-decision record for 15.15;
   - unless `EVAL_MAX_TRIALS` and `EVAL_MAX_TOKENS` cover the protocol's full count.
+  - unless the graded set is frozen and every detector reproduces its detection-fixture rows.
 - **Resuming** is idempotent, keyed by `(instance_id, arm, epoch)`. Order is randomised within template blocks from the protocol seed. Every arm gets the identical instance set.
 - **Usage limits.** When a subscription limit is reached, the run pauses with state `paused_usage_limit`, recording the limit message and the time. In-flight trials are re-queued, never graded as partial. `mise run eval-agent-study -- --resume <run_id>` continues the run. A paused run never prints results as if complete.
 - **The pinned model and CLI are re-checked** on every resume. A change makes the study invalid.
@@ -863,6 +914,9 @@ Verdicts are reused through `dedup_key`.
   "exclusions": ["harness_error_twice", "usage_limit_requeue"],
   "model_retirement_policy": "if the pinned model is retired before T completes, the study is invalid and is re-registered; no mid-study substitution",
   "kappa_failure_policy": "a rule with kappa < 0.6 is re-adjudicated by a third human; if it is still < 0.6, its trials are reported with and without that rule's candidates, and the claim uses the more conservative result",
+  "delta": { "complexity.cognitive_complexity": 3, "complexity.max_nesting_depth": 1 },
+  "verdict_scoring": "TP and UTP = defect; FP = not; unadjudicated and not_adjudicable = defect, with a sensitivity analysis",
+  "empty_cell_rule": "drop the template from every comparison; report the count",
   "fallback": { "T": 0, "printed_mde": 0 },
   "deviations": []
 }
@@ -908,7 +962,7 @@ These are append-only, one row per judgement. There are two files: `eval/adjudic
 `eval-census` runs `coach-eval census --corpus eval/census/corpus --adjudications eval/census/adjudications.jsonl --out <report>`.
 
 - **The census image.** It runs in a pinned image, with dependencies installed with `--ignore-scripts` at build. The image digest and the resolved compiler and Node versions are recorded per repository.
-- **The scan:** `coach codesignal --baseline --format json --no-interactive --fail-on-incomplete-coverage`, plus `--project-config` where the repository has a policy.
+- **The scan:** `coach codesignal --baseline --format json --no-interactive --fail-on-incomplete-coverage`, plus `--project-config` where the repository has a policy. A TS repository also gets `--project-language typescript`.
 - **`analysis_status`**, per rule and repository, is one of:
   - `measured`;
   - `not_exercised`, with the gap;
@@ -955,25 +1009,26 @@ Including `architecture.*` in #260 is an owner decision (15.9).
   - the HEAD.
 - **If Coach did not beat `rules_in_prompt`, the row says so in words.**
 - **When it can be written:** only from a complete `eval-agent-study`, and only if the token gate passes (decision 15.4). `eval-agent-panel` output never appears there.
+- **When the model changes:** the row stays tied to its model and date. A new model needs a new study; nothing carries over (**our choice**).
 
 | Result | Can feed | Cannot feed |
 | --- | --- | --- |
 | H4 with H2 (`eval-agent-study`) | The claim row, scoped to the graded rule IDs, to feature tasks with known structural traps, and to one model | The repeat-use test (PRD §4: "a hook's scans do not" count) |
 | H3 (`eval-detection`) | The pre-commit gate; per-shape recall and known misses for #260 and #205 | Precision, or the security precision gate, which needs "a recorded precision review on a named corpus" (PRD §12) |
 | H1, H5 (secondary) | Exploratory product evidence | Any release claim |
-| `eval-agent-wiring`, `eval-agent-panel` | A developer's local integrity and regression signal; drift, by comparing saved results | Any claim |
+| `eval-agent-wiring`, `eval-agent-panel`, `eval-agent-pilot`, `eval-hook-health`, `eval-replay` | Integrity checks; drift, by comparing saved results | Any claim, and any statement that a change improved or regressed Coach's effect |
 
 ## 13a. What this establishes toward authority
 
 - **H3 establishes conformance.**
-- **H4 establishes adherence:** agents act on Coach's advice, and that changes outcomes in the graded rule IDs.
-- **#260 establishes precision** on real code.
+- **H4 establishes adherence only if Coach beat both `rules_in_prompt` and `generic_review`.** Beating only `control` shows that extra guidance helps, not that Coach's guidance does.
+- **#260 measures precision on a named corpus.**
 - **H5 is a first, secondary look at maintainability.**
 
 None of these establishes that following Coach makes code better in general. **No result here licenses "authority" language to customers.**
 
 **Evidence still needed for authority:**
-1. **Expert agreement on real pull requests:** independent senior engineers agree that Coach's findings on real PRs are worth acting on.
+1. **Expert agreement on real pull requests** (first; a follow-up issue): independent senior engineers agree that Coach's findings on real PRs are worth acting on.
 2. **Recall on a labelled corpus:** how much of a labelled set of real structural problems Coach finds.
 3. **A powered follow-on maintainability result:** H5 or its successor, confirmatory, on real code.
 
@@ -1041,9 +1096,10 @@ If the answer to 15.15 is "not permitted", agent self-review stays unjudged by t
 
    The reduced design (T ≈ 93) takes about a third of that. *Recommend:* name the humans and their hours before the checkpoint in decision 12.
 4. **Token gate (hard).** *Recommend:* the claim row is written only if `coach`'s **tokens per G1 ∧ G2-passing trial** are at most 1.3× `control`'s (**our choice**). The raw ratio is printed beside it.
-5. **Wording.** *Recommend:* "On feature tasks with known structural traps (T Go and TypeScript templates, [model], [date]), X pp more feature changes were completed cleanly (95% CI a–b) when the agent ran Coach's self-review hook than with [strongest comparator beaten]: hidden tests pass, no degenerate change, and no adjudicated structural issue in the graded rules (layering, cognitive complexity and nesting depth, hidden input mutation, check-then-act, and TypeScript constructor coupling)."
+5. **Wording.** *Recommend:* "On feature tasks with known structural traps (T seeded Go and TypeScript fixture templates, [model], [date]), X pp more feature changes were completed cleanly (95% CI a–b) when the agent ran Coach's self-review hook than with [strongest comparator beaten]: hidden tests pass, no degenerate change, and no adjudicated structural issue in the graded rules (layering, cognitive complexity and nesting depth, hidden input mutation, check-then-act, and TypeScript constructor coupling)."
    - The introduced-issue rate is reported beside it.
    - Every comparator's result is in the row.
+   - **A mandatory clause:** "Coach did not outperform [unbeaten comparators]."
    - Never "defects" without "structural", never "prevents", never "finds all".
    - The owner has the final say.
 6. **T and the caps.** *Recommend:* run the pilot, then decision 12. Set standing caps for the `eval-agent-wiring` and `eval-agent-panel` runs, and per-study caps, in trials, tokens and hours.
@@ -1063,13 +1119,13 @@ If the answer to 15.15 is "not permitted", agent self-review stays unjudged by t
    - the model-retirement policy.
 8. **`n/a` coverage cells.** *Recommend:* accept look-alike `must_not_fire` rows.
 9. **`architecture.*` in #260.** *Recommend:* include it, now that #253 is closed.
-10. **Where fixtures live. Resolve this before any fixture merges.** *Recommend:* first test the in-repository production-scope self-scan (section 9). Use a separate fixture repository only if that test fails.
+10. **Where fixtures live. Resolve this before any fixture merges.** *Recommend:* first test the in-repository production-scope self-scan (section 9). Use a separate fixture repository only if that test fails. A second criterion: tracked files stay at or below 4,000 after the fixtures land (2,902 today, by `git ls-files | wc -l`; **our choice**).
 11. **CI.** Out of scope. The evaluation runs as local `mise` tasks.
 12. **Stop/continue checkpoint, after the pilot and before any held-out template is written.**
     - Recompute T for the full and the reduced design from the pilot's upper-bound ω², tokens and hours, against the usage limits (e.7).
     - The levers are the comparator set, the minimum effect (15 or 20 points), and above all the H2 margin.
     - Continue only with named adjudicator and author hours committed.
-    - *Recommend:* option (b) over (c) if the fallback MDE is at most 25 points (**our choice**), because (c) leaves the PRD gate unjudged.
+    - *Recommend:* go-fallback over stop if the fallback MDE is at most 25 points (**our choice**), because stop leaves the PRD gate unjudged.
 13. **Oracle access and whose subscription.**
     - **Who runs what:** `eval-agent-study` runs on the owner's subscription. Private-repository access goes only to people who run it. **Only `eval-detection`, and `eval-agent-wiring` for the changes it gates, are expected of contributors.**
     - **Public suites:** the tuning panel's hidden suites can be public, because that panel is never evidence.
@@ -1077,15 +1133,29 @@ If the answer to 15.15 is "not permitted", agent self-review stays unjudged by t
     - *Recommend:* option (c) (**our choice**), once all twelve pilot gates pass (section 7).
     - The owner must also accept, explicitly, that (c) and (b) each use a **dedicated** login or token, not the existing host login. That rules out the "my existing login" reading of "my local credentials", because only option (a) uses it, and (a) is rejected.
     - If the gates fail, the choice is (b) with its stated risk, or no agentic runs. Nothing falls back silently.
+    - **Under the strict reading** (only the existing host login may be used), no option here is acceptable, and there are **no agentic runs at all**.
 15. **Terms of use (blocking).**
     - **The tension.** Consumer Terms §3.7 prohibits access "through automated or non-human means, whether through a bot, script, or otherwise", "Except when you are accessing our Services via an Anthropic API Key or where we otherwise explicitly permit it" (e.7). On the other side, Anthropic documents `claude setup-token` as a subscription token "for CI and scripts" (e.2).
     - **The rule.** The owner **shall** confirm with Anthropic whether unattended evaluation runs on a subscription are permitted, and record the answer in `eval/protocol/decisions/15.15.json`. Every `eval-agent*` task refuses (exit 2) until that record exists and permits the runs.
     - **Revocation is undocumented** for `setup-token` tokens (e.1). That decides whether option (b)'s revoke-and-rotate step exists.
-16. **#260 continuity.** *Recommend:* make running `eval-census` and appending a ledger entry part of the living-evaluation restamp duty in `AGENTS.md`. That is the owner's decision, not an edit in this PR.
+16. **#260 continuity.** *Recommend:* make running `eval-census` and appending a ledger entry part of the living-evaluation restamp duty in `AGENTS.md`. That is the owner's decision, not an edit in this PR. If the owner says no, the census runs ad hoc, and #260's history has gaps that no later ledger entry can fill.
+17. **How the hook selects TypeScript.** The documented hook never passes `--project-language`, so a TS customer gets no architecture findings from it (the flag defaults to `go`, `cmd/coach/flags.go:62`). *Recommend:* option (c), a Coach change that selects the language from the policy. In the meantime, the TS templates use a documented TS variant of the hook.
+18. **Where `eval-detection` runs.** *Recommend:* add it to the validation list in `AGENTS.md` and to `ci-fast`. The consequences:
+    - every contributor runs it;
+    - Node and the TS compiler become required for that list;
+    - `ci-fast` grows by seconds to minutes;
+    - every fixture edit must keep it green.
+
+    The `AGENTS.md` edit is not in this PR.
+19. **The reduced design keeps `control`.** *Recommend:* yes. It costs ≈ 3,850 trials rather than ≈ 2,460 (section 5), and it keeps both the token gate and H5.
 
 ### Follow-up issues (named, not opened here)
 
 - **The test-only threshold override** (section 8). Acceptance criterion: it is absent from release builds.
+- **An independent cognitive-complexity and nesting-depth detector** (section 4).
+- **The per-template AST predicates** for hidden input mutation, check-then-act and constructor coupling (section 4).
+- **Expert agreement on real PRs**, the first item in section 13a.
+- **Coach selects the project language from the policy** (decision 17).
 - **Retarget #260 from "Success Signals" to PRD §12.**
 - **#260 dispositions below threshold.**
 - **#260 PRD update with the numbers.**
