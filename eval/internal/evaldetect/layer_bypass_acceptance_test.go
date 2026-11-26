@@ -77,6 +77,38 @@ var _ = Describe("the Go layer-bypass detector", func() {
 		}, "example.com/nested.Edge", []string{"example.com/nested.Edge", storeSave}),
 	)
 
+	DescribeTable("follows a call to a generic function or method to its declaration",
+		func(extra map[string]string, source string, witness []string) {
+			root := bypassTree(bypassPolicy("usecases", false), extra)
+
+			report, err := evaldetect.GoLayerBypass(root, loadPolicy(root))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Bypasses).To(HaveLen(1))
+			Expect(report.Bypasses[0].Source).To(Equal(source))
+			Expect(report.Bypasses[0].Witness).To(Equal(witness))
+			Expect(report.Unresolved).To(BeZero())
+		},
+		Entry("a method of an instantiated generic type", map[string]string{
+			"pkg/api/box.go": "package api\n\nimport \"example.com/fx/pkg/store\"\n\ntype box[T any] struct{ v T }\n\nfunc (b *box[T]) get() T { store.Save(\"x\"); return b.v }\n\nfunc Viabox() int { b := &box[int]{}; return b.get() }\n",
+		}, "example.com/fx/pkg/api.Viabox", []string{"example.com/fx/pkg/api.Viabox", "(*example.com/fx/pkg/api.box[T]).get", storeSave}),
+		Entry("an explicitly instantiated generic function", map[string]string{
+			"pkg/api/via.go": "package api\n\nimport \"example.com/fx/pkg/store\"\n\nfunc via[T any](t T) { store.Save(\"x\") }\n\nfunc Viageneric() { via[int](1) }\n",
+		}, "example.com/fx/pkg/api.Viageneric", []string{"example.com/fx/pkg/api.Viageneric", "example.com/fx/pkg/api.via", storeSave}),
+	)
+
+	When("two calls on one line both reach the downstream layer", func() {
+		It("reports the witness through the call that starts first on the line", func() {
+			root := bypassTree(bypassPolicy("usecases", false), map[string]string{
+				"pkg/api/tieline.go": "package api\n\nimport \"example.com/fx/pkg/store\"\n\nfunc Tieline(s string) { zed(s); abe(s) }\n\nfunc abe(s string) { store.Save(s) }\n\nfunc zed(s string) { store.Save(s) }\n",
+			})
+
+			report, err := evaldetect.GoLayerBypass(root, loadPolicy(root))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Bypasses).To(HaveLen(1))
+			Expect(report.Bypasses[0].Witness).To(Equal([]string{"example.com/fx/pkg/api.Tieline", "example.com/fx/pkg/api.zed", storeSave}))
+		})
+	})
+
 	When("the sink itself calls further into the downstream layer", func() {
 		It("reports only the first downstream function reached", func() {
 			root := bypassTree(bypassPolicy("usecases", false), map[string]string{
@@ -152,6 +184,21 @@ var _ = Describe("the Go layer-bypass detector", func() {
 		})
 	})
 
+	DescribeTable("counts a call no static resolution follows as unresolved, without failing",
+		func(file string) {
+			root := bypassTree(bypassPolicy("usecases", false), map[string]string{"pkg/api/unresolved.go": file})
+
+			report, err := evaldetect.GoLayerBypass(root, loadPolicy(root))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Unresolved).To(Equal(1))
+			Expect(report.Bypasses).To(BeEmpty())
+		},
+		Entry("a call through a struct field that holds a function",
+			"package api\n\nimport \"example.com/fx/pkg/store\"\n\ntype holder struct{ save func(string) }\n\nfunc Viafield(s string) { h := holder{save: store.Save}; h.save(s) }\n"),
+		Entry("a call to a local function declared without a body",
+			"package api\n\nfunc external(s string)\n\nfunc Viabodyless(s string) { external(s) }\n"),
+	)
+
 	When("two shortest paths are equally long", func() {
 		It("reports the witness whose first differing call comes earlier in the file", func() {
 			root := bypassTree(bypassPolicy("usecases", false), map[string]string{
@@ -188,6 +235,33 @@ var _ = Describe("the Go layer-bypass detector", func() {
 			_, err := evaldetect.GoLayerBypass(root, loadPolicy(root))
 			Expect(err).To(MatchError(evaldetect.ErrRefused))
 			Expect(err).To(MatchError(ContainSubstring("example.com/fx/pkg/api")))
+		})
+	})
+
+	When("the call graph has exactly as many functions as the stated limit", func() {
+		It("searches the program", func() {
+			restore := evaldetect.SetMaxCallGraphNodes(4)
+			defer restore()
+			root := bypassTree(bypassPolicy("usecases", false), map[string]string{"pkg/api/direct.go": directBypass})
+
+			report, err := evaldetect.GoLayerBypass(root, loadPolicy(root))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Bypasses).To(HaveLen(1))
+		})
+	})
+
+	When("two local packages import each other", func() {
+		It("refuses the program, naming the cycle, rather than recursing without end", func() {
+			root := bypassTree(bypassPolicy("usecases", false), map[string]string{
+				"pkg/shared/ping/ping.go": "package ping\n\nimport \"example.com/fx/pkg/shared/pong\"\n\nfunc Ping() { pong.Pong() }\n",
+				"pkg/shared/pong/pong.go": "package pong\n\nimport \"example.com/fx/pkg/shared/ping\"\n\nfunc Pong() { ping.Ping() }\n",
+			})
+
+			_, err := evaldetect.GoLayerBypass(root, loadPolicy(root))
+			Expect(err).To(MatchError(evaldetect.ErrRefused))
+			Expect(err).To(MatchError(ContainSubstring("import cycle")))
+			Expect(err).To(MatchError(ContainSubstring("example.com/fx/pkg/shared/ping")))
+			Expect(err).To(MatchError(ContainSubstring("example.com/fx/pkg/shared/pong")))
 		})
 	})
 
