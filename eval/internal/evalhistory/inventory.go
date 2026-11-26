@@ -6,6 +6,8 @@ import (
 	"go/parser"
 	"go/token"
 	"strings"
+
+	"github.com/lousy-agents/coach/eval/internal/evalcensus"
 )
 
 // Inventory is the production Go code at a SHA: every function, and every
@@ -15,17 +17,17 @@ type Inventory struct {
 	Files     []Unit
 }
 
-// GoInventory parses each production Go file at since, read from git
-// without a checkout. Test files and vendor, testdata and hidden directories
-// are left out, as Coach's production scan leaves them out.
-func GoInventory(repoDir, since string) (Inventory, error) {
+// GoInventory parses each Go file at since that repo's census scope admits,
+// read from git without a checkout. The scope is the census's own, so the
+// history's controls and flagged units come from the code the census counts.
+func GoInventory(repoDir, since string, repo evalcensus.Repository) (Inventory, error) {
 	listing, err := git(repoDir, "ls-tree", "-r", "-z", "--name-only", since)
 	if err != nil {
 		return Inventory{}, err
 	}
 	var inventory Inventory
 	for _, path := range strings.Split(listing, "\x00") {
-		if !isProductionGo(path) {
+		if !strings.HasSuffix(path, ".go") || !repo.Admits(path) {
 			continue
 		}
 		if err := inventory.add(repoDir, since, path); err != nil {

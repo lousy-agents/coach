@@ -24,7 +24,7 @@ func compareRule(inventory Inventory, involved involvements, findings []finding,
 		RuleID: ruleID, Level: flagged.Level,
 		Flagged: len(flagged.Units), FlaggedInvolved: countInvolved(involvement, flagged.Units),
 		Controls: len(draw.Controls), ControlsInvolved: countInvolved(involvement, draw.Controls),
-		Shortfall: draw.Shortfall, Unplaced: flagged.Unplaced,
+		Shortfall: draw.Shortfall, Unplaced: flagged.Unplaced, UnplacedReasons: flagged.UnplacedReasons,
 	}
 	association := RiskRatio(result.FlaggedInvolved, result.Flagged, result.ControlsInvolved, result.Controls)
 	result.RiskRatio, result.Low, result.High, result.Reason = association.RiskRatio, association.Low, association.High, association.Reason

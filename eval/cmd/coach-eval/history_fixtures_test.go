@@ -31,7 +31,10 @@ func historySource(edit string) string {
 // that touches F0 and G0, returning its path, the census SHA, the fix's
 // SHA and the last SHA.
 func historyRepo() (path, since, fix, until string) {
-	path, since = censusRepo(goRepoFiles(historySource("")))
+	files := goRepoFiles(historySource(""))
+	// A copy of the flagged functions under eval/: the census and the history exclude it, so it changes no count.
+	files["eval/e/e.go"] = complexFunctions(2)
+	path, since = censusRepo(files)
 	edited := strings.Replace(historySource("\ty += 2\n"), "\ty := 0\n\tif x == 0 {", "\ty := 1\n\tif x == 0 {", 1)
 	Expect(os.WriteFile(filepath.Join(path, "p", "p.go"), []byte(edited), 0o644)).To(Succeed())
 	isolatedGit(path, "commit", "-q", "-am", "fix: F0 and G0 started from the wrong value")
