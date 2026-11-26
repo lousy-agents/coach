@@ -129,7 +129,7 @@ that suggest/prepare still require `--baseline`).
 | `--top <N>` | none | Render only the first `N` signals in report order ([Report order](#report-order): lifecycle group first, then severity, confidence, and path with within-rule magnitude), after any `--min-severity` floor. `advisory` findings rank below every `medium` one in the same lifecycle group, so a cap can push out declared `architecture.layer_violation` and `architecture.layer_bypass` findings, just as `--min-severity medium` hides them. No cap by default. `N` must be a positive integer; anything else is a usage error: exit `2`. |
 | `--build-target <pattern>` | empty | Go package pattern for production reachability. Silent no-op under `--scope all`. |
 | `--project-config <path>` | `.lousy-agents/coach.json`, else a schema-valid root `project.json` | Explicit path wins and no other file is consulted. Otherwise `.lousy-agents/coach.json` at the git top-level, its content read from disk. Otherwise a schema-valid root `project.json`, always with `project_config_deprecated`. An invalid canonical file is an error and does not fall back. A TypeScript scan opens no guided authoring for it, with or without a terminal, because the only session it has ends by asking the user to save a candidate over the file; it exits `2` with no report and says in words that the policy on disk cannot be used: fix the file. On a terminal, a TypeScript scan offers guided policy authoring after the report when the file is valid but declares no layers and the scan exits `0`. A selected policy enables `schema_version: "2"`. An explicit path is taken from the repository root, whatever directory the scan starts in; an absolute path, one that climbs out with `..`, and one inside `.git` (where git tracks nothing) are refused with exit `2` and a message, and no authoring is offered for them. See [`.lousy-agents` config](./conventions/lousy-agents-config.md). A canonical policy that is committed at `HEAD` and deleted on disk is not read from the commit: the scan uses a root `project.json` on disk, or is file-local, and prints a WARNING that names the missing file with the diagnostic `project_policy_absent_on_disk`, which `--fail-on-incomplete-coverage` counts as incomplete coverage only when no policy was read; a root `project.json` read instead does not. A root `project.json` on disk that is not a usable Coach policy (it is not valid JSON, fails the policy schema, or is a directory, a link or a file that cannot be read) is ignored in that case, because it may never have been a Coach policy: the scan is file-local, `scope.policy` is `null`, and the WARNING says that `project.json` is on disk but is not a usable Coach policy. |
-| `--project-language` | `go` | `go` or `typescript`. The language selects the project backend when a policy is selected (explicit path or the discovery order above). With no policy selected, the flag does not start project analysis. |
+| `--project-language` | the policy's `language`, else `go` | `go` or `typescript`. Names the language of the project analysis and wins over the policy's `language` key ([The `language` key](#the-language-key)). The language selects the project backend when a policy is selected (explicit path or the discovery order above). With no policy selected, the flag does not start project analysis. `--check-project`, `--prepare-compiler` and `--suggest-project-config` still need `--project-language typescript` on the command line. |
 | `--suggest-project-config` | | Without `--output`, writes `.lousy-agents/coach.json`. Go also prints the candidate on stdout. TypeScript writes the file after confirmation and does not print the candidate on stdout. `--output` still wins. Never auto-applied; never invents layers. |
 | `--output <path>` | `.lousy-agents/coach.json` | Create-only path for a suggest candidate. When set, this path wins over `.lousy-agents/coach.json`. |
 | `--check-project` | | Read-only TypeScript readiness. Exits `0` on gaps. Not a scan. It reads the project policy from the working tree, as `--project-config` or the discovery order selects it: a usable regular file there is the policy, whatever the index and the analyzed revision hold at its path, and the roots the check uses come from its bytes. How that file differs from the analyzed revision is a warning, never a gap (see the paragraphs below the exit codes). A file on disk whose content is not a usable policy (invalid, over the size budget, or holding conflict markers) is `policy_invalid` with no next action and the cause `undetermined`: authoring refuses a path that exists, so the way out is to fix the file. A policy gap names one next action only where nothing is on disk: `author_policy` for a policy that was never committed and that the index holds nothing for, or for one whose committed copy is a regular file whose content is not a valid policy or is over the size budget (guided authoring writes only at a path with nothing at it, so a policy that exists and cannot be used is not authored over: for Go the scan names a candidate written beside the file with `--suggest-project-config --output`, with words that say to compare it with the file, replace the file with it, commit and rerun, and no command to paste; a TypeScript scan opens no session for a policy that exists, with or without a terminal, because the only session it has ends by asking the user to save a replacement over the file), or `restore_policy` for an explicit `--project-config` that is committed at the analyzed revision and gone from disk, unless a restore would overwrite or recreate something or git cannot run it (a staged edit, an unmerged entry, a symbolic link, a sparse checkout, a skip-worktree mark, or a question git could not answer) or the path lies under a file in the way (the message names the file, and the policy is restored after it is moved). Neither is executable (`executable: false`), and a gap that a new file or a restore cannot fix names neither: that includes a path with nothing on disk where the index holds a staged edit, a staged copy or a conflict, or the analyzed revision commits a symbolic link (the cause is `undetermined`), a path under which the index or the revision holds files (`directory`), and a path inside a submodule checkout or committed as a submodule (`in_submodule`, which wins over a file on disk). A usable file on disk is never a gap for what the index or the revision hold at its path: untracked, edited, staged, committed as a symbolic link or conflicted, it passes and carries a warning. An index entry that holds no content (`git add --intent-to-add`, or an empty file staged) counts as nothing: over a committed policy the restore still brings back the committed copy. |
@@ -418,6 +418,30 @@ Go `--suggest-project-config` prints a candidate. TypeScript
 `--suggest-project-config --project-language typescript` is an **interactive
 TTY session** and writes nothing until you confirm. Do not run it unattended.
 
+### The `language` key
+
+A policy names the analysis its roots belong to with an optional top-level `language`, `"go"` or `"typescript"`:
+
+```json
+{"schema_version": "1", "language": "typescript", "roots": ["."], "layers": [], "forbidden_imports": []}
+```
+
+`schema_version` stays `"1"`. A scan runs the first of these that applies:
+
+1. `--project-language`, if the command line gives it;
+2. the policy's `language`;
+3. `go`.
+
+The agent self-review hook never passes `--project-language`, so a TypeScript project sets the key in `.lousy-agents/coach.json` and the hook command stays the same. Without the key the scan analyses the project as Go, which sees no TypeScript file, and `scope.project_language` says `source: "default"`.
+
+A `--project-language` that differs from the policy's `language` is used, and the report carries a `project_language_overrides_policy` diagnostic that names the policy path and both languages ([Language disclosure](#language-disclosure-scopeproject_language)).
+
+Any other value is refused as `project_config_invalid` with exit `2`: a different case (`"Go"`), an unsupported language, an empty string, `null`, and a value that is not a string. The message says `the "language" key must be "go" or "typescript"`, whether the policy is read from the revision or from the working tree.
+
+A policy names one language. A repository with Go and TypeScript roots keeps one policy per language and names the other with `--project-config`; the hook's discovery reads `.lousy-agents/coach.json` (or the root `project.json`) only.
+
+Coach versions that predate the key reject a policy that carries it, as they reject any unknown key: exit `2`, `schema decode failed: json: unknown field "language"`.
+
 ## TypeScript project readiness
 
 ```sh
@@ -500,6 +524,8 @@ foreign-repository TypeScript journey.
 The hook in the [README](../README.md#run-the-review-when-your-coding-agent-finishes) runs `coach codesignal --worktree` when a coding agent finishes a turn. When the review did not run or was not clean, or it found new findings, it asks the agent to continue once: to tell the user why, and to consider the new findings. `--worktree` is described in [Uncommitted work](#uncommitted-work---worktree). Coach ships the CLI behaviour; the hook is an example to copy, and Coach runs no hook service.
 
 The hook has two layers: one script that decides whether the review is clean and which new findings to pass on, the same for every agent, and a few lines of configuration that wire it to each agent's end-of-turn event.
+
+The hook command is the same for every language. A TypeScript project says so in its policy: set `"language": "typescript"` in `.lousy-agents/coach.json` ([The `language` key](#the-language-key)). A TypeScript analysis needs Node and a TypeScript compiler that Coach can resolve ([TypeScript project readiness](#typescript-project-readiness)). When it cannot resolve them the scan exits `2`, and the hook reports that the review did not run instead of a clean review. Without the key the hook analyses the project as Go, which sees no TypeScript file.
 
 ### The check
 
@@ -759,6 +785,15 @@ Every scan reports which project policy it used, and not only under `--worktree`
 | `head_unreadable` | `false` | The policy on disk is usable and HEAD's copy at its path could not be read. The scan used the bytes on disk. |
 
 A report from a version that predates `cause` has no `cause` key. A consumer reads `matches_head` alone for it.
+
+### Language disclosure (`scope.project_language`)
+
+A scan that read a project policy reports which language the project analysis ran in and what chose it:
+
+- JSON `scope.project_language` holds `language` (`go` or `typescript`) and `source`: `flag` (`--project-language` was given), `policy` (the policy's `language`) or `default` (neither, so `go`). It is `null` when no project policy was read, because no project analysis ran.
+- Text prints a `language:` line directly under the policy line: `language: typescript (from the policy)`, `language: go (from --project-language)` or `language: go (the default)`. A scan that read no project policy prints none.
+- A `--project-language` that differs from the policy's `language` adds a `project_language_overrides_policy` diagnostic. Its `path` is the policy, and its message names the language used and the language the policy names. A flag that agrees with the policy, or a policy that names no language, adds none.
+- With a TypeScript analysis, `project_provenance.language` is the same language. A Go analysis has no `project_provenance`, so `scope.project_language` is the field that covers both.
 
 ### Unread parts of the working tree
 
