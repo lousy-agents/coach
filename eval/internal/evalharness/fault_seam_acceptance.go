@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lousy-agents/coach/eval/internal/evaldetect"
 	"github.com/lousy-agents/coach/eval/internal/evalgen"
@@ -47,6 +48,20 @@ func faultsFromEnvironment() (faults, error) {
 	return fault, nil
 }
 
+// gremlinsVariable names a stand-in for Gremlins, so the acceptance specs can drive the thresholds with chosen
+// reports. The release build never reads it.
+const gremlinsVariable = "COACH_EVAL_GREMLINS"
+
+const gremlinsVersionVariable = "COACH_EVAL_GREMLINS_VERSION"
+
+func gremlinsOverride() (binary, version string) {
+	version = os.Getenv(gremlinsVersionVariable)
+	if version == "" {
+		version = PinnedGremlinsVersion
+	}
+	return os.Getenv(gremlinsVariable), version
+}
+
 // detectorVersionVariable replaces the pinned detector's version in the cache key, so that a spec can change only
 // that part of the key.
 const detectorVersionVariable = "COACH_EVAL_DETECTOR_VERSION"
@@ -56,4 +71,14 @@ func detectorVersion() string {
 		return version
 	}
 	return evaldetect.PinnedGocognitVersion
+}
+
+// gremlinsTimeoutVariable shortens the time limit of a Gremlins run, so a spec can show a hung one killed.
+const gremlinsTimeoutVariable = "COACH_EVAL_GREMLINS_TIMEOUT"
+
+func gremlinsLimit() time.Duration {
+	if limit, err := time.ParseDuration(os.Getenv(gremlinsTimeoutVariable)); err == nil && limit > 0 {
+		return limit
+	}
+	return DefaultGremlinsLimit
 }

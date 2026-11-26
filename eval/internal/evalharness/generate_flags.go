@@ -13,12 +13,13 @@ const unset = -1
 
 // GenerateRequest is a parsed `coach-eval generate` command line.
 type GenerateRequest struct {
-	Language evalgen.Language
-	Cells    []evalgen.Cell
-	Seed     int64
-	Panel    string
-	Out      string
-	NoCache  bool
+	Language   evalgen.Language
+	Cells      []evalgen.Cell
+	Seed       int64
+	Panel      string
+	Out        string
+	NoCache    bool
+	NoMutation bool
 }
 
 // Panels name the two cell populations of design §5.
@@ -46,12 +47,16 @@ func parseGenerate(args []string, stderr io.Writer) (GenerateRequest, error) {
 	flags.StringVar(&request.Panel, "panel", PanelTuning, "tuning or held_out")
 	flags.StringVar(&request.Out, "out", "", "copy the program to <out>/<program_id>")
 	flags.BoolVar(&request.NoCache, "no-cache", false, "regenerate instead of reading the cache")
+	flags.BoolVar(&request.NoMutation, "no-mutation", false, "skip the mutation gate (recorded in the manifest; refused for held_out)")
 	tuning := flags.Bool("tuning", false, "emit the twelve fixed tuning cells")
 	if err := flags.Parse(args); err != nil {
 		return request, err
 	}
 	if request.Panel != PanelTuning && request.Panel != PanelHeldOut {
 		return request, fmt.Errorf("panel must be %s or %s, got %q", PanelTuning, PanelHeldOut, request.Panel)
+	}
+	if request.NoMutation && request.Panel == PanelHeldOut {
+		return request, fmt.Errorf("--no-mutation is refused for the %s panel, which is never generated unchecked", PanelHeldOut)
 	}
 	var err error
 	if request.Language, err = evalgen.ParseLanguage(*language); err != nil {

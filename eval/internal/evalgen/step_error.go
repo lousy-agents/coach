@@ -6,6 +6,7 @@ const (
 	StepDeleteBaseline = "delete_baseline"
 	StepLayerGraph     = "layer_graph"
 	StepGocognit       = "gocognit"
+	StepMutation       = "mutation"
 
 	StepFollowOnStub           = "followon_stub"
 	StepFollowOnDeleteBaseline = "followon_delete_baseline"
@@ -13,7 +14,7 @@ const (
 )
 
 // ValidationSteps lists every step in the order a program meets them.
-var ValidationSteps = []string{StepNative, StepDeleteBaseline, StepFollowOnStub, StepFollowOnDeleteBaseline, StepFollowOnOracle, StepLayerGraph, StepGocognit}
+var ValidationSteps = []string{StepNative, StepDeleteBaseline, StepFollowOnStub, StepFollowOnDeleteBaseline, StepFollowOnOracle, StepLayerGraph, StepGocognit, StepMutation}
 
 // StepError is a program rejected by one validation step, as distinct from a tool that could not run.
 type StepError struct {

@@ -23,7 +23,16 @@ func (r *generateRun) generateAndSave(cell evalgen.Cell, key string) (evalgen.Lo
 			r.tally.reject(rejection)
 			continue
 		}
+		outcome, err := r.judgeMutation(program)
+		if err != nil {
+			return evalgen.Location{}, evalgen.Manifest{}, err
+		}
+		if outcome.rejectedAt != "" {
+			r.tally.reject(outcome.rejectedAt)
+			continue
+		}
 		r.tally.accept()
+		program = withValidation(program, outcome.fields)
 		program.Manifest.Program.Panel = r.request.Panel
 		program.Manifest.Program.Replacements = replacement
 		program = withBaseFindings(r.coach, program)

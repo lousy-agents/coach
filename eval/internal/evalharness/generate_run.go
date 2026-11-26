@@ -24,16 +24,21 @@ type generateOutput struct {
 
 // generateRun is one `generate` invocation: its store, its faults and the tally of its attempts.
 type generateRun struct {
-	request GenerateRequest
-	store   evalgen.Store
-	faults  faults
-	tools   evalgen.TypeScriptTools
-	coach   coachBinary
-	tally   rejectionTally
+	request  GenerateRequest
+	store    evalgen.Store
+	faults   faults
+	tools    evalgen.TypeScriptTools
+	coach    coachBinary
+	gremlins Gremlins
+	tally    rejectionTally
 }
 
 func newGenerateRun(request GenerateRequest) (*generateRun, error) {
 	tools, err := toolsFor(request.Language)
+	if err != nil {
+		return nil, err
+	}
+	gremlins, err := pinnedGremlins(request)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +50,7 @@ func newGenerateRun(request GenerateRequest) (*generateRun, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &generateRun{request: request, store: store, faults: injected, tools: tools, coach: findCoachBinary()}, nil
+	return &generateRun{request: request, store: store, faults: injected, tools: tools, coach: findCoachBinary(), gremlins: gremlins}, nil
 }
 
 func (r *generateRun) produceAll() ([]generateOutput, error) {
