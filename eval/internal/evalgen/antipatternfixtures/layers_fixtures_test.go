@@ -26,8 +26,14 @@ var variants = []string{"bad", "good"}
 // the shapes listed as not covered, and observed no complexity shape.
 func layered(layers map[string]int, roles map[string]map[string]int, notCovered ...string) []byte {
 	GinkgoHelper()
+	return layeredOn(profileWith(map[string]int{}, map[string]int{}, map[string]int{}, 0), layers, roles, notCovered...)
+}
+
+// layeredOn is base with the layers, the roles' packages and the not-covered shapes set.
+func layeredOn(base []byte, layers map[string]int, roles map[string]map[string]int, notCovered ...string) []byte {
+	GinkgoHelper()
 	var profile map[string]any
-	Expect(json.Unmarshal(profileWith(map[string]int{}, map[string]int{}, map[string]int{}, 0), &profile)).To(Succeed())
+	Expect(json.Unmarshal(base, &profile)).To(Succeed())
 	profile["dimensions"].(map[string]any)["layers"] = layers
 	observed := map[string]any{}
 	for role, packages := range roles {

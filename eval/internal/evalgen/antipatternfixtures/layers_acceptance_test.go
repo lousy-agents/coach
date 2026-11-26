@@ -77,13 +77,36 @@ var _ = Describe("deriving the layer fixtures from a profile's layers (#900, #87
 				map[string]map[string]int{"api": {"1": 1}, "service": {"1": 1}, "domain": {"1": 1}, "store": {"1": 1}, "repository": {"2": 5}}, 2),
 		)
 
-		It("holds one package a layer, and says so, when the profile records no packages for the roles", func() {
-			_, err := generate(layered(map[string]int{"3": 1}, map[string]map[string]int{}), out)
+		It("emits neither layer fixture when the profile records no packages for the roles, which is what a profile without an ordered policy records", func() {
+			result, err := generate(layered(map[string]int{"4": 1}, map[string]map[string]int{}), out)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(packageDirs(out, "dependency-rule-breach", "bad")["api"]).To(HaveLen(1))
-			Expect(readExpect(out, "dependency-rule-breach").Note).To(ContainSubstring("packages per layer 1"))
-			Expect(readExpect(out, "dependency-rule-breach").Note).To(ContainSubstring("no packages were observed"))
+			Expect(result.Emitted).To(BeEmpty())
+			Expect(out).NotTo(BeADirectory())
+		})
+
+		It("emits neither layer fixture when the only packages recorded are a role the layer count does not use", func() {
+			result, err := generate(layered(map[string]int{"3": 1}, map[string]map[string]int{"repository": {"2": 1}}), out)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Emitted).To(BeEmpty())
+		})
+
+		It("leaves the other fixtures as they were when it emits neither layer fixture for want of roles", func() {
+			base := profileWith(map[string]int{"4": 1}, map[string]int{}, map[string]int{}, 0)
+
+			result, err := generate(layeredOn(base, map[string]int{"4": 1}, map[string]map[string]int{}), out)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Emitted).To(ConsistOf(antipatternfixtures.Emitted{ID: "arrow-code", Value: 4}))
+		})
+
+		It("emits both when a single role of the layer count has an observed package count", func() {
+			result, err := generate(layered(map[string]int{"3": 1}, map[string]map[string]int{"service": {"2": 1}}), out)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Emitted).To(HaveLen(2))
+			Expect(packageDirs(out, "skipped-layer", "bad")["api"]).To(HaveLen(2))
 		})
 
 		DescribeTable("orders the layers by forbidden pairs: every inner layer is forbidden to import every outer one, once",
