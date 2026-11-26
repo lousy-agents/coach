@@ -66,6 +66,8 @@ jobs:
 
       - name: test
         run: mise run test
+        env:
+          COACH_REQUIRE_REAL_MISE: "1"
 
       - name: test-examples
         run: mise run test-examples
