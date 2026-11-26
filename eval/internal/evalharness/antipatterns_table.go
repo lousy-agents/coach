@@ -47,17 +47,20 @@ func (t *antipatternTable) add(report fixtureReport) {
 func (t antipatternTable) failures() []string {
 	var lines []string
 	for _, report := range t.Fixtures {
-		if report.Status != statusCovered {
-			continue
+		if report.Status == statusCovered {
+			lines = append(lines, report.failureLines()...)
 		}
-		for _, variant := range []struct {
-			name   string
-			report variantReport
-		}{{"bad", report.Bad}, {"good", report.Good}} {
-			if variant.report.Result != resultPass {
-				lines = append(lines, fmt.Sprintf("FAIL %s %s: %s", report.ID, variant.name, variant.report.Detail))
-			}
-		}
+	}
+	return lines
+}
+
+func (r fixtureReport) failureLines() []string {
+	var lines []string
+	if r.Bad.Result != resultPass {
+		lines = append(lines, fmt.Sprintf("FAIL %s bad: %s", r.ID, r.Bad.Detail))
+	}
+	if r.Good.Result != resultPass {
+		lines = append(lines, fmt.Sprintf("FAIL %s good: %s", r.ID, r.Good.Detail))
 	}
 	return lines
 }
