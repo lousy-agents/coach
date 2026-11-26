@@ -66,6 +66,7 @@ var _ = Describe("coach-eval history", func() {
 			rule := repo["rules"].([]any)[0].(map[string]any)
 			Expect([]any{rule["flagged"], rule["flagged_involved"], rule["controls"], rule["controls_involved"]}).To(Equal([]any{2.0, 1.0, 3.0, 1.0}))
 			Expect(rule["risk_ratio"]).To(BeNumerically("~", 1.5, 1e-9))
+			Expect(rule["unplaced_findings"]).To(BeEquivalentTo(0), "the copy under eval/ is outside the census scope, so its findings are dropped rather than left unplaced")
 		})
 	})
 
