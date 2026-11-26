@@ -38,3 +38,18 @@ func expectChosenLanguage(t *testing.T, flag projectLanguageFlag, policy project
 		t.Errorf("a diagnostic for the override: got %v, want %v", overrides, overridden != "")
 	}
 }
+
+func TestWithLanguageUsedReplacesTheFlagValueOnlyWhereAnAnalysisRan(t *testing.T) {
+	typescript, empty := "typescript", ""
+	t.Run("no holder", func(t *testing.T) { expectLanguageAfterScan(t, nil, "go") })
+	t.Run("a holder no analysis filled", func(t *testing.T) { expectLanguageAfterScan(t, &empty, "go") })
+	t.Run("a holder an analysis filled", func(t *testing.T) { expectLanguageAfterScan(t, &typescript, "typescript") })
+}
+
+func expectLanguageAfterScan(t *testing.T, used *string, want string) {
+	t.Helper()
+	got := codesignalFlags{projectLanguage: "go", languageUsed: used}.withLanguageUsed().projectLanguage
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

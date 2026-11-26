@@ -58,7 +58,7 @@ func prepareAnalysis(choice policyChoice, source policyref.Ref, flag projectLang
 	}
 	if backend == nil {
 		kept := withoutOutdatedDeprecation(diags, choice.scope.Path)
-		return preparedProject{diagnostics: appendDiagnostic(kept, backendUnavailableDiagnostic(choice.scope.Path, unavailable))}, nil
+		return preparedProject{diagnostics: appendDiagnostic(kept, backendUnavailableDiagnostic(choice.scope.Path, unavailable)), language: language.scope.Language}, nil
 	}
 	return analysisOf(choice, source, language, backend, diags), nil
 }
@@ -75,5 +75,6 @@ func analysisOf(choice policyChoice, source policyref.Ref, language chosenProjec
 			Backend:       backend,
 		},
 		diagnostics: withoutOutdatedDeprecation(diags, choice.scope.Path),
+		language:    language.scope.Language,
 	}
 }

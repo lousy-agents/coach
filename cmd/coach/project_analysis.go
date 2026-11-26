@@ -16,6 +16,8 @@ import (
 type preparedProject struct {
 	analysis    *codesignalcli.ProjectAnalysis
 	diagnostics []codesignal.Diagnostic
+	// language is the language the policy was prepared for, empty where no policy was read.
+	language string
 }
 
 func prepareProjectAnalysis(dir, revision string, named policyref.Ref, language projectLanguageFlag, ports scanPorts) (preparedProject, error) {

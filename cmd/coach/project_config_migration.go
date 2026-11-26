@@ -25,6 +25,9 @@ func prepareScanProjectAnalysis(dir, revision string, f codesignalFlags, status 
 	if err != nil {
 		return nil, nil, err
 	}
+	if f.languageUsed != nil {
+		*f.languageUsed = prepared.language
+	}
 	project := prepared.analysis
 	if view != nil && project == nil {
 		project = &codesignalcli.ProjectAnalysis{}
