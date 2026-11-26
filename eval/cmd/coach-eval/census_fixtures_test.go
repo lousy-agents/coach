@@ -101,10 +101,15 @@ type corpusRepo struct {
 
 // writeCorpus writes a manifest that censuses cognitive complexity in Go.
 func writeCorpus(repos ...corpusRepo) string {
+	return writeCorpusFor("complexity.cognitive_complexity", "go", repos...)
+}
+
+// writeCorpusFor writes a manifest that censuses one rule in one language.
+func writeCorpusFor(ruleID, language string, repos ...corpusRepo) string {
 	manifest := map[string]any{
 		"corpus_id":    "fixture",
 		"repositories": repos,
-		"rules":        []any{map[string]any{"rule_id": "complexity.cognitive_complexity", "languages": []string{"go"}}},
+		"rules":        []any{map[string]any{"rule_id": ruleID, "languages": []string{language}}},
 	}
 	raw, err := json.Marshal(manifest)
 	Expect(err).NotTo(HaveOccurred())

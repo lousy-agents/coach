@@ -168,6 +168,17 @@ var _ = Describe("coach-eval census", func() {
 		})
 	})
 
+	When("coach fails on a repository whose censused rules are all out of scope", func() {
+		It("still exits 3", func() {
+			path, sha := censusRepo(goRepoFiles(complexFunctions(1)))
+			corpus := writeCorpusFor("coupling.deep_relative_import", "typescript", corpusRepo{ID: "broken", Path: path, SHA: sha, Language: "go", ProjectConfig: ".lousy-agents/missing.json"})
+
+			outcome, _ := runCensus(corpus, coachBinary())
+
+			Expect(outcome.exitCode).To(Equal(3), outcome.stderr)
+		})
+	})
+
 	When("a census finishes", func() {
 		It("leaves no clone behind in the temporary directory", func() {
 			path, sha := censusRepo(goRepoFiles(complexFunctions(1)))

@@ -10,9 +10,9 @@ import (
 
 // Exit codes of `coach-eval census` (docs/evaluation/agentic-eval-design.md §10).
 const (
-	CensusComplete     = 0
-	CensusInputInvalid = 2
-	CensusCoachFailed  = 3
+	CensusComplete       = 0
+	CensusInputInvalid   = 2
+	CensusAnalysisFailed = 3
 )
 
 // Census runs `coach-eval census --coach <binary> <corpus.json>` and prints
@@ -34,8 +34,8 @@ func Census(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "coach-eval census: %v\n", err)
 		return CensusInputInvalid
 	}
-	if summary.coachFailed() {
-		return CensusCoachFailed
+	if summary.analysisFailed() {
+		return CensusAnalysisFailed
 	}
 	return CensusComplete
 }
