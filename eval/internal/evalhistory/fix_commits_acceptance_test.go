@@ -50,13 +50,32 @@ var _ = Describe("finding fix commits offline", func() {
 		})
 	})
 
-	When("since or until is not a commit in the repository", func() {
-		It("refuses", func() {
+	DescribeTable("a window bound that is not a commit in the repository is refused",
+		func(sinceMissing bool) {
+			h := newHistory()
+			sha := h.commit("base", map[string]string{"p/p.go": baseSource})
+			missing := "0123456789abcdef0123456789abcdef01234567"
+			since, until := sha, missing
+			if sinceMissing {
+				since, until = missing, sha
+			}
+
+			_, err := evalhistory.FindFixes(h.dir, since, until)
+			Expect(err).To(MatchError(ContainSubstring(missing + " is not a commit")))
+		},
+		Entry("an unknown until", false),
+		Entry("an unknown since", true),
+	)
+
+	When("only the message body names the fix", func() {
+		It("still counts the commit as a fix", func() {
 			h := newHistory()
 			since := h.commit("base", map[string]string{"p/p.go": baseSource})
+			fix := h.commit("Update parser\n\nFixes #3, where empty input crashed.", map[string]string{"a.txt": "1"})
 
-			_, err := evalhistory.FindFixes(h.dir, since, "0123456789abcdef0123456789abcdef01234567")
-			Expect(err).To(HaveOccurred())
+			scan, err := evalhistory.FindFixes(h.dir, since, fix)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(scan.Fixes).To(Equal([]evalhistory.FixCommit{{SHA: fix, Subject: "Update parser"}}))
 		})
 	})
 })

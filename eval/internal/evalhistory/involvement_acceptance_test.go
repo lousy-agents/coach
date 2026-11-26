@@ -9,6 +9,9 @@ import (
 
 var unitsAB = []evalhistory.Unit{{Path: "p/p.go", Start: 3, End: 5}, {Path: "p/p.go", Start: 7, End: 10}}
 
+// sumAndOther are Sum (lines 3-9) and Other (lines 11-14) in "package p\n\n" + sumFunc + "\n" + otherFunc.
+var sumAndOther = []evalhistory.Unit{{Path: "p/p.go", Start: 3, End: 9}, {Path: "p/p.go", Start: 11, End: 14}}
+
 func fixesOf(scan evalhistory.FixScan) []evalhistory.FixCommit { return scan.Fixes }
 
 var _ = Describe("which units a later fix touched", func() {
@@ -65,6 +68,70 @@ var _ = Describe("which units a later fix touched", func() {
 			result, err := evalhistory.Involve(h.dir, since, unitsAB, fixesOf(scan))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.FixSHA).To(Equal([]string{"", fix}))
+		})
+	})
+
+	When("a unit's lines move to another file in the same commit before the fix", func() {
+		It("follows the copied lines back to the unit", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{"p/p.go": "package p\n\n" + sumFunc + "\n" + otherFunc})
+			h.commit("move Sum to sum.go", map[string]string{"p/p.go": "package p\n\n" + otherFunc, "p/sum.go": "package p\n\n" + sumFunc})
+			moved := "package p\n\n" + sumFunc
+			fix := h.commit("fix: Sum starts from one", map[string]string{"p/sum.go": replaceLine(moved, 4, "\ttotal := 1")})
+
+			scan, err := evalhistory.FindFixes(h.dir, since, fix)
+			Expect(err).NotTo(HaveOccurred())
+			result, err := evalhistory.Involve(h.dir, since, sumAndOther, fixesOf(scan))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.FixSHA).To(Equal([]string{fix, ""}))
+		})
+	})
+
+	When("a unit moves within its file before the fix", func() {
+		It("follows the moved lines back to the unit", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{"p/p.go": "package p\n\n" + sumFunc + "\n" + otherFunc})
+			reordered := "package p\n\n" + otherFunc + "\n" + sumFunc
+			h.commit("put Other first", map[string]string{"p/p.go": reordered})
+			sumStart := 3 + len(lines(otherFunc)) + 1
+			fix := h.commit("fix: Sum starts from one", map[string]string{"p/p.go": replaceLine(reordered, sumStart+1, "\ttotal := 1")})
+
+			scan, err := evalhistory.FindFixes(h.dir, since, fix)
+			Expect(err).NotTo(HaveOccurred())
+			result, err := evalhistory.Involve(h.dir, since, sumAndOther, fixesOf(scan))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.FixSHA).To(Equal([]string{fix, ""}))
+		})
+	})
+
+	When("a unit's line is only reindented before the fix changes it", func() {
+		It("still traces the line to the unit, ignoring the whitespace change", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{"p/p.go": baseSource})
+			reindented := replaceLine(baseSource, 8, "    x := 2")
+			h.commit("reindent B", map[string]string{"p/p.go": reindented})
+			fix := h.commit("fix: wrong value in B", map[string]string{"p/p.go": replaceLine(reindented, 8, "    x := 3")})
+
+			scan, err := evalhistory.FindFixes(h.dir, since, fix)
+			Expect(err).NotTo(HaveOccurred())
+			result, err := evalhistory.Involve(h.dir, since, unitsAB, fixesOf(scan))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.FixSHA).To(Equal([]string{"", fix}))
+		})
+	})
+
+	When("two fixes touch the same unit", func() {
+		It("records the older fix", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{"p/p.go": baseSource})
+			first := h.commit("fix: wrong value in B", map[string]string{"p/p.go": replaceLine(baseSource, 9, "\treturn x + 1")})
+			second := h.commit("fix: wrong start in B", map[string]string{"p/p.go": replaceLine(replaceLine(baseSource, 9, "\treturn x + 1"), 8, "\tx := 3")})
+
+			scan, err := evalhistory.FindFixes(h.dir, since, second)
+			Expect(err).NotTo(HaveOccurred())
+			result, err := evalhistory.Involve(h.dir, since, unitsAB, fixesOf(scan))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.FixSHA).To(Equal([]string{"", first}))
 		})
 	})
 })

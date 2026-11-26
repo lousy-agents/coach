@@ -74,3 +74,9 @@ func deleteLine(source string, n int) string {
 	all := lines(source)
 	return join(append(all[:n-1:n-1], all[n:]...))
 }
+
+// sumFunc and otherFunc are large enough for git's move and copy detection,
+// which ignores blocks of fewer than 20 alphanumeric characters.
+const sumFunc = "func Sum(values []int) int {\n\ttotal := 0\n\tfor _, value := range values {\n\t\ttotal += value\n\t}\n\treturn total\n}\n"
+
+const otherFunc = "func Other(name string) string {\n\tgreeting := \"hello, \" + name\n\treturn greeting\n}\n"
