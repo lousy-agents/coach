@@ -19,11 +19,11 @@ const (
 // RuleStatus is one rule's census outcome on one repository. Adjudicable
 // counts the findings that carry evidence a reviewer can judge.
 type RuleStatus struct {
-	RuleID      string
-	Status      Status
-	Findings    int
-	Adjudicable int
-	Evidence    string
+	RuleID      string `json:"rule_id"`
+	Status      Status `json:"analysis_status"`
+	Findings    int    `json:"findings"`
+	Adjudicable int    `json:"adjudicable"`
+	Evidence    string `json:"evidence,omitempty"`
 }
 
 type reportSignal struct {

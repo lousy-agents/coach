@@ -385,6 +385,18 @@ go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 "$bin_dir/coach-eval" trend "$@"
 """
 
+# Censuses a pinned corpus with a coach built from this checkout. Arguments after `--` reach the command.
+[tasks.eval-census]
+description = "Census a pinned corpus manifest; exit 0 complete, 2 an input unusable or a SHA unreachable, 3 a repository's analysis failed"
+run = """
+set -eu
+bin_dir=$(mktemp -d)
+trap 'rm -rf "$bin_dir"' EXIT
+go build -o "$bin_dir/coach" ./cmd/coach
+go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
+"$bin_dir/coach-eval" census --coach "$bin_dir/coach" "$@"
+"""
+
 # The single authoritative "everything CI proves" task. No longer the ship gate
 # -- GHA runs these as parallel required jobs -- but still the way to prove the
 # whole thing locally when you want to.
