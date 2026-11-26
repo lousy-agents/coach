@@ -20,15 +20,17 @@ type Template struct {
 	// Expect is the bad variant's findings; nil for a pattern Coach has no
 	// rule for, whose status is not_covered.
 	Expect func(value int) []Finding
+	// Padding is the files a template of layers adds to both variants to
+	// hold the observed packages per layer, given the value and the packages.
+	Padding func(value, packages int) map[string]string
 }
 
 // Templates are the #871 patterns a syntax-only profile can observe. The
 // others (god-struct, check-then-act, global-mutable-state,
-// hidden-input-mutation, create-after-missing-check,
-// bypass-without-required-layer, and the layer patterns until their
-// follow-up) have no shape in a profile.
+// hidden-input-mutation, create-after-missing-check and
+// bypass-without-required-layer) have no shape in a profile.
 func Templates() []Template {
-	return []Template{arrowCode(), constructorDoesRealWork(), godFile(), spaghettiConditional()}
+	return []Template{arrowCode(), constructorDoesRealWork(), dependencyRuleBreach(), godFile(), skippedLayer(), spaghettiConditional()}
 }
 
 func goMod(module string) string { return "module example.com/" + module + "\n\ngo 1.26.0\n" }
