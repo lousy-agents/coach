@@ -208,7 +208,8 @@ func treeListing(root string) []string {
 
 // goldenStandInProfile is the stand-in tree's profile, recorded from the
 // first green run after each measure was checked by hand in the rows above.
-const goldenStandInProfile = `{"dimensions":{"depth":{},"direction":null,"entry":{"function":4,"http_handler":2,"method":1},"field":null,"layers":{},"trap":null},` +
-	`"extractor_version":"0.1.0","identity":"ea020b7e7f43b7c1c72503d937550f8668822ccbfefbe6b724d4cbaa9622567f",` +
-	`"label":"stand-in","licence":"MIT","not_covered":[],"roles":{},"schema_version":"1","sha":"0123456789abcdef0123456789abcdef01234567",` +
+const goldenStandInProfile = `{"dimensions":{"depth":{"0":6,"1":1},"direction":null,"entry":{"function":4,"http_handler":2,"method":1},"field":null,"layers":{"2":1},"trap":null},` +
+	`"extractor_version":"0.1.0","identity":"ba9f5091becfa57060b6cdf0454fdb0d1d0945c7355a246e1dcdda03cedc29e3",` +
+	`"label":"stand-in","licence":"MIT","not_covered":[{"count":7,"shape":"depth"},{"count":1,"shape":"layers"},{"count":2,"shape":"packages"}],` +
+	`"roles":{},"schema_version":"1","sha":"0123456789abcdef0123456789abcdef01234567",` +
 	`"shapes":{"branch_density":{"3":1,"4":1},"cognitive":{"0":6,"11":1,"3":1},"constructor":{"assigns_only":1,"does_work":1},"nesting":{"0":6,"1":1,"4":1}}}` + "\n"
