@@ -6,13 +6,9 @@ func unitIdentities(repoDir, since string, units []Unit) (map[lineIdentity]int, 
 	owner := map[lineIdentity]int{}
 	blamed := map[string][]lineIdentity{}
 	for index, unit := range units {
-		all, ok := blamed[unit.Path]
-		if !ok {
-			var err error
-			if all, err = blameFile(repoDir, since, unit.Path); err != nil {
-				return nil, err
-			}
-			blamed[unit.Path] = all
+		all, err := blameOnce(blamed, repoDir, since, unit.Path)
+		if err != nil {
+			return nil, err
 		}
 		identities, err := selectLines(all, unit.Path, since, []lineRange{{unit.Start, unit.End}})
 		if err != nil {
@@ -23,6 +19,17 @@ func unitIdentities(repoDir, since string, units []Unit) (map[lineIdentity]int, 
 		}
 	}
 	return owner, nil
+}
+
+func blameOnce(blamed map[string][]lineIdentity, repoDir, rev, path string) ([]lineIdentity, error) {
+	if all, ok := blamed[path]; ok {
+		return all, nil
+	}
+	all, err := blameFile(repoDir, rev, path)
+	if err == nil {
+		blamed[path] = all
+	}
+	return all, err
 }
 
 // touchedUnits returns the indexes of the units whose lines fix changed.
