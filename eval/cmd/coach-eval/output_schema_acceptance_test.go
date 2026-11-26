@@ -90,6 +90,32 @@ var _ = Describe("the committed output schemas", func() {
 			Entry("lacks break fields", func(d map[string]any) { delete(firstBreakOf(d), "fields") }),
 			Entry("has a break field that is not a string", func(d map[string]any) { firstBreakOf(d)["fields"] = []any{1} }),
 			Entry("has an empty break reason", func(d map[string]any) { firstBreakOf(d)["reason"] = "" }),
+			Entry("lacks cell", func(d map[string]any) { delete(d, "cell") }),
+			Entry("lacks metric", func(d map[string]any) { delete(d, "metric") }),
+			Entry("lacks runs", func(d map[string]any) { delete(d, "runs") }),
+			Entry("lacks segments", func(d map[string]any) { delete(d, "segments") }),
+			Entry("lacks breaks", func(d map[string]any) { delete(d, "breaks") }),
+			Entry("has an empty metric", func(d map[string]any) { d["metric"] = "" }),
+			Entry("has a run count that is not an integer", func(d map[string]any) { d["runs"] = 1.5 }),
+			Entry("has segments that are not an array", func(d map[string]any) { d["segments"] = "x" }),
+			Entry("has a first run with an extra key", func(d map[string]any) {
+				firstSegmentOf(d)["first"].(map[string]any)["extra"] = 1
+			}),
+			Entry("has a first run without value", func(d map[string]any) {
+				delete(firstSegmentOf(d)["first"].(map[string]any), "value")
+			}),
+			Entry("has an empty first run_id", func(d map[string]any) {
+				firstSegmentOf(d)["first"].(map[string]any)["run_id"] = ""
+			}),
+			Entry("has a segment without runs", func(d map[string]any) { delete(firstSegmentOf(d), "runs") }),
+			Entry("has a segment without first", func(d map[string]any) { delete(firstSegmentOf(d), "first") }),
+			Entry("has a segment without last", func(d map[string]any) { delete(firstSegmentOf(d), "last") }),
+			Entry("has an empty segment run id", func(d map[string]any) { firstSegmentOf(d)["runs"] = []any{""} }),
+			Entry("has a break with an extra key", func(d map[string]any) { firstBreakOf(d)["extra"] = 1 }),
+			Entry("has a break without before", func(d map[string]any) { delete(firstBreakOf(d), "before") }),
+			Entry("has a break without reason", func(d map[string]any) { delete(firstBreakOf(d), "reason") }),
+			Entry("has an empty break before", func(d map[string]any) { firstBreakOf(d)["before"] = "" }),
+			Entry("has an empty break field", func(d map[string]any) { firstBreakOf(d)["fields"] = []any{""} }),
 		)
 	})
 
@@ -113,6 +139,18 @@ var _ = Describe("the committed output schemas", func() {
 			Entry("has null differing_fields", func(d map[string]any) { d["differing_fields"] = nil }),
 			Entry("has an extra key in a not-complete run", func(d map[string]any) { firstNotCompleteOf(d)["extra"] = 1 }),
 			Entry("lacks a not-complete run's state", func(d map[string]any) { delete(firstNotCompleteOf(d), "state") }),
+			Entry("lacks schema_version", func(d map[string]any) { delete(d, "schema_version") }),
+			Entry("lacks runs", func(d map[string]any) { delete(d, "runs") }),
+			Entry("lacks differing_fields", func(d map[string]any) { delete(d, "differing_fields") }),
+			Entry("lacks warnings", func(d map[string]any) { delete(d, "warnings") }),
+			Entry("lacks not_complete_runs", func(d map[string]any) { delete(d, "not_complete_runs") }),
+			Entry("has an empty run id", func(d map[string]any) { d["runs"] = []any{"", "run-b"} }),
+			Entry("has an empty differing field", func(d map[string]any) { d["differing_fields"] = []any{""} }),
+			Entry("has an empty warning", func(d map[string]any) { d["warnings"] = []any{""} }),
+			Entry("has not_complete_runs that are not an array", func(d map[string]any) { d["not_complete_runs"] = "x" }),
+			Entry("has a not-complete run without run_id", func(d map[string]any) { delete(firstNotCompleteOf(d), "run_id") }),
+			Entry("has a not-complete run with an empty run_id", func(d map[string]any) { firstNotCompleteOf(d)["run_id"] = "" }),
+			Entry("has a not-complete run with an empty state", func(d map[string]any) { firstNotCompleteOf(d)["state"] = "" }),
 			Entry("has an extra top-level key", func(d map[string]any) { d["extra"] = true }),
 		)
 	})

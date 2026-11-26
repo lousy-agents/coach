@@ -222,6 +222,21 @@ var _ = Describe("eval-compare trend --format json", func() {
 		})
 	})
 
+	When("a metric falls by less than a millionth", func() {
+		It("prints the change as 0 in JSON, not -0", func() {
+			writeLedger(ledger,
+				ledgerLine("pre_run", "2026-11-01", "cell-a", trendRecord("run-1", 0.5)),
+				ledgerLine("pre_run", "2026-11-02", "cell-a", trendRecord("run-2", 0.4999999)),
+			)
+
+			outcome := runTrend(root, root, "--cell", "cell-a", "--ledger", ledger, "--format", "json")
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			expectMatchesSchema(trendOutputSchemaPath, []byte(outcome.stdout))
+			Expect(outcome.stdout).To(ContainSubstring(`"change":0}`))
+		})
+	})
+
 	When("run through the eval-trend mise task with --format json", func() {
 		It("prints the JSON trend through the task", func() {
 			writeLedger(ledger,
