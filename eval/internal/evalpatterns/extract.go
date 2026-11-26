@@ -31,16 +31,9 @@ func ExtractProfile(reference Reference, root string) ([]byte, error) {
 		p.measureFile(fset, file)
 		packages[packageDir(rel)] = append(packages[packageDir(rel)], file)
 	}
-	shape, err := layersOf(root, sortedDirs(packages))
-	if err != nil {
+	if err := p.measureProgram(root, packages); err != nil {
 		return nil, reference.refuse(err.Error())
 	}
-	module, err := modulePath(root)
-	if err != nil {
-		return nil, reference.refuse(err.Error())
-	}
-	p.recordDepths(entryDepths(module, packages))
-	p.recordLayers(shape)
 	raw, err := sealed(p)
 	if err != nil {
 		return nil, err
