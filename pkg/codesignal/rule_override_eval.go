@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
@@ -55,7 +56,7 @@ func parseEvalOverride(raw string) (evalOverride, error) {
 	if err := decoder.Decode(&document); err != nil {
 		return evalOverride{}, err
 	}
-	if decoder.More() {
+	if decoder.Decode(&struct{}{}) != io.EOF {
 		return evalOverride{}, errors.New("unexpected content after the JSON object")
 	}
 
