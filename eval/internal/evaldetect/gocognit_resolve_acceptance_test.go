@@ -36,6 +36,26 @@ var _ = Describe("resolving the pinned gocognit", func() {
 		})
 	})
 
+	DescribeTable("a caller's environment cannot turn the build into a fetch or a failure",
+		func(env string) {
+			gocognit, err := evaldetect.ResolveGocognit(evalModule, []string{env})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(gocognit.CheckVersion()).To(Succeed())
+		},
+		Entry("a toolchain the host does not have", "GOTOOLCHAIN=go1.26.0"),
+		Entry("vendor mode with no vendor directory", "GOFLAGS=-mod=vendor"),
+	)
+
+	When("the caller names a module proxy and the cache is empty", func() {
+		It("still refuses without fetching anything", func() {
+			emptyCache := GinkgoT().TempDir()
+
+			_, err := evaldetect.ResolveGocognit(evalModule, []string{"GOMODCACHE=" + emptyCache, "GOPROXY=https://proxy.golang.org,direct"})
+			Expect(err).To(MatchError(evaldetect.ErrGocognitUnavailable))
+			Expect(downloadedFiles(emptyCache)).To(BeEmpty(), "a caller's GOPROXY must not reopen module lookup")
+		})
+	})
+
 	When("the module cache does not hold the pinned version", func() {
 		It("refuses without fetching anything", func() {
 			emptyCache := GinkgoT().TempDir()
