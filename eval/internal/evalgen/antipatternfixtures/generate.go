@@ -2,6 +2,7 @@ package antipatternfixtures
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 )
@@ -56,6 +57,11 @@ func Generate(raw []byte, validate Validator, root, label string, templates []Te
 
 func emit(template Template, seen observation, identity, out string, vet Vetter) error {
 	bad, good := template.Bad(seen.value), template.Good(seen.value)
+	if template.Padding != nil {
+		padding := template.Padding(seen.value, seen.packages)
+		maps.Copy(bad, padding)
+		maps.Copy(good, padding)
+	}
 	for _, variant := range []map[string]string{bad, good} {
 		if err := vetVariant(variant, vet); err != nil {
 			return err
