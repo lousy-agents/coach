@@ -20,10 +20,11 @@ func checkedRecordLines(path string, records []Record) func() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := validateBatch(existing, records); err != nil {
+		linked := linkSupersessions(existing, records)
+		if err := validateBatch(existing, linked); err != nil {
 			return nil, err
 		}
-		return recordLines(records)
+		return recordLines(linked)
 	}
 }
 
