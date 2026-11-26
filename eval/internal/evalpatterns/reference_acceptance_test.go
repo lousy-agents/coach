@@ -74,6 +74,20 @@ var _ = Describe("loading a reference manifest", func() {
 		})
 	})
 
+	When("an entry's label is exactly as long as the profile schema allows", func() {
+		It("loads", func() {
+			label := strings.Repeat("a", 64)
+			path := writeManifest(map[string]any{"schema_version": "1", "references": []any{
+				map[string]any{"label": label, "sha": sampleSHA, "language": "go", "licence": "MIT"},
+			}})
+
+			manifest, err := evalpatterns.LoadManifest(path)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(manifest.References[0].Label).To(Equal(label))
+		})
+	})
+
 	DescribeTable("the manifest as a whole is unusable input",
 		func(content any, message string) {
 			_, err := evalpatterns.LoadManifest(writeManifest(content))

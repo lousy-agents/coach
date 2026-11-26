@@ -29,9 +29,15 @@ type Reference struct {
 // eval/fixtures/antipatterns/.
 var labelPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 
+// maxLabelLength is the profile schema's cap on a label, enforced when the
+// manifest loads so an entry is never read only to fail validation after.
+const maxLabelLength = 64
+
 // LoadManifest reads a reference manifest. It rejects the manifest as a
-// whole only when no entry can be named; an entry with a missing licence,
-// an unpinned SHA or another language loads, and Check refuses it.
+// whole when it is malformed (an unknown field, another schema_version, no
+// entries) or when an entry cannot be named (a label that is not a short
+// path segment, or one used twice). An entry with a missing licence, an
+// unpinned SHA or another language loads, and Check refuses it.
 func LoadManifest(path string) (Manifest, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -60,6 +66,9 @@ func manifestProblem(manifest Manifest) string {
 	for _, reference := range manifest.References {
 		if !labelPattern.MatchString(reference.Label) {
 			return fmt.Sprintf("label %q must be a lowercase path segment", reference.Label)
+		}
+		if len(reference.Label) > maxLabelLength {
+			return fmt.Sprintf("label %q is longer than %d characters", reference.Label, maxLabelLength)
 		}
 		if seen[reference.Label] {
 			return fmt.Sprintf("label %q appears twice", reference.Label)

@@ -95,6 +95,22 @@ var _ = Describe("checking out a reference", func() {
 		})
 	})
 
+	When("the clone is a local directory whose name has a colon before any slash", func() {
+		It("reads it from the disk, not as an scp-style ssh address", func() {
+			local, sha := referenceRepository()
+			parent := GinkgoT().TempDir()
+			Expect(os.Rename(local, filepath.Join(parent, "host:repo"))).To(Succeed())
+			reference := validReference()
+			reference.SHA = sha
+			dir := filepath.Join(GinkgoT().TempDir(), "checkout")
+			GinkgoT().Chdir(parent)
+
+			Expect(evalpatterns.CheckoutReference(reference, "host:repo", dir)).To(Succeed())
+
+			Expect(filepath.Join(dir, "main.go")).To(BeAnExistingFile())
+		})
+	})
+
 	When("the entry itself is refused", func() {
 		It("refuses before cloning anything (AC-1.5)", func() {
 			clone, sha := referenceRepository()
