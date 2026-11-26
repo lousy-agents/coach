@@ -36,13 +36,20 @@ func isPointerTo(expr ast.Expr, pkg, name string) bool {
 // does not import it.
 func importName(file *ast.File, path string) string {
 	for _, spec := range file.Imports {
-		if value, _ := strconv.Unquote(spec.Path.Value); value == path {
-			if spec.Name != nil {
-				return spec.Name.Name
-			}
-			return pathpkg.Base(value)
+		if name, ok := nameOfImport(spec, path); ok {
+			return name
 		}
 	}
 	return ""
 }
 
+func nameOfImport(spec *ast.ImportSpec, path string) (string, bool) {
+	value, _ := strconv.Unquote(spec.Path.Value)
+	switch {
+	case value != path:
+		return "", false
+	case spec.Name != nil:
+		return spec.Name.Name, true
+	}
+	return pathpkg.Base(value), true
+}
