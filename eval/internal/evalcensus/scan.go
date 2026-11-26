@@ -9,7 +9,8 @@ import (
 )
 
 // scanRepository runs Coach's baseline scan in the checked-out repository
-// and turns its report, or its failure, into rule statuses.
+// and turns its report, or its failure, into rule statuses. coach is an
+// absolute path, because the scan runs from inside the checkout.
 func scanRepository(corpus Corpus, repo Repository, coach, dir string) RepositoryResult {
 	result := RepositoryResult{ID: repo.ID, SHA: repo.SHA}
 	var stdout, stderr bytes.Buffer

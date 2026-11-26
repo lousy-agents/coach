@@ -57,7 +57,7 @@ func Run(corpus Corpus, coach string) (Summary, error) {
 	}
 	summary := Summary{CorpusID: corpus.ID, Coach: identity}
 	for i, repo := range corpus.Repositories {
-		summary.Repositories = append(summary.Repositories, scanRepository(corpus, repo, coach, dirs[i]))
+		summary.Repositories = append(summary.Repositories, scanRepository(corpus, repo, identity.Path, dirs[i]))
 	}
 	return summary, nil
 }
