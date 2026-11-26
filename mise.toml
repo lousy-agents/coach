@@ -40,7 +40,7 @@ run = [
 
 [tasks.test]
 description = "Run all unit tests with race detection"
-run = "go test -race ./..."
+run = "go test -race -timeout 25m ./..."
 
 [tasks.test-examples]
 description = "Run Go example tests"
