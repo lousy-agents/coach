@@ -1,6 +1,7 @@
 package evalhistory
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -38,9 +39,10 @@ func blameLines(repoDir, rev, path string, ranges []lineRange) ([]lineIdentity, 
 	}
 	var selected []lineIdentity
 	for _, r := range ranges {
-		for line := r.start; line <= r.end && line <= len(all); line++ {
-			selected = append(selected, all[line-1])
+		if r.start < 1 || r.end > len(all) {
+			return nil, fmt.Errorf("%s:%d-%d is outside the file's %d lines at %s", path, r.start, r.end, len(all), rev)
 		}
+		selected = append(selected, all[r.start-1:r.end]...)
 	}
 	return selected, nil
 }

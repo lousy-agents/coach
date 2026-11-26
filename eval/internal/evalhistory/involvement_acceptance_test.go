@@ -135,13 +135,15 @@ var _ = Describe("which units a later fix touched", func() {
 		})
 	})
 
-	When("a unit runs past the end of its file at since", func() {
-		It("refuses, naming the unit, rather than tracing part of it", func() {
+	DescribeTable("a unit outside its file at since is refused, naming the unit, rather than traced in part",
+		func(unit evalhistory.Unit, named string) {
 			h := newHistory()
 			since := h.commit("base", map[string]string{"p/p.go": baseSource})
 
-			_, err := evalhistory.Involve(h.dir, since, []evalhistory.Unit{{Path: "p/p.go", Start: 7, End: 40}}, nil)
-			Expect(err).To(MatchError(ContainSubstring("p/p.go:7-40")))
-		})
-	})
+			_, err := evalhistory.Involve(h.dir, since, []evalhistory.Unit{unit}, nil)
+			Expect(err).To(MatchError(ContainSubstring(named)))
+		},
+		Entry("one that runs past the end", evalhistory.Unit{Path: "p/p.go", Start: 7, End: 40}, "p/p.go:7-40"),
+		Entry("one that starts before line 1", evalhistory.Unit{Path: "p/p.go", Start: 0, End: 3}, "p/p.go:0-3"),
+	)
 })
