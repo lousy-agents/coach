@@ -20,30 +20,31 @@ func main() {
 
 const exitTaskUnimplemented = 2
 
+// commands are coach-eval's subcommands, each run with the arguments after its name.
+var commands = map[string]func(args []string, stdout, stderr io.Writer) int{
+	"compare": func(args []string, stdout, stderr io.Writer) int {
+		return evalharness.Compare(stateHome(), args, stdout, stderr)
+	},
+	"census": func(args []string, stdout, stderr io.Writer) int {
+		return evalcensus.Census(args, stdout, stderr, evalharness.CensusLine, time.Now)
+	},
+	"history": func(args []string, stdout, stderr io.Writer) int {
+		return evalhistory.History(args, stdout, stderr, evalharness.HistoryLine, time.Now)
+	},
+	"generate": evalharness.Generate,
+	"hook-health": func(args []string, stdout, stderr io.Writer) int {
+		return evalharness.HookHealth(args, os.Stdin, stdout, stderr)
+	},
+	"antipatterns": evalharness.Antipatterns,
+	"patterns":     evalpatterns.Patterns,
+	"trend":        evalharness.Trend,
+}
+
 func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) > 0 && args[0] == "compare" {
-		return evalharness.Compare(stateHome(), args[1:], stdout, stderr)
-	}
-	if len(args) > 0 && args[0] == "census" {
-		return evalcensus.Census(args[1:], stdout, stderr, evalharness.CensusLine, time.Now)
-	}
-	if len(args) > 0 && args[0] == "history" {
-		return evalhistory.History(args[1:], stdout, stderr, evalharness.HistoryLine, time.Now)
-	}
-	if len(args) > 0 && args[0] == "generate" {
-		return evalharness.Generate(args[1:], stdout, stderr)
-	}
-	if len(args) > 0 && args[0] == "hook-health" {
-		return evalharness.HookHealth(args[1:], os.Stdin, stdout, stderr)
-	}
-	if len(args) > 0 && args[0] == "antipatterns" {
-		return evalharness.Antipatterns(args[1:], stdout, stderr)
-	}
-	if len(args) > 0 && args[0] == "patterns" {
-		return evalpatterns.Patterns(args[1:], stdout, stderr)
-	}
-	if len(args) > 0 && args[0] == "trend" {
-		return evalharness.Trend(args[1:], stdout, stderr)
+	if len(args) > 0 {
+		if command, ok := commands[args[0]]; ok {
+			return command(args[1:], stdout, stderr)
+		}
 	}
 	fmt.Fprintln(stderr, "coach-eval: no evaluation task is implemented yet")
 	return exitTaskUnimplemented
