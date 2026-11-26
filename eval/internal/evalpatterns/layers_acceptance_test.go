@@ -2,6 +2,7 @@ package evalpatterns_test
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -204,6 +205,28 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 			Expect(profile["not_covered"]).To(Equal([]any{}))
 		})
 	})
+
+	DescribeTable("refuses a checkout whose policy or go.mod is not a regular file, with exit 2, naming it, without reading through it",
+		func(name string) {
+			root := standInTree()
+			secret := filepath.Join(GinkgoT().TempDir(), "secret.txt")
+			writeFile(secret, "hunter2\n")
+			Expect(os.MkdirAll(filepath.Join(root, ".lousy-agents"), 0o755)).To(Succeed())
+			Expect(os.Remove(filepath.Join(root, filepath.FromSlash(name)))).To(Or(Succeed(), MatchError(os.ErrNotExist)))
+			Expect(os.Symlink(secret, filepath.Join(root, filepath.FromSlash(name)))).To(Succeed())
+
+			_, err := evalpatterns.ExtractProfile(standInReference(), root)
+
+			var refusal evalpatterns.Refusal
+			Expect(errors.As(err, &refusal)).To(BeTrue(), "ExtractProfile returned %v", err)
+			Expect(refusal.Exit).To(Equal(2))
+			Expect(err.Error()).To(ContainSubstring(name))
+			Expect(err.Error()).To(ContainSubstring("not a regular file"))
+			Expect(err.Error()).NotTo(ContainSubstring("hunter2"))
+		},
+		Entry("a symlinked policy", ".lousy-agents/coach.json"),
+		Entry("a symlinked go.mod", "go.mod"),
+	)
 
 	When("the checkout has no policy", func() {
 		It("takes one layer per top-level package directory, with no roles", func() {
