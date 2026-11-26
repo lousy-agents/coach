@@ -177,6 +177,15 @@ var _ = Describe("the static call depth of a profile's entries (AC-2.4, AC-2.8)"
 		Expect(profile["not_covered"]).To(ContainElement(map[string]any{"shape": "depth", "count": 2.0}))
 	})
 
+	It("follows a call into the module's root package", func() {
+		profile := profileOfFiles(map[string]string{
+			"root.go": "package one\n\nfunc Base() { leaf() }\n\nfunc leaf() {}\n",
+			"a/a.go":  "package a\n\nimport \"example.invalid/one\"\n\nfunc Entry() { one.Base() }\n",
+		})
+
+		Expect(measure(profile, "dimensions", "depth")).To(Equal(map[string]any{"2": 1.0, "1": 1.0}))
+	})
+
 	It("lists the out-of-range shapes in a fixed order: depth, layers, packages", func() {
 		profile := profileOfFiles(map[string]string{"a/a.go": "package a\n\nfunc Entry() {}\n"})
 
