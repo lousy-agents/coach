@@ -4,8 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"slices"
-	"strings"
 )
 
 // DefaultLedgerPath is the committed run ledger, relative to the repository root.
@@ -14,13 +12,9 @@ const DefaultLedgerPath = "eval/ledger/runs.jsonl"
 // DefaultTrendMetric is the run record path a trend reads when --metric is not given.
 const DefaultTrendMetric = "results.clean_success"
 
-// trendKinds are the ledger kinds a trend reads. Census and history lines describe repositories,
-// not runs of a cell.
-var trendKinds = map[string]bool{"pre_run": true, "study": true, "baseline": true}
-
 // Trend prints the metric trend of one cell from the ledger and returns the exit code. The verdict
 // is 0 when a trend prints, 2 for missing or invalid input, and 4 when the cell has no comparable
-// adjacent pair.
+// adjacent pair. JSON is printed on exit 0 and exit 4, as compare does.
 func Trend(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("trend", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -66,27 +60,4 @@ func Trend(args []string, stdout, stderr io.Writer) int {
 		printTrend(stdout, *cell, *metric, cellLines, segments, breaks)
 	}
 	return CompareComparable
-}
-
-// trendLines selects the trend lines of one cell, ordered by recorded date. The sort is stable, so
-// lines recorded on the same day keep their file order.
-func trendLines(lines []LedgerLine, cell string) []LedgerLine {
-	var selected []LedgerLine
-	for _, line := range lines {
-		if line.Cell == cell && trendKinds[line.Kind] {
-			selected = append(selected, line)
-		}
-	}
-	slices.SortStableFunc(selected, func(a, b LedgerLine) int {
-		return strings.Compare(a.Recorded, b.Recorded)
-	})
-	return selected
-}
-
-func warnDirtyTrendRuns(stderr io.Writer, lines []LedgerLine) {
-	for _, line := range lines {
-		if dirty, _ := line.Run["worktree_dirty"].(bool); dirty {
-			fmt.Fprintf(stderr, "coach-eval trend: warning: %v has uncommitted work (worktree_dirty); it is compared as recorded\n", line.Run["run_id"])
-		}
-	}
 }
