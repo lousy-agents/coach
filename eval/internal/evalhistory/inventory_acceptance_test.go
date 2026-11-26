@@ -4,12 +4,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/eval/internal/evalcensus"
 	"github.com/lousy-agents/coach/eval/internal/evalhistory"
 )
 
 var _ = Describe("the unit inventory at since", func() {
-	When("the tree holds production Go files, a test file, vendored and testdata code, and other files", func() {
-		It("lists each production function with its lines, and each production file", func() {
+	When("the tree holds Go files the census admits (test files, testdata and hidden code), vendored code, and other files", func() {
+		It("lists each Go file the census admits, with its functions and lines, and leaves out vendored and other files", func() {
 			h := newHistory()
 			since := h.commit("base", map[string]string{
 				"p/p.go":          baseSource,
@@ -22,17 +23,87 @@ var _ = Describe("the unit inventory at since", func() {
 			})
 			h.commit("later", map[string]string{"p/p.go": baseSource + "\nfunc Later() {}\n"})
 
-			inventory, err := evalhistory.GoInventory(h.dir, since)
+			inventory, err := evalhistory.GoInventory(h.dir, since, evalcensus.Repository{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(inventory.Functions).To(ConsistOf(
+				evalhistory.Unit{Path: ".hidden/h.go", Start: 3, End: 3},
 				evalhistory.Unit{Path: "p/p.go", Start: 3, End: 5},
 				evalhistory.Unit{Path: "p/p.go", Start: 7, End: 10},
+				evalhistory.Unit{Path: "p/p_test.go", Start: 3, End: 3},
+				evalhistory.Unit{Path: "p/testdata/t.go", Start: 3, End: 3},
 				evalhistory.Unit{Path: "q/q.go", Start: 5, End: 5},
 			))
 			Expect(inventory.Files).To(ConsistOf(
+				evalhistory.Unit{Path: ".hidden/h.go", Start: 1, End: 3},
 				evalhistory.Unit{Path: "p/p.go", Start: 1, End: 10},
+				evalhistory.Unit{Path: "p/p_test.go", Start: 1, End: 3},
+				evalhistory.Unit{Path: "p/testdata/t.go", Start: 1, End: 3},
 				evalhistory.Unit{Path: "q/q.go", Start: 1, End: 5},
 			))
+		})
+	})
+
+	When("the census counts findings in a test file", func() {
+		It("lists that test file's functions, so the history's controls and flagged units come from the same code", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{
+				"p/p.go":      baseSource,
+				"p/p_test.go": "package p\n\nfunc TestA() {}\n",
+			})
+
+			inventory, err := evalhistory.GoInventory(h.dir, since, evalcensus.Repository{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(inventory.Functions).To(ContainElement(evalhistory.Unit{Path: "p/p_test.go", Start: 3, End: 3}))
+			Expect(inventory.Files).To(ContainElement(evalhistory.Unit{Path: "p/p_test.go", Start: 1, End: 3}))
+		})
+
+		It("places a finding in a test file in that file's unit, so the census's test-file findings are placed", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{
+				"p/p.go":      baseSource,
+				"p/p_test.go": "package p\n\nfunc TestA() {}\n",
+			})
+			inventory, err := evalhistory.GoInventory(h.dir, since, evalcensus.Repository{})
+			Expect(err).NotTo(HaveOccurred())
+
+			flagged, err := evalhistory.FlaggedUnits(inventory, []evalhistory.Signal{{RuleID: "architecture.layer_violation", Path: "p/p_test.go", Subject: "architecture.layer_violation:p->q", StartRow: 1}}, "architecture.layer_violation")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(flagged.Units).To(HaveLen(1))
+			Expect(flagged.Unplaced).To(BeZero())
+		})
+	})
+
+	When("the repository names include and exclude globs", func() {
+		It("draws no control from eval/, a vendored directory, or an excluded glob", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{
+				"q/q.go":        "package q\n\nfunc Q() {}\n",
+				"eval/e/e.go":   "package e\n\nfunc E() {}\n",
+				"gen/g/g.go":    "package g\n\nfunc G() {}\n",
+				"vendor/v/v.go": "package v\n\nfunc V() {}\n",
+			})
+			repo := evalcensus.Repository{Exclude: []string{"gen/**"}}
+
+			inventory, err := evalhistory.GoInventory(h.dir, since, repo)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(inventory.Functions).To(ConsistOf(evalhistory.Unit{Path: "q/q.go", Start: 3, End: 3}))
+			Expect(inventory.Files).To(ConsistOf(evalhistory.Unit{Path: "q/q.go", Start: 1, End: 3}))
+		})
+
+		It("lists exactly the paths the census admits, through the census's own scope", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{
+				"q/q.go":      "package q\n\nfunc Q() {}\n",
+				"q/skip/s.go": "package skip\n\nfunc S() {}\n",
+				"r/r.go":      "package r\n\nfunc R() {}\n",
+			})
+			repo := evalcensus.Repository{Include: []string{"q/**"}, Exclude: []string{"q/skip/**"}}
+
+			inventory, err := evalhistory.GoInventory(h.dir, since, repo)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(inventory.Files).To(ConsistOf(evalhistory.Unit{Path: "q/q.go", Start: 1, End: 3}))
+			Expect(repo.Admits("q/q.go")).To(BeTrue())
+			Expect(repo.Admits("q/skip/s.go")).To(BeFalse())
 		})
 	})
 
@@ -44,7 +115,7 @@ var _ = Describe("the unit inventory at since", func() {
 				"b.go": "package p\n\n\n\nfunc B1() {}\n",
 			})
 
-			inventory, err := evalhistory.GoInventory(h.dir, since)
+			inventory, err := evalhistory.GoInventory(h.dir, since, evalcensus.Repository{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(inventory.Functions).To(Equal([]evalhistory.Unit{
 				{Path: "a.go", Start: 3, End: 3},
@@ -59,7 +130,7 @@ var _ = Describe("the unit inventory at since", func() {
 			h := newHistory()
 			since := h.commit("base", map[string]string{"p/p.go": baseSource, "p/broken.go": "package p\n\nfunc (\n"})
 
-			_, err := evalhistory.GoInventory(h.dir, since)
+			_, err := evalhistory.GoInventory(h.dir, since, evalcensus.Repository{})
 			Expect(err).To(MatchError(ContainSubstring("p/broken.go")))
 		})
 	})
@@ -94,6 +165,16 @@ var _ = Describe("mapping Coach's findings to units", func() {
 		flagged := flaggedUnits(inventory, signals, "complexity.cognitive_complexity")
 		Expect(flagged.Units).To(BeEmpty())
 		Expect(flagged.Unplaced).To(Equal(1))
+	})
+
+	It("names the reason for each finding it cannot place", func() {
+		inTypeScript, err := evalhistory.FlaggedUnits(inventory, []evalhistory.Signal{{RuleID: "complexity.branch_density", Path: "js/a.ts"}}, "complexity.branch_density")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(inTypeScript.UnplacedReasons).To(Equal([]string{"language not in the Go history inventory"}))
+
+		missing, err := evalhistory.FlaggedUnits(inventory, []evalhistory.Signal{{RuleID: "complexity.cognitive_complexity", Path: "gone.go", Subject: "G", StartRow: 2, EndRow: 4}}, "complexity.cognitive_complexity")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(missing.UnplacedReasons).To(Equal([]string{"no unit of the Go history inventory holds its line"}))
 	})
 
 	It("places a max_nesting_depth finding in its file, whatever its location", func() {
