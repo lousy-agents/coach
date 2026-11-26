@@ -165,6 +165,45 @@ var _ = Describe("eval-compare trend --format json", func() {
 		})
 	})
 
+	When("no run of a cell is complete", func() {
+		It("prints an empty segments array, not null, and exits 4", func() {
+			writeLedger(ledger,
+				ledgerLine("pre_run", "2026-11-01", "cell-a", withPath(trendRecord("run-1", 0.5), "state", "paused")),
+				ledgerLine("pre_run", "2026-11-02", "cell-a", withPath(trendRecord("run-2", 0.75), "state", "paused")),
+			)
+
+			outcome := runTrend(root, root, "--cell", "cell-a", "--ledger", ledger, "--format", "json")
+
+			Expect(outcome.exitCode).To(Equal(4), outcome.stderr)
+			expectMatchesSchema(trendOutputSchemaPath, []byte(outcome.stdout))
+			document := decodeJSONObject(outcome.stdout)
+			Expect(document["segments"]).To(Equal([]any{}), "no complete run leaves no segment, and an empty array stays an array")
+			Expect(document["breaks"].([]any)).To(HaveLen(2), "each paused run is a break")
+		})
+	})
+
+	When("a segment starts with a run that lacks the metric", func() {
+		It("keeps the segment change null, because its first value is absent", func() {
+			writeLedger(ledger,
+				ledgerLine("pre_run", "2026-11-01", "cell-a", completeRecord("run-1")),
+				ledgerLine("pre_run", "2026-11-02", "cell-a", trendRecord("run-2", 0.5)),
+				ledgerLine("pre_run", "2026-11-03", "cell-a", trendRecord("run-3", 0.75)),
+			)
+
+			outcome := runTrend(root, root, "--cell", "cell-a", "--ledger", ledger, "--format", "json")
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			expectMatchesSchema(trendOutputSchemaPath, []byte(outcome.stdout))
+			segments := decodeJSONObject(outcome.stdout)["segments"].([]any)
+			Expect(segments).To(HaveLen(1))
+			segment := segments[0].(map[string]any)
+			Expect(segment["runs"]).To(Equal([]any{"run-1", "run-2", "run-3"}))
+			Expect(segment).To(HaveKeyWithValue("change", BeNil()))
+			first := segment["first"].(map[string]any)
+			Expect(first).To(HaveKeyWithValue("value", BeNil()))
+		})
+	})
+
 	When("run through the eval-trend mise task with --format json", func() {
 		It("prints the JSON trend through the task", func() {
 			writeLedger(ledger,

@@ -99,6 +99,24 @@ var _ = Describe("eval-compare compare --format json", func() {
 		})
 	})
 
+	When("a run is not complete and a comparable field also differs", func() {
+		It("names the run in not_complete_runs and leaves differing_fields empty", func() {
+			paused := withPath(withPath(completeRecord("run-b"), "state", "paused"), "solver.model", "claude-other-model")
+			writeRunRecord(stateRoot, "run-a", completeRecord("run-a"))
+			writeRunRecord(stateRoot, "run-b", paused)
+
+			outcome := runCompare(stateRoot, "--format", "json", "run-a", "run-b")
+
+			Expect(outcome.exitCode).To(Equal(4), outcome.stderr)
+			expectMatchesSchema(compareOutputSchemaPath, []byte(outcome.stdout))
+			document := decodeJSONObject(outcome.stdout)
+			Expect(document["differing_fields"]).To(Equal([]any{}), "fields are compared only when every run is complete")
+			Expect(document["not_complete_runs"]).To(Equal([]any{
+				map[string]any{"run_id": "run-b", "state": "paused"},
+			}))
+		})
+	})
+
 	When("the format is not text or json", func() {
 		It("exits 2 and names the format", func() {
 			writeRunRecord(stateRoot, "run-a", completeRecord("run-a"))
