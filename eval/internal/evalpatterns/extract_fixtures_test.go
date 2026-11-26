@@ -9,7 +9,10 @@ import (
 
 const arrowSource = `package ledger
 
-import "net/http"
+import (
+	"net/http"
+	"os"
+)
 
 type Server struct{ name string }
 
@@ -17,6 +20,7 @@ func NewServer(name string) *Server { return &Server{name: name} }
 
 func NewLoaded() *Server {
 	s := load()
+	s.name = os.Getenv("NAME")
 	return s
 }
 

@@ -7,6 +7,12 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+var (
+	assignsOnly   = map[string]any{"assigns_only": 1.0, "does_work": 0.0}
+	doesWork      = map[string]any{"assigns_only": 0.0, "does_work": 1.0}
+	noConstructor = map[string]any{"assigns_only": 0.0, "does_work": 0.0}
+)
+
 // profileOfFiles extracts a profile from a module holding only files.
 func profileOfFiles(files map[string]string) map[string]any {
 	GinkgoHelper()
@@ -63,26 +69,57 @@ var _ = Describe("the measure of one function (AC-2.3, AC-2.5, AC-2.6)", func() 
 			Expect(measure(profileOfSource(source), "shapes", "constructor")).To(Equal(shape))
 		},
 		Entry("a bare New returning a literal",
-			"package p\n\ntype T struct{}\n\nfunc New() *T { return &T{} }\n",
-			map[string]any{"assigns_only": 1.0, "does_work": 0.0}),
+			"package p\n\ntype T struct{}\n\nfunc New() *T { return &T{} }\n", assignsOnly),
 		Entry("allocation by make before the literal",
-			"package p\n\ntype T struct{ m map[string]int }\n\nfunc NewT() T {\n\tm := make(map[string]int)\n\treturn T{m: m}\n}\n",
-			map[string]any{"assigns_only": 1.0, "does_work": 0.0}),
-		Entry("a call inside the returned literal",
-			"package p\n\ntype T struct{ n int }\n\nfunc compute() int { return 1 }\n\nfunc NewT() T { return T{n: compute()} }\n",
-			map[string]any{"assigns_only": 0.0, "does_work": 1.0}),
-		Entry("a branch before the return",
-			"package p\n\ntype T struct{}\n\nfunc NewT(ok bool) *T {\n\tif !ok {\n\t\treturn nil\n\t}\n\treturn &T{}\n}\n",
-			map[string]any{"assigns_only": 0.0, "does_work": 1.0}),
+			"package p\n\ntype T struct{ m map[string]int }\n\nfunc NewT() T {\n\tm := make(map[string]int)\n\treturn T{m: m}\n}\n", assignsOnly),
+		Entry("a call to a pure helper, which is not real work",
+			"package p\n\ntype T struct{ n int }\n\nfunc compute() int { return 1 }\n\nfunc NewT() T { return T{n: compute()} }\n", assignsOnly),
+		Entry("errors.New and another constructor, which are not real work",
+			"package p\n\nimport \"errors\"\n\ntype T struct{ err error; u *U }\n\ntype U struct{}\n\nfunc NewU() *U { return &U{} }\n\nfunc NewT() T { return T{err: errors.New(\"x\"), u: NewU()} }\n",
+			map[string]any{"assigns_only": 2.0, "does_work": 0.0}),
+		Entry("a branch before the return, which is not real work",
+			"package p\n\ntype T struct{}\n\nfunc NewT(ok bool) *T {\n\tif !ok {\n\t\treturn nil\n\t}\n\treturn &T{}\n}\n", assignsOnly),
+		Entry("an outward call through an aliased import",
+			"package p\n\nimport o \"os\"\n\ntype T struct{ v string }\n\nfunc NewT() T { return T{v: o.Getenv(\"V\")} }\n", doesWork),
+		Entry("os.Stat, which is not on the outward list",
+			"package p\n\nimport \"os\"\n\ntype T struct{ err error }\n\nfunc NewT() T { _, err := os.Stat(\"x\"); return T{err: err} }\n", assignsOnly),
+		Entry("a method named Getenv on a value, not the os package",
+			"package p\n\ntype env struct{}\n\nfunc (env) Getenv(string) string { return \"\" }\n\ntype T struct{ v string }\n\nfunc NewT(os env) T { return T{v: os.Getenv(\"V\")} }\n", assignsOnly),
 		Entry("Newer, which is not a constructor name",
-			"package p\n\nfunc Newer() int { return 1 }\n",
-			map[string]any{"assigns_only": 0.0, "does_work": 0.0}),
+			"package p\n\nimport \"os\"\n\nfunc Newer() string { return os.Getenv(\"V\") }\n", noConstructor),
 		Entry("a method named NewChild, which is not a constructor",
-			"package p\n\ntype T struct{}\n\nfunc (T) NewChild() T { return T{} }\n",
-			map[string]any{"assigns_only": 0.0, "does_work": 0.0}),
+			"package p\n\nimport \"os\"\n\ntype T struct{}\n\nfunc (T) NewChild() string { return os.Getenv(\"V\") }\n", noConstructor),
 		Entry("a New… function with no result, which is not a constructor",
-			"package p\n\nfunc NewNothing() {}\n",
-			map[string]any{"assigns_only": 0.0, "does_work": 0.0}),
+			"package p\n\nimport \"os\"\n\nfunc NewNothing() { os.Getenv(\"V\") }\n", noConstructor),
+	)
+
+	// One row per entry of the closed outward-API list (the chief's ruling on
+	// #872, matching #876): a constructor calling it does real work.
+	DescribeTable("counts a constructor that calls an outward API as doing work",
+		func(path, call string) {
+			source := "package p\n\nimport \"" + path + "\"\n\ntype T struct{}\n\nfunc NewT() *T {\n\t_ = " + call + "\n\treturn &T{}\n}\n"
+			Expect(measure(profileOfSource(source), "shapes", "constructor")).To(Equal(doesWork))
+		},
+		Entry("os.Getenv", "os", `os.Getenv("V")`),
+		Entry("os.LookupEnv", "os", `func() string { v, _ := os.LookupEnv("V"); return v }()`),
+		Entry("os.Open", "os", `func() error { _, err := os.Open("f"); return err }()`),
+		Entry("os.OpenFile, an Open* name", "os", `func() error { _, err := os.OpenFile("f", 0, 0); return err }()`),
+		Entry("os.Create", "os", `func() error { _, err := os.Create("f"); return err }()`),
+		Entry("os.ReadFile", "os", `func() error { _, err := os.ReadFile("f"); return err }()`),
+		Entry("os.WriteFile", "os", `os.WriteFile("f", nil, 0)`),
+		Entry("os.Mkdir", "os", `os.Mkdir("d", 0)`),
+		Entry("os.MkdirAll, a Mkdir* name", "os", `os.MkdirAll("d", 0)`),
+		Entry("anything in os/exec", "os/exec", `exec.Command("x")`),
+		Entry("net.Dial", "net", `func() error { _, err := net.Dial("tcp", "x"); return err }()`),
+		Entry("net.DialTimeout, a Dial* name", "net", `func() error { _, err := net.DialTimeout("tcp", "x", 0); return err }()`),
+		Entry("net.Listen, a Listen* name", "net", `func() error { _, err := net.Listen("tcp", "x"); return err }()`),
+		Entry("http.Get", "net/http", `func() error { _, err := http.Get("u"); return err }()`),
+		Entry("http.Post", "net/http", `func() error { _, err := http.Post("u", "t", nil); return err }()`),
+		Entry("http.Head", "net/http", `func() error { _, err := http.Head("u"); return err }()`),
+		Entry("http.DefaultClient.Do", "net/http", `func() error { _, err := http.DefaultClient.Do(nil); return err }()`),
+		Entry("http.ListenAndServe, a ListenAndServe* name", "net/http", `http.ListenAndServe("x", nil)`),
+		Entry("sql.Open", "database/sql", `func() error { _, err := sql.Open("d", "s"); return err }()`),
+		Entry("anything in syscall", "syscall", `syscall.Getpid()`),
 	)
 
 	DescribeTable("measures a function's nesting",
