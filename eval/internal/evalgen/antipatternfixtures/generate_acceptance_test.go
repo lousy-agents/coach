@@ -115,6 +115,27 @@ var _ = Describe("profile-derived anti-pattern fixtures (#872 Task 5)", func() {
 		Entry("depth 5: cognitive complexity 15, which reaches it", 5, true),
 	)
 
+	DescribeTable("emits a fixture for a value exactly at Coach's threshold, in the profile's units",
+		func(nesting, cognitive, density map[string]int, id string) {
+			_, err := generate(profileWith(nesting, cognitive, density, 0), out)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ids(out)).To(Equal([]string{id}))
+		},
+		Entry("nesting 3", map[string]int{"3": 1}, map[string]int{}, map[string]int{}, "arrow-code"),
+		Entry("cognitive complexity 15", map[string]int{}, map[string]int{"15": 1}, map[string]int{}, "spaghetti-conditional"),
+		Entry("12 branch points", map[string]int{}, map[string]int{}, map[string]int{"12": 1}, "god-file"),
+	)
+
+	It("writes a god file with exactly the observed branch points, the last check holding what is left over three", func() {
+		_, err := generate(profileWith(map[string]int{}, map[string]int{}, map[string]int{"13": 1}, 0), out)
+		Expect(err).NotTo(HaveOccurred())
+
+		files := tree(filepath.Join(out, "god-file"))
+		Expect(strings.Count(files["bad/orders/orders.go.txt"], "\tif ")).To(Equal(13))
+		Expect(strings.Count(files["good/orders/check5.go.txt"], "\tif ")).To(Equal(1))
+	})
+
 	When("the profile observed no shape a template reads", func() {
 		It("emits no fixture and says so in the result", func() {
 			result, err := generate(profileWith(map[string]int{"2": 9}, map[string]int{"14": 1}, map[string]int{"11": 1}, 0), out)
