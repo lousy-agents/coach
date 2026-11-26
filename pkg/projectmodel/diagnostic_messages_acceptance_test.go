@@ -5,6 +5,8 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -14,40 +16,51 @@ import (
 	"github.com/lousy-agents/coach/pkg/domain"
 )
 
-// diagnosticCodes lists every string constant named Diag* that the non-test sources of the given package
+// declaredDiagnosticCodes lists every string constant named Diag* that the non-test sources of the given package
 // directories declare with a literal value: the codes a project coverage can carry.
 func declaredDiagnosticCodes(directories ...string) map[string]string {
 	GinkgoHelper()
 	codes := map[string]string{}
 	for _, directory := range directories {
-		packages, err := parser.ParseDir(token.NewFileSet(), directory, func(info fs.FileInfo) bool { return !strings.HasSuffix(info.Name(), "_test.go") }, 0)
-		Expect(err).NotTo(HaveOccurred())
-		for _, pkg := range packages {
-			for _, file := range pkg.Files {
-				collectDiagnosticCodes(file, codes)
+		for _, file := range parsedSources(directory) {
+			maps.Copy(codes, constantCodes(file))
+		}
+	}
+	return codes
+}
+
+func parsedSources(directory string) []*ast.File {
+	GinkgoHelper()
+	packages, err := parser.ParseDir(token.NewFileSet(), directory, func(info fs.FileInfo) bool { return !strings.HasSuffix(info.Name(), "_test.go") }, 0)
+	Expect(err).NotTo(HaveOccurred())
+	var files []*ast.File
+	for _, pkg := range packages {
+		files = slices.AppendSeq(files, maps.Values(pkg.Files))
+	}
+	return files
+}
+
+func constantCodes(file *ast.File) map[string]string {
+	codes := map[string]string{}
+	for _, declaration := range file.Decls {
+		if general, ok := declaration.(*ast.GenDecl); ok && general.Tok == token.CONST {
+			for _, spec := range general.Specs {
+				maps.Copy(codes, specCodes(spec.(*ast.ValueSpec)))
 			}
 		}
 	}
 	return codes
 }
 
-func collectDiagnosticCodes(file *ast.File, codes map[string]string) {
-	for _, declaration := range file.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok || general.Tok != token.CONST {
-			continue
-		}
-		for _, spec := range general.Specs {
-			value := spec.(*ast.ValueSpec)
-			for i, name := range value.Names {
-				literal, isLiteral := value.Values[min(i, len(value.Values)-1)].(*ast.BasicLit)
-				if strings.HasPrefix(name.Name, "Diag") && isLiteral && literal.Kind == token.STRING {
-					code, _ := strconv.Unquote(literal.Value)
-					codes[name.Name] = code
-				}
-			}
+func specCodes(spec *ast.ValueSpec) map[string]string {
+	codes := map[string]string{}
+	for i, name := range spec.Names {
+		literal, isLiteral := spec.Values[min(i, len(spec.Values)-1)].(*ast.BasicLit)
+		if strings.HasPrefix(name.Name, "Diag") && isLiteral && literal.Kind == token.STRING {
+			codes[name.Name], _ = strconv.Unquote(literal.Value)
 		}
 	}
+	return codes
 }
 
 var _ = Describe("every project diagnostic code carries a message (#894)", func() {
