@@ -134,4 +134,14 @@ var _ = Describe("which units a later fix touched", func() {
 			Expect(result.FixSHA).To(Equal([]string{"", first}))
 		})
 	})
+
+	When("a unit runs past the end of its file at since", func() {
+		It("refuses, naming the unit, rather than tracing part of it", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{"p/p.go": baseSource})
+
+			_, err := evalhistory.Involve(h.dir, since, []evalhistory.Unit{{Path: "p/p.go", Start: 7, End: 40}}, nil)
+			Expect(err).To(MatchError(ContainSubstring("p/p.go:7-40")))
+		})
+	})
 })
