@@ -85,7 +85,7 @@ func segmentChangeFor(segment trendSegment) *float64 {
 	if !first.hasValue || !last.hasValue {
 		return nil
 	}
-	change := last.value - first.value
+	change := roundMetric(last.value - first.value)
 	return &change
 }
 

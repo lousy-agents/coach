@@ -1,6 +1,15 @@
 package evalharness
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
+
+// roundMetric rounds to six decimal places. Without it, a difference of two metric values prints as
+// float noise such as 0.19999999999999996.
+func roundMetric(v float64) float64 {
+	return math.Round(v*1e6) / 1e6
+}
 
 // trendRun is one complete run of a cell, with its metric when the run carries it.
 type trendRun struct {
@@ -47,7 +56,7 @@ func segmentTrend(lines []LedgerLine, metric string) ([]trendSegment, []trendBre
 		}
 		value, hasValue := metricValue(line.Run, metric)
 		last := &segments[len(segments)-1]
-		last.runs = append(last.runs, trendRun{id: id, value: value, hasValue: hasValue})
+		last.runs = append(last.runs, trendRun{id: id, value: roundMetric(value), hasValue: hasValue})
 		previous = line.Run
 		open = true
 	}
