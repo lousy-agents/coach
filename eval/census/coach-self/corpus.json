@@ -1,0 +1,21 @@
+{
+  "corpus_id": "coach-self",
+  "repositories": [
+    {
+      "id": "lousy-agents/coach",
+      "path": ".",
+      "sha": "26e546da038cde9b40f1ad81be5023e04efa6a8c",
+      "language": "go",
+      "project_config": ".lousy-agents/coach.json",
+      "history_until": "1990cd8c3c44d9cbf393c2417747982f9a48189c",
+      "licence": "BSD-2-Clause",
+      "sample": { "seed": 7 }
+    }
+  ],
+  "rules": [
+    { "rule_id": "complexity.branch_density", "languages": ["go"] },
+    { "rule_id": "complexity.max_nesting_depth", "languages": ["go"] },
+    { "rule_id": "complexity.cognitive_complexity", "languages": ["go"] },
+    { "rule_id": "architecture.layer_violation", "languages": ["go"] }
+  ]
+}
