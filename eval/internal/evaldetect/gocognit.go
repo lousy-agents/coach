@@ -36,6 +36,10 @@ func (g Gocognit) Findings(root string) ([]Finding, error) {
 	if err := g.CheckVersion(); err != nil {
 		return nil, err
 	}
+	return g.scan(root)
+}
+
+func (g Gocognit) scan(root string) ([]Finding, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
