@@ -150,7 +150,7 @@ The analysis is intention to treat.
 - a literal branch;
 - a policy edit;
 - a dependency change that is not on the whitelist;
-- the static check finding non-test use of inherited descriptors, `os.NewFile`, `/proc/self/fd` or `process.binding`, or a write to stdout or an exit during initialisation.
+- the static check finding non-test use of inherited descriptors, `os.NewFile`, `/proc/self/fd`, `/proc/<pid>/fd`, `/proc/<pid>/mem`, `/dev/fd/`, a descriptor literal of 3 or more in any base, or `process.binding`, or a write to stdout or an exit during initialisation. The static check is best effort: it flags these named patterns, and no static check can close every route. The binding control against reading the grading channel is the `evalgrade` nonce, with the nonce descriptor (fd 3) closed at load and the fd 4 verifier (section 7).
 
 **Target predicates (refactor).** The oracle is the unmutated program. Each predicate is the inverse of an operator's violation (d.4), with 3–8 predicates per template (d, proposed grader).
 
