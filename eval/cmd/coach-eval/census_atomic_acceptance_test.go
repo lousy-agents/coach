@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -69,6 +70,24 @@ var _ = Describe("a census run lands entirely or not at all", func() {
 			Expect(outcome.exitCode).NotTo(Equal(0), outcome.stdout)
 			Expect(readBytes(outputs.ledger)).To(Equal(padded))
 			Expect(readBytes(records)).To(Equal(before))
+		})
+	})
+
+	When("a run completes", func() {
+		It("dates its records today in UTC and ends the run ledger with a newline", func() {
+			for _, record := range jsonLines(records) {
+				Expect(record["date"]).To(Equal(time.Now().UTC().Format(time.DateOnly)))
+			}
+			Expect(string(readBytes(outputs.ledger))).To(HaveSuffix("\n"))
+		})
+	})
+
+	When("the repository is checked for files a run leaves beside its ledgers", func() {
+		It("ignores the ledgers' lock files", func() {
+			for _, lock := range []string{"eval/ledger/runs.jsonl.lock", "eval/census/pilot/records.jsonl.lock"} {
+				check := runProgram(filepath.Join("..", "..", ".."), os.Environ(), "git", "check-ignore", "-q", lock)
+				Expect(check.exitCode).To(Equal(0), lock+" is not ignored")
+			}
 		})
 	})
 
