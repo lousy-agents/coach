@@ -28,7 +28,9 @@ How the sources were read:
   1. Killed: "When at least one test failed while this mutant was active, the mutant is killed."
   2. Survived: "When all tests passed while this mutant was active, the mutant survived. You're missing a test for it."
   3. The mutation score is detected ÷ valid × 100. Compile and runtime errors are excluded: "It is not represented in your mutation score."
-- Design implication for Coach: a generated hidden suite is accepted only when its mutation score, defined this way over the code it covers, reaches a preregistered threshold.
+- Design implication for Coach:
+  - A generated hidden suite is accepted only when its mutation score, defined this way, reaches a preregistered threshold.
+  - Restricting the score to code reachable from the API surface, and adding a coverage floor, are this design's own additions. They are not from f.2.
 
 ## f.3 Foster et al. (Meta), "Mutation-Guided LLM-based Test Generation at Meta" (submitted to FSE 2025 Industry)
 
@@ -38,7 +40,7 @@ How the sources were read:
   2. Equivalent mutants are detected automatically, imperfectly: the detector "achieves a precision of 0.79 and a recall of 0.47 (rising to 0.95 and 0.96 with simple pre-processing)."
 - Design implication for Coach:
   - Generated tests can be judged by mutants they kill, without a human.
-  - Equivalent mutants make a 100% score unreachable, so the threshold has to sit below 1.
+  - It is this design's inference, not a statement in f.3, that equivalent mutants make a score of 100% unreachable, so the threshold sits below 1.
 
 ## f.4 Alshahwan et al. (Meta), "Automated Unit Test Improvement using Large Language Models at Meta" (FSE 2024)
 
@@ -56,15 +58,13 @@ How the sources were read:
 - Key findings:
   1. The bias is called "self-preference, where an LLM evaluator scores its own outputs higher than others'".
   2. Models recognise their own output: "LLMs such as GPT-4 and Llama 2 have non-trivial accuracy at distinguishing themselves from other LLMs and humans."
-- Design implication for Coach:
-  - Never let the agent's model, or its family, generate the tasks or judge the outcomes.
-  - Keep every gate deterministic.
+- Design implication for Coach: this is evidence of bias in LLM **evaluators**. Applying it to LLM **generators** is this design's inference. It is part of the reason the design uses no LLM to generate or judge anything.
 
 ## f.6 Zheng et al., "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena" (NeurIPS 2023 Datasets and Benchmarks)
 
 - URL: https://arxiv.org/abs/2306.05685 (abstract only)
 - Key finding: LLM judges show "position, verbosity, and self-enhancement biases, as well as limited reasoning ability".
-- Design implication for Coach: an LLM judge may only produce a labelled secondary measure, and never a gate or an input to a claim.
+- Design implication for Coach: the listed biases are another reason this design uses no LLM judge.
 
 ## f.7 White et al., "LiveBench: A Challenging, Contamination-Free LLM Benchmark" (ICLR 2025)
 
@@ -81,7 +81,10 @@ How the sources were read:
   1. "We show how to automatically locate fix-inducing changes by linking a version archive (such as CVS) to a bug database (such as BUGZILLA)."
   2. The mechanism is blame on the revision before the fix: "we call the CVS annotate command for revision r1 = 1.17 because this was the last revision without the fix".
   3. A stated limit: the "CVS annotate command is only reliable for text files".
-- Design implication for Coach: history alone can show, with no human labels, whether code that Coach flags is later implicated in fixes. This gives an automated proxy for the value of findings.
+- Design implication for Coach:
+  - History can show, with no new human labels, whether code that Coach flags is later implicated in **bug fixes**.
+  - SZZ identifies fix-inducing changes, not refactors.
+  - The bug labels come from the linked tracker or commit messages, which are themselves human-written.
 
 ## f.9 Rosa et al., "Evaluating SZZ Implementations Through a Developer-informed Oracle" (ICSE 2021)
 
@@ -89,6 +92,41 @@ How the sources were read:
 - Key findings:
   1. SZZ's accuracy is unsettled: "fairly evaluating those implementations on a reliable oracle is an open problem."
   2. "Ideally, there should be a golden set created by the original developers of the studied systems."
+- Design implication for Coach: the abstract says only that a reliable oracle for SZZ is an open problem. So the error rate of any SZZ signal used here is unknown, and the signal is reported as association, never as precision.
+
+## f.10 gocognit (Go cognitive complexity)
+
+- URL: https://github.com/uudashr/gocognit (MIT; no release tag shown on the page)
+- Key findings:
+  1. It "Calculates cognitive complexities of functions (and methods) in Go source code."
+  2. It cites the specification without claiming to implement it in full: "these rules are specific for Go, please see the original whitepaper for more complete reference."
+  3. It has machine-readable output: `-json` will "encode the output as JSON". `-over N` shows only functions above N and exits 1.
+- Design implication for Coach: pin it as the external grader for Go `complexity.cognitive_complexity`. Its counts follow its own Go reading of the specification, and may differ from Coach's (d.1).
+
+## f.11 ESLint core rule `max-depth`
+
+- URL: https://eslint.org/docs/latest/rules/max-depth
+- Key findings:
+  1. "This rule enforces a maximum depth that blocks can be nested to reduce code complexity."
+  2. The option is `max` (default 4).
+- Design implication for Coach: pin it as the external grader for TS `complexity.max_nesting_depth`.
+- Not retrieved: the TypeScript cognitive-complexity rule in eslint-plugin-sonarjs. Its GitHub page returned 404 and its npm page 403. Nothing is cited from it, and a TypeScript cognitive-complexity grader stays a follow-up.
+
+## f.12 Gremlins (Go mutation testing)
+
+- URLs: https://github.com/go-gremlins/gremlins (Apache-2.0), https://gremlins.dev/latest/
+- Key findings:
+  1. Each mutant is reported as one of RUNNABLE, NOT COVERED, KILLED, LIVED, TIMED OUT or NOT VIABLE.
+  2. "Gremlins is still in its 0.x.x release, which, as per SemVer, doesn't guarantee backward compatibility."
 - Design implication for Coach:
-  - An SZZ-based signal is a noisy proxy whose error rate is not known.
-  - Report it as association, never as precision. It does not replace #260's human-labelled precision.
+  - Pin an exact version.
+  - Compute f.2's score from the statuses: detected = KILLED + TIMED OUT, valid = detected + LIVED + NOT COVERED. NOT VIABLE is excluded, like f.2's compile errors.
+
+## f.13 StrykerJS (TypeScript mutation testing)
+
+- URLs: https://stryker-mutator.io/docs/stryker-js/introduction/ , https://stryker-mutator.io/docs/stryker-js/configuration/ (Apache-2.0)
+- Key findings:
+  1. It "supports most JavaScript projects, including TypeScript".
+  2. Thresholds: "mutation score < break: Error! Stryker will exit with exit code 1". The `json` reporter writes `reports/mutation/mutation.json`.
+- Design implication for Coach: pin an exact version, set `thresholds.break` from the protocol, and read the JSON report.
+
