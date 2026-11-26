@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("coach-eval generate --tuning --language typescript (781 tuning-cell row)", func() {
+var _ = Describe("coach-eval generate --tuning --language typescript (781 tuning-cell row)", Label("typescript"), func() {
 	It("emits the same twelve tuning cells as Go, in the same order, one valid TypeScript program each", func() {
 		outcome := runGenerate(GinkgoT().TempDir(), nil, "--tuning", "--language", "typescript")
 		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
