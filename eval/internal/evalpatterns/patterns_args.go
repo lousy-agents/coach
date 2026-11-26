@@ -45,9 +45,9 @@ func parsePatternsArgs(args []string) (patternsArgs, error) {
 	}
 	switch {
 	case parsed.manifest == "":
-		return patternsArgs{}, errors.New("--manifest <references.json> is required")
+		return patternsArgs{}, errors.New("--manifest is required: the reference manifest")
 	case parsed.out == "":
-		return patternsArgs{}, errors.New("--out <directory> is required")
+		return patternsArgs{}, errors.New("--out is required: the directory the profiles are written to")
 	case flags.NArg() != 0:
 		return patternsArgs{}, fmt.Errorf("unexpected argument %q", flags.Arg(0))
 	}
