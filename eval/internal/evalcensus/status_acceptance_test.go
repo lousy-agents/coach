@@ -95,6 +95,14 @@ var _ = Describe("the analysis_status of each rule on a repository", func() {
 		})
 	})
 
+	When("Coach's report is JSON with no signals", func() {
+		It("records analysis_failed rather than not_exercised", func() {
+			status := statusOf(evalcensus.StatusesFromReport(corpus, goRepo, []byte(`{"schema_version":"1"}`)), "complexity.cognitive_complexity")
+
+			Expect(status.Status).To(Equal(evalcensus.AnalysisFailed))
+		})
+	})
+
 	When("Coach reports findings of a rule the corpus does not census", func() {
 		It("records only the corpus's rules", func() {
 			statuses := evalcensus.StatusesFromReport(corpus, goRepo, coachReport(signal{RuleID: "structure.constructor_density"}))

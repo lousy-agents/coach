@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -83,7 +84,26 @@ var _ = Describe("the census record ledger", func() {
 		Entry("a human verdict with no rationale", func(r *evalcensus.Record) { r.Rationale = "" }),
 		Entry("a human rater writing an automated measure", func(r *evalcensus.Record) { r.Measure = "detector_agreement" }),
 		Entry("a human verdict that is agree", func(r *evalcensus.Record) { r.Value = json.RawMessage(`"agree"`) }),
+		Entry("a human verdict whose rater name is empty", func(r *evalcensus.Record) { r.Rater.ID = strPtr("") }),
 	)
+
+	When("an automated record claims the human_verdict measure", func() {
+		It("refuses it, even with an automated value", func() {
+			record := automatedRecord("r1", `"agree"`)
+			record.Measure = "human_verdict"
+
+			Expect(evalcensus.AppendRecords(ledgerPath(), []evalcensus.Record{record})).To(MatchError(evalcensus.ErrInvalidRecord))
+		})
+	})
+
+	When("an automated rater scores a finding a human source raised", func() {
+		It("is held to the automated values, not the verdict rules", func() {
+			record := automatedRecord("r1", `"agree"`)
+			record.Source = evalcensus.Source{Kind: "human", Ref: "review thread"}
+
+			Expect(evalcensus.AppendRecords(ledgerPath(), []evalcensus.Record{record})).To(Succeed())
+		})
+	})
 
 	DescribeTable("a record with a malformed field is refused",
 		func(mutate func(*evalcensus.Record)) {
@@ -141,6 +161,17 @@ var _ = Describe("the census record ledger", func() {
 			dangling := automatedRecord("r3", `"agree"`)
 			dangling.Supersedes = strPtr("r9")
 			Expect(evalcensus.AppendRecords(path, []evalcensus.Record{dangling})).To(MatchError(evalcensus.ErrInvalidRecord))
+		})
+	})
+
+	When("the existing ledger holds a line with a field the schema does not name", func() {
+		It("refuses to append to it", func() {
+			path := ledgerPath()
+			Expect(evalcensus.AppendRecords(path, []evalcensus.Record{automatedRecord("r1", `"agree"`)})).To(Succeed())
+			line := strings.Replace(readFile(path), `{"record_id"`, `{"extra":1,"record_id"`, 1)
+			Expect(os.WriteFile(path, []byte(line), 0o644)).To(Succeed())
+
+			Expect(evalcensus.AppendRecords(path, []evalcensus.Record{automatedRecord("r2", `"agree"`)})).To(MatchError(ContainSubstring("line 1")))
 		})
 	})
 

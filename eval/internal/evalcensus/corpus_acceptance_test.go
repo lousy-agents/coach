@@ -51,6 +51,12 @@ var _ = Describe("the corpus manifest", func() {
 		Entry("an unknown language", func(m map[string]any) {
 			m["repositories"].([]any)[0].(map[string]any)["language"] = "rust"
 		}, "language"),
+		Entry("a repository with no id", func(m map[string]any) {
+			m["repositories"].([]any)[0].(map[string]any)["id"] = ""
+		}, "id is empty"),
+		Entry("a rule with no rule_id", func(m map[string]any) {
+			m["rules"].([]any)[0].(map[string]any)["rule_id"] = ""
+		}, "rule_id is empty"),
 		Entry("a repository with no path", func(m map[string]any) {
 			m["repositories"].([]any)[0].(map[string]any)["path"] = ""
 		}, "path"),
