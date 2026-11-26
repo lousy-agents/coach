@@ -1,9 +1,6 @@
 package evalcensus
 
-import (
-	"fmt"
-	"slices"
-)
+import "fmt"
 
 func repositoriesProblem(repositories []Repository) string {
 	seen := map[string]bool{}
@@ -32,12 +29,7 @@ func repositoryProblem(repo Repository) string {
 	case repo.HistoryUntil != "" && !shaPattern.MatchString(repo.HistoryUntil):
 		return "history_until is not 40 lowercase hex digits; pin a commit, not a ref"
 	}
-	for _, pattern := range append(slices.Clone(repo.Include), repo.Exclude...) {
-		if err := validGlob(pattern); err != nil {
-			return fmt.Sprintf("glob %q is malformed: %v", pattern, err)
-		}
-	}
-	return ""
+	return globsProblem(repo)
 }
 
 func rulesProblem(rules []Rule) string {
