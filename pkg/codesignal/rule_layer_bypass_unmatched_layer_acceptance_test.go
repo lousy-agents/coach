@@ -21,6 +21,8 @@ var _ = DescribeTable("the layer-bypass evaluators carry the cause of an unmatch
 		_, withoutCause := evaluate(unrelated, "v1", "backend", "digest")
 
 		Expect(withCause).To(ContainElement(And(HaveField("Kind", "project_layer_bypass_required_layer_unmatched"), HaveField("Message", message))))
+		Expect(kindsOf(withCause)).To(Equal([]string{"project_layer_bypass_coverage_incomplete", "project_layer_bypass_required_layer_unmatched"}),
+			"nothing else of the coverage diagnostics is copied into the report: not the ambiguous-layer code")
 		for _, diagnostic := range withoutCause {
 			Expect(diagnostic.Kind).NotTo(Equal("project_layer_bypass_required_layer_unmatched"))
 		}
@@ -28,3 +30,11 @@ var _ = DescribeTable("the layer-bypass evaluators carry the cause of an unmatch
 	Entry("Go", codesignal.EvaluateGoLayerBypass),
 	Entry("TypeScript", codesignal.EvaluateTypeScriptLayerBypass),
 )
+
+func kindsOf(diagnostics []codesignal.Diagnostic) []string {
+	kinds := make([]string, 0, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		kinds = append(kinds, diagnostic.Kind)
+	}
+	return kinds
+}
