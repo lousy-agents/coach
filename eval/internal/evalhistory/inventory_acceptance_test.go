@@ -113,6 +113,15 @@ var _ = Describe("mapping Coach's findings to units", func() {
 		Expect(flagged.Unplaced).To(BeZero())
 	})
 
+	It("places a coupling.deep_relative_import finding in its file, as an import edge", func() {
+		signals := []evalhistory.Signal{{RuleID: "coupling.deep_relative_import", Path: "p/p.go", Subject: "../x", StartRow: 1}}
+
+		flagged := flaggedUnits(inventory, signals, "coupling.deep_relative_import")
+		Expect(flagged.Level).To(Equal(evalhistory.FileLevel))
+		Expect(flagged.Units).To(Equal([]int{0}))
+		Expect(flagged.Unplaced).To(BeZero())
+	})
+
 	It("refuses a rule the placement table does not hold, naming the rule", func() {
 		signals := []evalhistory.Signal{{RuleID: "architecture.made_up", Path: "p/p.go", StartRow: 6, EndRow: 9}}
 
