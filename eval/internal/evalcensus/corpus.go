@@ -23,6 +23,9 @@ type Repository struct {
 	SHA           string `json:"sha"`
 	Language      string `json:"language"`
 	ProjectConfig string `json:"project_config"`
+	// HistoryUntil is the last commit a history run reads fixes up to. A
+	// census does not use it.
+	HistoryUntil string `json:"history_until,omitempty"`
 }
 
 // Rule is one censused rule and the languages it applies to.
