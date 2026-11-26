@@ -1,0 +1,18 @@
+package shop
+
+// Books keeps the shop's accounts.
+type Books struct {
+	ledger []int
+}
+
+// Book records a payment.
+func (b *Books) Book(amount int) { b.ledger = append(b.ledger, amount) }
+
+// Balance sums the books.
+func (b *Books) Balance() int {
+	sum := 0
+	for _, a := range b.ledger {
+		sum += a
+	}
+	return sum
+}

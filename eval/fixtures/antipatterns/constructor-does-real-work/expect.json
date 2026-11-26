@@ -1,0 +1,11 @@
+{
+  "id": "constructor-does-real-work",
+  "name": "Constructor does real work",
+  "source": "Hevery, Guide to Writing Testable Code, flaw 1: the constructor does real work. Known miss in Go: coupling.tight_constructor_init is implemented for TypeScript only (this.x = new Y() in a constructor), so a Go NewStore that opens a database and reads the environment is not reported",
+  "seed": "none",
+  "status": "not_covered",
+  "expect": {
+    "bad": "none",
+    "good": "none"
+  }
+}

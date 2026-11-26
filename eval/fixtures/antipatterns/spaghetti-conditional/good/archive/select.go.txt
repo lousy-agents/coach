@@ -1,0 +1,53 @@
+package archive
+
+// File is a file in a directory listing.
+type File struct {
+	Name     string
+	Size     int
+	Age      int
+	Pinned   bool
+	Temp     bool
+	ReadOnly bool
+}
+
+// Expired picks the files to delete: the stale ones, then the oversized ones while the quota is exceeded.
+func Expired(files []File, maxAge, maxSize, quota int) []string {
+	var names []string
+	used := 0
+	for _, f := range files {
+		if isProtected(f) {
+			continue
+		}
+		if isStale(f, maxAge) {
+			names = append(names, f.Name)
+			continue
+		}
+		if !isOversized(f, maxSize) {
+			continue
+		}
+		if overQuota(f, used, quota, maxAge, maxSize) {
+			names = append(names, f.Name)
+			used += f.Size
+		}
+		if used > quota*2 {
+			break
+		}
+	}
+	return names
+}
+
+func isProtected(f File) bool {
+	return f.Pinned || f.ReadOnly && !f.Temp
+}
+
+func isStale(f File, maxAge int) bool {
+	return f.Temp && f.Age > 1 || f.Age > maxAge && f.Size > 0
+}
+
+func isOversized(f File, maxSize int) bool {
+	return f.Size > maxSize && !f.Pinned
+}
+
+func overQuota(f File, used, quota, maxAge, maxSize int) bool {
+	return used+f.Size > quota || f.Age > maxAge/2 && f.Size > 2*maxSize
+}

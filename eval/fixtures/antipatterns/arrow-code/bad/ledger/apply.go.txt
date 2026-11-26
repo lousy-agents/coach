@@ -1,0 +1,24 @@
+package ledger
+
+// Entry is one posting in a ledger.
+type Entry struct {
+	Account string
+	Amount  int
+	Posted  bool
+}
+
+// Balance sums the posted entries of one account under a limit. Every condition opens a deeper block, so the line
+// that does the work sits four levels in and the reader must hold every enclosing condition in mind to know when it runs.
+func Balance(batches [][]Entry, account string, limit int) int {
+	total := 0
+	for _, batch := range batches {
+		if len(batch) > 0 {
+			for _, entry := range batch {
+				if entry.Account == account && entry.Posted && entry.Amount <= limit {
+					total += entry.Amount
+				}
+			}
+		}
+	}
+	return total
+}

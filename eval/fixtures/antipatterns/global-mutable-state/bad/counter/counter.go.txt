@@ -1,0 +1,19 @@
+package counter
+
+// total is shared by every caller, in every goroutine and every test, and any function can change it.
+var total int
+
+// Add records an amount.
+func Add(n int) {
+	total += n
+}
+
+// Reset clears the count.
+func Reset() {
+	total = 0
+}
+
+// Total returns the amount recorded so far.
+func Total() int {
+	return total
+}

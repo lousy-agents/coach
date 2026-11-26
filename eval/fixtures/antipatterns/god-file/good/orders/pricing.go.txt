@@ -1,0 +1,16 @@
+package orders
+
+// Total prices an order with its discounts.
+func Total(o Order) int {
+	total := o.Quantity * o.Price
+	if o.Quantity >= 10 {
+		total -= total / 10
+	}
+	if o.Country != "US" {
+		total += 500
+	}
+	if o.Express {
+		total += 1000
+	}
+	return total
+}

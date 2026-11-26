@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -29,6 +30,7 @@ file=$(grep -rlE 'func (\(Service\) )?(Get|Set)[A-Za-z]*\(|func Run\(' --include
 mode="$STANDIN_MODE"
 if [ "$mode" = "exit1" ]; then echo 'partial output'; exit 1; fi
 if [ "$mode" = "hang" ]; then sleep 20 & echo $! > "$GREMLINS_PIDFILE"; wait; mode=good; fi
+if [ "$mode" = "hang-orphan" ]; then setsid sleep 20 & echo $! > "$GREMLINS_PIDFILE"; sleep 30; fi
 if [ "$mode" = "empty" ]; then exit 0; fi
 if [ "$mode" = "unreadable" ]; then mkdir "$out"; exit 0; fi
 if [ "$mode" = "bad-once" ]; then
@@ -173,6 +175,26 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 		})
 	})
 
+	When("something Gremlins started outside its process group keeps the run's output open past the limit", func() {
+		It("stops waiting for the output once the grace has passed, and exits 1 naming the limit (AC-24)", func() {
+			gremlins := newStandIn()
+			DeferCleanup(func() {
+				if content, err := os.ReadFile(gremlins.pidfile); err == nil {
+					if pid, err := strconv.Atoi(strings.TrimSpace(string(content))); err == nil {
+						_ = syscall.Kill(pid, syscall.SIGKILL)
+					}
+				}
+			})
+			started := time.Now()
+
+			outcome := runGenerateBinary(faultBinary, GinkgoT().TempDir(), append(gremlins.environment("hang-orphan"), gremlinsTimeoutVariable+"=2s"), "--cell", "1", "--seed", "3")
+
+			Expect(outcome.exitCode).To(Equal(1), outcome.stderr)
+			Expect(outcome.stderr).To(ContainSubstring("did not finish within the time limit of 2s"))
+			Expect(time.Since(started)).To(BeNumerically("<", 15*time.Second), "the orphan holds the output for 20s; the run waits the limit and the grace, not the orphan")
+		})
+	})
+
 	When("the two suites are judged differently", func() {
 		It("records the lowest score and the highest not-covered share of the two (AC-24)", func() {
 			gremlins := newStandIn()
@@ -294,5 +316,12 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 		runs := validation["mutation_runs"].(map[string]any)
 		Expect(runs["pass_to_pass"].(map[string]any)["valid"]).To(BeEquivalentTo(0))
 		Expect(runs["fail_to_pass"].(map[string]any)["valid"]).To(BeEquivalentTo(0))
+	})
+
+	It("ignores the test-only time limit in the release build, which bounds a run by the default alone (AC-25)", func() {
+		outcome := runGenerate(GinkgoT().TempDir(), []string{gremlinsTimeoutVariable + "=1ms"}, "--cell", "1", "--seed", "3")
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		Expect(outcome.stderr).NotTo(ContainSubstring("time limit"))
 	})
 })

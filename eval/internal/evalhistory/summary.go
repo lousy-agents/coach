@@ -53,6 +53,7 @@ type RuleResult struct {
 	ControlsInvolved int      `json:"controls_involved"`
 	Shortfall        int      `json:"control_shortfall"`
 	Unplaced         int      `json:"unplaced_findings"`
+	UnplacedReasons  []string `json:"unplaced_reasons"`
 	RiskRatio        *float64 `json:"risk_ratio"`
 	Low              *float64 `json:"ci95_low"`
 	High             *float64 `json:"ci95_high"`

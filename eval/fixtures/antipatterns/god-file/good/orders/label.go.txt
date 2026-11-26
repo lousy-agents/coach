@@ -1,0 +1,18 @@
+package orders
+
+import "strings"
+
+// Label prints the order's shipping label.
+func Label(o Order) string {
+	line := strings.ToUpper(o.ID)
+	if o.Express {
+		line += " EXPRESS"
+	}
+	if o.Country != "US" {
+		line += " INTL"
+	}
+	if o.Quantity > 50 {
+		line += " BULK"
+	}
+	return line
+}
