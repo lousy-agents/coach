@@ -63,7 +63,7 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["rule_id", "level", "flagged", "flagged_involved", "controls", "controls_involved", "control_shortfall", "unplaced_findings", "risk_ratio", "ci95_low", "ci95_high"],
+              "required": ["rule_id", "level", "flagged", "flagged_involved", "controls", "controls_involved", "control_shortfall", "unplaced_findings", "unplaced_reasons", "risk_ratio", "ci95_low", "ci95_high"],
               "properties": {
                 "rule_id": {"type": "string", "minLength": 1},
                 "level": {"enum": ["function", "file"]},
@@ -73,6 +73,7 @@
                 "controls_involved": {"type": "integer", "minimum": 0},
                 "control_shortfall": {"type": "integer", "minimum": 0},
                 "unplaced_findings": {"type": "integer", "minimum": 0},
+                "unplaced_reasons": {"type": "array", "items": {"type": "string", "minLength": 1}},
                 "risk_ratio": {"type": ["number", "null"]},
                 "ci95_low": {"type": ["number", "null"]},
                 "ci95_high": {"type": ["number", "null"]},
