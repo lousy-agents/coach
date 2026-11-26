@@ -7,7 +7,7 @@ import (
 	"github.com/lousy-agents/coach/eval/internal/evaldetect"
 )
 
-const tsConfig = `{"compilerOptions":{"baseUrl":".","paths":{"@app/*":["src/app/*"]}},"include":["src"]}`
+const tsConfig = `{"compilerOptions":{"paths":{"@app/*":["src/app/*"]}},"include":["src"]}`
 
 // tsTree writes a TS project whose app layer imports nothing from the domain
 // layer, overlaid with files.
@@ -71,16 +71,13 @@ var _ = Describe("the TypeScript import resolver", func() {
 			"src/domain/d.ts": "import { A } from \"../app/a.js\";\n",
 		}),
 		Entry("a paths alias inherited through extends", map[string]string{
-			"tsconfig.base.json": `{"compilerOptions":{"baseUrl":".","paths":{"@base/*":["src/app/*"]}}}`,
+			"tsconfig.base.json": `{"compilerOptions":{"paths":{"@base/*":["src/app/*"]}}}`,
 			"tsconfig.json":      `{"extends":"./tsconfig.base.json","include":["src"]}`,
 			"src/domain/d.ts":    "import { A } from \"@base/a\";\n",
 		}),
 		Entry("the paths pattern with the longest prefix", map[string]string{
-			"tsconfig.json":   `{"compilerOptions":{"baseUrl":".","paths":{"@*":["src/domain/*"],"@x/*":["src/domain/*"],"@x/a*":["src/domain/*"],"@x/app/*":["src/app/*"]}}}`,
+			"tsconfig.json":   `{"compilerOptions":{"paths":{"@*":["src/domain/*"],"@x/*":["src/domain/*"],"@x/a*":["src/domain/*"],"@x/app/*":["src/app/*"]}}}`,
 			"src/domain/d.ts": "import { A } from \"@x/app/a\";\n",
-		}),
-		Entry("a baseUrl-relative specifier", map[string]string{
-			"src/domain/d.ts": "import { A } from \"src/app/a\";\n",
 		}),
 	)
 
@@ -101,11 +98,18 @@ var _ = Describe("the TypeScript import resolver", func() {
 			"package.json":    `{"name":"fx","exports":{"./app/*":"./src/app/*.ts"}}`,
 			"src/domain/d.ts": "import { A } from \"fx/app/a\";\n",
 		}, "package.json self-reference"),
+		Entry("baseUrl, which TypeScript 7 removed", map[string]string{
+			"tsconfig.json": `{"compilerOptions":{"baseUrl":"."}}`,
+		}, "baseUrl"),
+		Entry("baseUrl in an extended config", map[string]string{
+			"tsconfig.base.json": `{"compilerOptions":{"baseUrl":"src"}}`,
+			"tsconfig.json":      `{"extends":"./tsconfig.base.json"}`,
+		}, "baseUrl"),
 		Entry("a paths pattern with more than one wildcard", map[string]string{
-			"tsconfig.json": `{"compilerOptions":{"baseUrl":".","paths":{"@x/*/y/*":["src/*/z/*"]}}}`,
+			"tsconfig.json": `{"compilerOptions":{"paths":{"@x/*/y/*":["src/*/z/*"]}}}`,
 		}, "more than one wildcard"),
 		Entry("a tsconfig.json below the root", map[string]string{
-			"src/app/tsconfig.json": `{"compilerOptions":{"baseUrl":"."}}`,
+			"src/app/tsconfig.json": `{"compilerOptions":{}}`,
 		}, "nested tsconfig.json"),
 		Entry("a non-literal import()", map[string]string{
 			"src/domain/d.ts": "const name = \"../app/a\";\nexport const lazy = () => import(name);\n",
