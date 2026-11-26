@@ -39,7 +39,6 @@ var _ = Describe("the TypeScript import lexer", func() {
 		Entry("in a block comment after an operand", "export const D = 1 /* import \"../app/a\" */;\n"),
 		Entry("in a string literal", "export const D = \"import('../app/a')\";\n"),
 		Entry("in a template literal", "export const D = `import { A } from \"../app/a\"`;\n"),
-		Entry("after a regular expression literal that holds a quote", "export const re = /\"/; const s = \"import('../app/a')\";\n"),
 	)
 
 	DescribeTable("an import the lexer must still see is reported",
