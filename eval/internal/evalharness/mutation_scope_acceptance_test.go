@@ -77,7 +77,7 @@ var _ = Describe("the packages the mutation gate judges (design §6, step 6: the
 		Expect(err).To(HaveOccurred())
 	})
 
-	DescribeTable("is the api surface's own packages for a generated program, which imports nothing beyond its route (AC-24)",
+	DescribeTable("is the api surface's own packages for each of four sampled generated cells, which import nothing beyond their route (AC-24)",
 		func(cell int) {
 			generated := program(cell)
 
