@@ -1,8 +1,13 @@
 package evalpatterns_test
 
 import (
+	"errors"
+	"path/filepath"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/lousy-agents/coach/eval/internal/evalpatterns"
 )
 
 // layeredPolicy names three layers out of order and under names of its
@@ -96,6 +101,21 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 			Expect(measure(profile, "dimensions", "layers")).To(Equal(map[string]any{"6": 1.0}))
 			Expect(profile["roles"]).To(Equal(map[string]any{}))
 			Expect(profile["not_covered"]).To(Equal([]any{map[string]any{"shape": "layers", "count": 1.0}}))
+		})
+	})
+
+	When("the checkout's policy is not JSON", func() {
+		It("refuses the entry with exit 2, naming the label and the policy", func() {
+			root := standInTree()
+			writeFile(filepath.Join(root, ".lousy-agents", "coach.json"), "{")
+
+			_, err := evalpatterns.ExtractProfile(standInReference(), root)
+
+			var refusal evalpatterns.Refusal
+			Expect(errors.As(err, &refusal)).To(BeTrue(), "ExtractProfile returned %v", err)
+			Expect(refusal.Exit).To(Equal(2))
+			Expect(err.Error()).To(HavePrefix(`reference "stand-in": `))
+			Expect(err.Error()).To(ContainSubstring(".lousy-agents/coach.json"))
 		})
 	})
 
