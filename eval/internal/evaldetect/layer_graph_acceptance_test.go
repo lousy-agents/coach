@@ -20,11 +20,11 @@ func loadPolicy(root string) evaldetect.Policy {
 var _ = Describe("the Go layer graph", func() {
 	base := func(extra map[string]string) string {
 		files := map[string]string{
-			"go.mod":                    "module example.com/fx\n\ngo 1.26.0\n",
-			".lousy-agents/coach.json":  goLayerPolicy,
-			"pkg/domain/domain.go":      "package domain\n\nfunc D() {}\n",
-			"pkg/app/app.go":            "package app\n\nimport \"example.com/fx/pkg/domain\"\n\nfunc A() { domain.D() }\n",
-			"tools/gen/gen.go":          "package gen\n\nimport \"example.com/fx/pkg/app\"\n\nfunc G() { app.A() }\n",
+			"go.mod":                   "module example.com/fx\n\ngo 1.26.0\n",
+			".lousy-agents/coach.json": goLayerPolicy,
+			"pkg/domain/domain.go":     "package domain\n\nfunc D() {}\n",
+			"pkg/app/app.go":           "package app\n\nimport \"example.com/fx/pkg/domain\"\n\nfunc A() { domain.D() }\n",
+			"tools/gen/gen.go":         "package gen\n\nimport \"example.com/fx/pkg/app\"\n\nfunc G() { app.A() }\n",
 		}
 		for path, content := range extra {
 			files[path] = content
