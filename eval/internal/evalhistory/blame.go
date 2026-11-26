@@ -23,20 +23,29 @@ type lineRange struct {
 
 var porcelainHeader = regexp.MustCompile(`^([0-9a-f]{40}) (\d+) \d+`)
 
-// blameLines returns the identity of each line in ranges of path at rev,
-// ignoring whitespace and following moves and copies (-C implies -M). It blames the whole
-// file, because a line range narrows what copy detection can match: a single
-// line is shorter than git's minimum block and would stay with the commit
-// that moved it.
+// blameLines returns the identity of each line in ranges of path at rev.
 func blameLines(repoDir, rev, path string, ranges []lineRange) ([]lineIdentity, error) {
+	all, err := blameFile(repoDir, rev, path)
+	if err != nil {
+		return nil, err
+	}
+	return selectLines(all, path, rev, ranges)
+}
+
+// blameFile returns the identity of every line of path at rev, ignoring
+// whitespace and following moves and copies (-C implies -M). It blames the
+// whole file, because a line range narrows what copy detection can match: a
+// single line is shorter than git's minimum block and would stay with the
+// commit that moved it.
+func blameFile(repoDir, rev, path string) ([]lineIdentity, error) {
 	output, err := git(repoDir, "blame", "-w", "-C", "--line-porcelain", rev, "--", path)
 	if err != nil {
 		return nil, err
 	}
-	all, err := parsePorcelain(output)
-	if err != nil {
-		return nil, err
-	}
+	return parsePorcelain(output)
+}
+
+func selectLines(all []lineIdentity, path, rev string, ranges []lineRange) ([]lineIdentity, error) {
 	var selected []lineIdentity
 	for _, r := range ranges {
 		if r.start < 1 || r.end > len(all) {
