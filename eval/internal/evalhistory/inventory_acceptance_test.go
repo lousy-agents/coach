@@ -78,6 +78,26 @@ var _ = Describe("mapping Coach's findings to units", func() {
 		Expect(flagged.Unplaced).To(Equal(1))
 	})
 
+	It("treats a finding with a location but no subject as a function finding", func() {
+		signals := []evalhistory.Signal{{RuleID: "complexity.max_nesting_depth", Path: "p/p.go", StartRow: 6, EndRow: 9}}
+
+		flagged := evalhistory.FlaggedUnits(inventory, signals, "complexity.max_nesting_depth")
+		Expect(flagged.Level).To(Equal(evalhistory.FunctionLevel))
+		Expect(flagged.Units).To(Equal([]int{1}))
+	})
+
+	It("counts a finding at another level than the rule's first as unplaced", func() {
+		signals := []evalhistory.Signal{
+			{RuleID: "complexity.branch_density", Path: "q/q.go"},
+			{RuleID: "complexity.branch_density", Path: "p/p.go", Subject: "B", StartRow: 6, EndRow: 9},
+		}
+
+		flagged := evalhistory.FlaggedUnits(inventory, signals, "complexity.branch_density")
+		Expect(flagged.Level).To(Equal(evalhistory.FileLevel))
+		Expect(flagged.Units).To(Equal([]int{1}))
+		Expect(flagged.Unplaced).To(Equal(1))
+	})
+
 	It("lists a unit flagged twice once", func() {
 		signals := []evalhistory.Signal{
 			{RuleID: "complexity.cognitive_complexity", Path: "p/p.go", Subject: "B", StartRow: 6, EndRow: 9},

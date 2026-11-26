@@ -53,7 +53,8 @@ var _ = Describe("drawing size-matched controls", func() {
 	It("never uses a control twice or draws another flagged unit", func() {
 		draw := evalhistory.DrawControls(pool, []int{0, 3}, 2, 7)
 
-		Expect(draw.Controls).To(HaveLen(4))
+		Expect(draw.Controls).To(ConsistOf(1, 2, 4), "the bin holds three unflagged units for four draws")
+		Expect(draw.Shortfall).To(Equal(1))
 		Expect(draw.Controls).To(SatisfyAll(Not(ContainElement(0)), Not(ContainElement(3))))
 		seen := map[int]bool{}
 		for _, control := range draw.Controls {
