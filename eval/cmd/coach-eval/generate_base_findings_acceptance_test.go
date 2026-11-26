@@ -24,6 +24,23 @@ func pathWithOnlyGo() string {
 	return directory
 }
 
+// strictCoach is a coach that prints the report only when it is run the way the design requires: as
+// `codesignal --baseline --format=json` inside a git repository whose HEAD holds the program. Anything else exits 2,
+// so a spec that reads its report pins the command line, not only the parsing.
+func strictCoach(directory, report string) string {
+	return writeExecutable(directory, "coach", `[ "$1" = codesignal ] || exit 2
+baseline=no; format=no
+for argument in "$@"; do
+  [ "$argument" = --baseline ] && baseline=yes
+  [ "$argument" = --format=json ] && format=yes
+done
+[ "$baseline" = yes ] && [ "$format" = yes ] || exit 2
+git rev-parse --verify HEAD >/dev/null 2>&1 || exit 2
+[ -z "$(git status --porcelain)" ] || exit 2
+[ -n "$(git ls-files)" ] || exit 2
+printf '%s' '`+report+`'`)
+}
+
 func baseFindings(program generatedProgram) (count any, reason any) {
 	validation := manifestOf(program)["validation"].(map[string]any)
 	return validation["coach_base_fp"], validation["coach_base_fp_reason"]
@@ -50,7 +67,7 @@ var _ = Describe("coach-eval generate records what Coach reports on the unmutate
 
 	When("COACH_BIN names a coach that reports findings on the base", func() {
 		It("records their number and never rejects the program for them (AC-22)", func() {
-			coach := writeExecutable(GinkgoT().TempDir(), "coach", `printf '{"signals":[{"rule_id":"a"},{"rule_id":"b"},{"rule_id":"c"}]}'`)
+			coach := strictCoach(GinkgoT().TempDir(), `{"signals":[{"rule_id":"a"},{"rule_id":"b"},{"rule_id":"c"}]}`)
 
 			outcome := runGenerate(cacheHome, []string{"COACH_BIN=" + coach}, "--cell", "1", "--seed", "3")
 			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
@@ -61,7 +78,7 @@ var _ = Describe("coach-eval generate records what Coach reports on the unmutate
 		})
 
 		It("records zero for a report with no signals (AC-22)", func() {
-			coach := writeExecutable(GinkgoT().TempDir(), "coach", `printf '{"signals":[]}'`)
+			coach := strictCoach(GinkgoT().TempDir(), `{"signals":[]}`)
 
 			outcome := runGenerate(cacheHome, []string{"COACH_BIN=" + coach}, "--cell", "1", "--seed", "3")
 			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
