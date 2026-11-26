@@ -1,6 +1,7 @@
 package evalcensus
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -41,7 +42,9 @@ func LoadCorpus(path string) (Corpus, error) {
 		return Corpus{}, fmt.Errorf("read corpus manifest: %w", err)
 	}
 	var corpus Corpus
-	if err := json.Unmarshal(raw, &corpus); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&corpus); err != nil {
 		return Corpus{}, fmt.Errorf("parse corpus manifest %s: %w", path, err)
 	}
 	if problem := corpusProblem(corpus); problem != "" {
