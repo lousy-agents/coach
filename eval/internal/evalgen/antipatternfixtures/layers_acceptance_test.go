@@ -174,6 +174,19 @@ var _ = Describe("deriving the layer fixtures from a profile's layers (#900, #87
 			Expect(packageDirs(out, "skipped-layer", "bad")["api"]).To(HaveLen(2), "2 is the most frequent of the three roles of 3 layers; repository is not one of them")
 		})
 
+		DescribeTable("counts the roles the layer count adds beyond the first three",
+			func(layers int, roles map[string]map[string]int, want int) {
+				_, err := generate(layered(map[string]int{itoa(layers): 1}, roles), out)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(packageDirs(out, "skipped-layer", "bad")["api"]).To(HaveLen(want))
+			},
+			Entry("domain, the fourth role of 4 layers", 4,
+				map[string]map[string]int{"api": {"1": 1}, "service": {"1": 1}, "store": {"1": 1}, "domain": {"3": 5}}, 3),
+			Entry("repository, the fifth role of 5 layers", 5,
+				map[string]map[string]int{"api": {"1": 1}, "service": {"1": 1}, "domain": {"1": 1}, "store": {"1": 1}, "repository": {"2": 5}}, 2),
+		)
+
 		It("holds one package a layer, and says so, when the profile records no packages for the roles", func() {
 			_, err := generate(layered(map[string]int{"3": 1}, map[string]map[string]int{}), out)
 
