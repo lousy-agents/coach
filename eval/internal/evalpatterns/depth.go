@@ -1,46 +1,6 @@
 package evalpatterns
 
-import (
-	"go/ast"
-	"os"
-	"path/filepath"
-	"sort"
-	"strconv"
-	"strings"
-
-	pathpkg "path"
-)
-
-// declared is a top-level function and the file it is declared in, whose
-// imports resolve its calls.
-type declared struct {
-	function *ast.FuncDecl
-	file     *ast.File
-	dir      string
-}
-
-// callIndex is every top-level function with a body, by package directory
-// and name. Methods are not in it: syntax alone cannot say which method a
-// call reaches.
-type callIndex struct {
-	module    string
-	functions map[string]map[string]declared
-}
-
-func newCallIndex(module string, packages map[string][]*ast.File) callIndex {
-	index := callIndex{module: module, functions: map[string]map[string]declared{}}
-	for dir, files := range packages {
-		index.functions[dir] = map[string]declared{}
-		for _, file := range files {
-			for _, function := range functionsWithBodies(file) {
-				if function.Recv == nil {
-					index.functions[dir][function.Name.Name] = declared{function, file, dir}
-				}
-			}
-		}
-	}
-	return index
-}
+import "go/ast"
 
 // entryDepths is, for each entry in sorted package order, the longest
 // shortest call path from it.
@@ -65,97 +25,50 @@ func (index callIndex) fileEntryDepths(file *ast.File, dir string) []int {
 	return depths
 }
 
+// walk is one breadth-first search from an entry.
+type walk struct {
+	index callIndex
+	seen  map[*ast.FuncDecl]bool
+}
+
 // depthFrom is the greatest breadth-first distance reached from start.
 func (index callIndex) depthFrom(start declared) int {
-	seen := map[*ast.FuncDecl]bool{start.function: true}
+	search := walk{index: index, seen: map[*ast.FuncDecl]bool{start.function: true}}
 	frontier, depth := []declared{start}, 0
 	for len(frontier) > 0 {
-		var next []declared
-		for _, caller := range frontier {
-			next = append(next, index.unseenCallees(caller, seen)...)
-		}
-		if len(next) > 0 {
+		frontier = search.step(frontier)
+		if len(frontier) > 0 {
 			depth++
 		}
-		frontier = next
 	}
 	return depth
 }
 
-func (index callIndex) unseenCallees(caller declared, seen map[*ast.FuncDecl]bool) []declared {
+// step is every function the frontier calls that the walk has not reached.
+func (search *walk) step(frontier []declared) []declared {
+	var next []declared
+	for _, caller := range frontier {
+		next = append(next, search.unseenCallees(caller)...)
+	}
+	return next
+}
+
+func (search *walk) unseenCallees(caller declared) []declared {
 	var callees []declared
 	ast.Inspect(caller.function.Body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		if callee, found := index.resolve(caller, call.Fun); found && !seen[callee.function] {
-			seen[callee.function] = true
-			callees = append(callees, callee)
+		if call, ok := n.(*ast.CallExpr); ok {
+			callees = append(callees, search.reach(caller, call)...)
 		}
 		return true
 	})
 	return callees
 }
 
-// resolve finds the function a call names by syntax: an identifier in the
-// caller's own package, or pkg.F for a package of this module.
-func (index callIndex) resolve(caller declared, fun ast.Expr) (declared, bool) {
-	switch expr := fun.(type) {
-	case *ast.Ident:
-		callee, ok := index.functions[caller.dir][expr.Name]
-		return callee, ok
-	case *ast.SelectorExpr:
-		pkg, isIdent := expr.X.(*ast.Ident)
-		dir, local := index.localDir(caller.file, pkg, isIdent)
-		callee, ok := index.functions[dir][expr.Sel.Name]
-		return callee, local && ok
+func (search *walk) reach(caller declared, call *ast.CallExpr) []declared {
+	callee, found := search.index.resolve(caller, call.Fun)
+	if !found || search.seen[callee.function] {
+		return nil
 	}
-	return declared{}, false
+	search.seen[callee.function] = true
+	return []declared{callee}
 }
-
-func (index callIndex) localDir(file *ast.File, pkg *ast.Ident, isIdent bool) (string, bool) {
-	if !isIdent || index.module == "" {
-		return "", false
-	}
-	for _, spec := range file.Imports {
-		value, _ := strconv.Unquote(spec.Path.Value)
-		if name, _ := nameOfImport(spec, value); name == pkg.Name {
-			return moduleDir(index.module, value)
-		}
-	}
-	return "", false
-}
-
-func moduleDir(module, importPath string) (string, bool) {
-	if importPath == module {
-		return ".", true
-	}
-	rest, ok := strings.CutPrefix(importPath, module+"/")
-	return rest, ok
-}
-
-// modulePath is the module path in root's go.mod, or "" without one.
-func modulePath(root string) string {
-	raw, err := os.ReadFile(filepath.Join(root, "go.mod"))
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(raw), "\n") {
-		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
-			return strings.Trim(strings.TrimSpace(rest), `"`)
-		}
-	}
-	return ""
-}
-
-func sortedDirs(packages map[string][]*ast.File) []string {
-	dirs := make([]string, 0, len(packages))
-	for dir := range packages {
-		dirs = append(dirs, dir)
-	}
-	sort.Strings(dirs)
-	return dirs
-}
-
-func packageDir(rel string) string { return pathpkg.Dir(rel) }

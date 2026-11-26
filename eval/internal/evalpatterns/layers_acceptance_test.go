@@ -126,30 +126,7 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 
 	When("the policy orders six layers, more than the generator builds", func() {
 		It("records six layers, no roles, and the layers as not covered rather than clamped", func() {
-			names := []string{"l1", "l2", "l3", "l4", "l5", "l6"}
-			policy := `{"schema_version":"1","roots":["."],"layers":[`
-			files := map[string]string{}
-			var pairs []string
-			for i, name := range names {
-				if i > 0 {
-					policy += ","
-				}
-				policy += `{"name":"` + name + `","prefixes":["pkg/` + name + `"]}`
-				files["pkg/"+name+"/p1/p.go"] = pkgFile("p1")
-				files["pkg/"+name+"/p2/p.go"] = pkgFile("p2")
-				for _, outer := range names[:i] {
-					pairs = append(pairs, `{"from":"`+name+`","to":"`+outer+`"}`)
-				}
-			}
-			policy += `],"forbidden_imports":[`
-			for i, pair := range pairs {
-				if i > 0 {
-					policy += ","
-				}
-				policy += pair
-			}
-			files[".lousy-agents/coach.json"] = policy + `]}`
-
+			files := chainedLayers("l1", "l2", "l3", "l4", "l5", "l6")
 			profile := profileOfFiles(files)
 
 			Expect(measure(profile, "dimensions", "layers")).To(Equal(map[string]any{"6": 1.0}))
@@ -210,3 +187,22 @@ var _ = Describe("the static call depth of a profile's entries (AC-2.4, AC-2.8)"
 		}))
 	})
 })
+
+// chainedLayers is a module whose policy orders the named layers, outermost
+// first, by forbidding each inner layer to import every outer one. Each
+// layer holds two packages.
+func chainedLayers(names ...string) map[string]string {
+	files := map[string]string{}
+	var layers, pairs []string
+	for i, name := range names {
+		layers = append(layers, `{"name":"`+name+`","prefixes":["pkg/`+name+`"]}`)
+		files["pkg/"+name+"/p1/p.go"] = pkgFile("p1")
+		files["pkg/"+name+"/p2/p.go"] = pkgFile("p2")
+		for _, outer := range names[:i] {
+			pairs = append(pairs, `{"from":"`+name+`","to":"`+outer+`"}`)
+		}
+	}
+	files[".lousy-agents/coach.json"] = `{"schema_version":"1","roots":["."],"layers":[` + strings.Join(layers, ",") +
+		`],"forbidden_imports":[` + strings.Join(pairs, ",") + `]}`
+	return files
+}
