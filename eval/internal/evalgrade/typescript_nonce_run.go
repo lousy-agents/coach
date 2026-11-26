@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -21,7 +20,8 @@ const (
 )
 
 // RunTypeScriptTests runs the given test files, each in its own process, under a reporter that gets the nonce on a
-// descriptor it reads and closes before any test runs. Tests inherit the record descriptor but never the nonce.
+// descriptor it reads and closes before any test runs. Only the reporter, in node's main process, holds the nonce and
+// record descriptors; the test processes node starts inherit neither.
 func RunTypeScriptTests(node, dir string, files []string, nonce string) (TypeScriptRun, error) {
 	return RunTypeScriptTestsWithin(node, dir, files, nonce, runTimeout)
 }
@@ -40,14 +40,11 @@ func RunTypeScriptTestsWithin(node, dir string, files []string, nonce string, ti
 }
 
 func checkRun(node string, files []string, nonce string) error {
-	if nonce == "" || strings.ContainsAny(nonce, "\r\n") {
-		return errors.New("the nonce must be one non-empty line")
+	if nonce == "" || nonce != strings.TrimSpace(nonce) || strings.ContainsAny(nonce, "\r\n") {
+		return errors.New("the nonce must be one non-empty line with no space at either end")
 	}
 	if len(files) == 0 {
 		return errors.New("no test file to run")
-	}
-	if _, err := os.Stat(node); err != nil {
-		return fmt.Errorf("node is not usable at %s: %v", node, err)
 	}
 	return nil
 }
@@ -84,18 +81,12 @@ func runWithChannels(node, dir, reporter string, files []string, nonce string, t
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	args := append([]string{"--test", "--test-isolation=process", "--test-reporter=" + reporter}, files...)
-	cmd := exec.CommandContext(ctx, node, args...)
-	cmd.Dir = dir
-	cmd.ExtraFiles = []*os.File{nonceRead, recordWrite}
 	var output bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &output, &output
-	if err := cmd.Start(); err != nil {
-		_ = recordWrite.Close()
+	cmd := nodeCommand(ctx, node, dir, args, []*os.File{nonceRead, recordWrite}, &output)
+	run, err := supervised{cmd: cmd, ctx: ctx, reads: recordRead, writes: recordWrite}.run()
+	if err != nil {
 		return TypeScriptRun{}, fmt.Errorf("node did not start: %v", err)
 	}
-	_ = recordWrite.Close()
-	run := readRecords(recordRead)
-	_ = cmd.Wait()
 	run.Output = output.String()
 	return run, nil
 }

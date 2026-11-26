@@ -35,6 +35,19 @@ test("leaves a holder", () => {
 		Expect(statusOf(run, "a.test.ts::leaves a holder")).To(Equal([]string{"pass"}))
 	})
 
+	It("does not hold the run open when the process holds a copy of node's own output", func() {
+		run, took := runWithin(map[string]string{"a.test.ts": header + `
+import { spawn } from "node:child_process";
+test("leaves a holder of node's output", () => {
+  const copy = fs.openSync("/proc/" + process.ppid + "/fd/1", "a");
+  spawn("sleep", ["120"], { detached: true, stdio: ["ignore", copy, copy] }).unref();
+});
+`}, 3*time.Second)
+
+		Expect(took).To(BeNumerically("<", bound))
+		Expect(statusOf(run, "a.test.ts::leaves a holder of node's output")).To(Equal([]string{"pass"}))
+	})
+
 	It("does not hold the run open when the process holds a copy of the record channel", func() {
 		run, took := runWithin(map[string]string{"a.test.ts": header + `
 import { spawn } from "node:child_process";

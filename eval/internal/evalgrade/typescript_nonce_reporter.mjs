@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const nonce = fs.readFileSync(3, "utf8").trim();
+const nonce = fs.readFileSync(3, "utf8").replace(/\n$/, "");
 fs.closeSync(3);
 
 const statuses = { "test:pass": "pass", "test:fail": "fail" };
