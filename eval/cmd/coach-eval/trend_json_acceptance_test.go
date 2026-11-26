@@ -237,6 +237,24 @@ var _ = Describe("eval-compare trend --format json", func() {
 		})
 	})
 
+	When("a metric value is a tiny negative number", func() {
+		It("prints the value and the change as 0 in JSON, not -0", func() {
+			tinyNegative := func(runID string) record {
+				return withPath(completeRecord(runID), "parameters.k", -0.0000001)
+			}
+			writeLedger(ledger,
+				ledgerLine("pre_run", "2026-11-01", "cell-a", tinyNegative("run-1")),
+				ledgerLine("pre_run", "2026-11-02", "cell-a", tinyNegative("run-2")),
+			)
+
+			outcome := runTrend(root, root, "--cell", "cell-a", "--ledger", ledger, "--metric", "parameters.k", "--format", "json")
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			expectMatchesSchema(trendOutputSchemaPath, []byte(outcome.stdout))
+			Expect(outcome.stdout).NotTo(ContainSubstring(":-0"))
+		})
+	})
+
 	When("run through the eval-trend mise task with --format json", func() {
 		It("prints the JSON trend through the task", func() {
 			writeLedger(ledger,
