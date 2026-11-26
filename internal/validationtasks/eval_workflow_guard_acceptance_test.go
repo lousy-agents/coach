@@ -28,6 +28,9 @@ var _ = Describe("the guard that keeps the evaluation out of CI", func() {
 			Entry("cd eval", "      - run: cd eval && go test ./...\n"),
 			Entry("working-directory: eval", "      - working-directory: eval\n        run: go mod tidy\n"),
 			Entry("a ./eval/... package pattern", "      - run: go test ./eval/...\n"),
+			Entry("the eval module's go.mod", "      - run: go mod download -modfile eval/go.mod\n"),
+			Entry("a quoted working-directory", "      - working-directory: \"eval\"\n        run: go vet ./...\n"),
+			Entry("a quoted cd", "      - run: cd 'eval' && go test ./...\n"),
 		)
 	})
 
@@ -36,6 +39,14 @@ var _ = Describe("the guard that keeps the evaluation out of CI", func() {
 			workflow := "on:\n  schedule:\n    - cron: '0 3 * * 1'\njobs:\n  study:\n    steps:\n      - run: mise run eval-agent-study\n"
 
 			Expect(evalWorkflowViolations("nightly.yml", workflow)).To(ContainElement(ContainSubstring("schedule")))
+		})
+	})
+
+	When("an eval task appears only in a comment", func() {
+		It("reports nothing", func() {
+			workflow := "on:\n  push:\njobs:\n  check:\n    steps:\n      # mise run eval-detection runs locally, never here\n      - run: mise run verify\n"
+
+			Expect(evalWorkflowViolations("check.yml", workflow)).To(BeEmpty())
 		})
 	})
 
@@ -48,20 +59,15 @@ var _ = Describe("the guard that keeps the evaluation out of CI", func() {
 	})
 
 	When("the repository's own workflows are read", func() {
-		It("finds no file under .github/workflows that runs an eval task or an eval-module leg", func() {
-			dir := filepath.Join("..", "..", ".github", "workflows")
-			entries, err := os.ReadDir(dir)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(entries).NotTo(BeEmpty())
+		It("finds no workflow or composite action under .github that runs an eval task or an eval-module leg", func() {
+			files := githubAutomationFiles(filepath.Join("..", "..", ".github"))
+			Expect(files).To(ContainElement(HaveSuffix("ci.yml")))
 
 			var violations []string
-			for _, entry := range entries {
-				if entry.IsDir() {
-					continue
-				}
-				raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+			for _, path := range files {
+				raw, err := os.ReadFile(path)
 				Expect(err).NotTo(HaveOccurred())
-				violations = append(violations, evalWorkflowViolations(entry.Name(), string(raw))...)
+				violations = append(violations, evalWorkflowViolations(path, string(raw))...)
 			}
 
 			Expect(violations).To(BeEmpty(), "the evaluation runs only as local mise tasks (docs/evaluation/agentic-eval-design.md §10)")

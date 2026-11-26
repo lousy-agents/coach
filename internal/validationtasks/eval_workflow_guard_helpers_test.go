@@ -2,13 +2,15 @@ package validationtasks
 
 import (
 	"fmt"
+	"io/fs"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
 
 var (
 	evalTaskInvocation = regexp.MustCompile(`\beval-[a-z0-9][a-z0-9-]*`)
-	evalModuleLeg      = regexp.MustCompile(`-C\s+\.?/?eval\b|\bcd\s+\.?/?eval\b|working-directory:\s*\.?/?eval\b|\./eval/|\beval/go\.(?:mod|sum)\b`)
+	evalModuleLeg      = regexp.MustCompile(`-C\s+["']?\.?/?eval\b|\bcd\s+["']?\.?/?eval\b|working-directory:\s*["']?\.?/?eval\b|\./eval/|\beval/go\.(?:mod|sum)\b`)
 	scheduleTrigger    = regexp.MustCompile(`(?m)^\s*schedule:`)
 )
 
@@ -32,4 +34,22 @@ func evalWorkflowViolations(name, text string) []string {
 		violations = append(violations, name+": a schedule trigger runs the evaluation")
 	}
 	return violations
+}
+
+// githubAutomationFiles lists the YAML files under .github/workflows and
+// .github/actions, the two places GitHub runs repository automation from.
+func githubAutomationFiles(githubDir string) []string {
+	var files []string
+	for _, sub := range []string{"workflows", "actions"} {
+		_ = filepath.WalkDir(filepath.Join(githubDir, sub), func(path string, entry fs.DirEntry, err error) error {
+			if err != nil || entry.IsDir() {
+				return nil
+			}
+			if ext := filepath.Ext(path); ext == ".yml" || ext == ".yaml" {
+				files = append(files, path)
+			}
+			return nil
+		})
+	}
+	return files
 }

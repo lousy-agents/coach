@@ -10,18 +10,80 @@ import (
 
 const layerViolationRule = "architecture.layer_violation"
 
-var evalRingPackages = map[string]string{
-	"generation": "eval/internal/evalgen",
-	"detection":  "eval/internal/evaldetect",
-	"grading":    "eval/internal/evalgrade",
-	"real-code":  "eval/internal/evalhistory",
-	"tooling":    "eval/internal/evalharness",
+var (
+	productionRings = []string{"entities", "usecases", "adapters", "app"}
+	evalRings       = []string{"generation", "detection", "grading", "real-code"}
+
+	// ringPackages names one package directory inside each ring of
+	// .lousy-agents/coach.json, so an edge between rings is an import between
+	// these two directories.
+	ringPackages = map[string]string{
+		"entities":   "pkg/domain",
+		"usecases":   "pkg/usecases",
+		"adapters":   "internal/adapters",
+		"app":        "cmd/coach",
+		"tooling":    "eval/internal/evalharness",
+		"generation": "eval/internal/evalgen",
+		"detection":  "eval/internal/evaldetect",
+		"grading":    "eval/internal/evalgrade",
+		"real-code":  "eval/internal/evalhistory",
+	}
+
+	// evalAllowedEdges are imports the ADR-007 fences leave open.
+	evalAllowedEdges = [][2]string{
+		{"grading", "detection"},
+		{"detection", "real-code"},
+		{"real-code", "detection"},
+		{"tooling", "generation"},
+		{"tooling", "detection"},
+		{"tooling", "grading"},
+		{"tooling", "real-code"},
+		{"tooling", "entities"},
+	}
+)
+
+// evalForbiddenEdges derives every edge the ADR-007 eval fences forbid:
+// production and eval rings may not import each other, eval rings may not
+// import tooling, and the eval rings fence one another.
+func evalForbiddenEdges() [][2]string {
+	var edges [][2]string
+	for _, production := range productionRings {
+		for _, eval := range evalRings {
+			edges = append(edges, [2]string{production, eval}, [2]string{eval, production})
+		}
+	}
+	for _, eval := range evalRings {
+		edges = append(edges, [2]string{eval, "tooling"})
+	}
+	return append(edges,
+		[2]string{"generation", "detection"},
+		[2]string{"detection", "generation"},
+		[2]string{"generation", "grading"},
+		[2]string{"detection", "grading"},
+		[2]string{"generation", "real-code"},
+		[2]string{"real-code", "generation"},
+		[2]string{"grading", "generation"},
+		[2]string{"grading", "real-code"},
+		[2]string{"real-code", "grading"},
+	)
 }
 
-// commitEvalModuleEdge commits a root module and a nested eval module whose
-// package in fromRing imports the package in toRing, under this repository's
+func ringEdgeEntries(edges [][2]string, forbidden bool) []TableEntry {
+	verb := " may import "
+	if forbidden {
+		verb = " may not import "
+	}
+	var entries []TableEntry
+	for _, edge := range edges {
+		entries = append(entries, Entry(edge[0]+verb+edge[1], edge[0], edge[1], forbidden))
+	}
+	return entries
+}
+
+// commitRingEdge commits a root module and a nested eval module in which the
+// package of fromRing imports the package of toRing, under this repository's
 // own policy.
-func commitEvalModuleEdge(fromRing, toRing string) string {
+func commitRingEdge(fromRing, toRing string) string {
 	policy, err := os.ReadFile(filepath.Join("..", "..", ".lousy-agents", "coach.json"))
 	Expect(err).NotTo(HaveOccurred())
 
@@ -30,22 +92,24 @@ func commitEvalModuleEdge(fromRing, toRing string) string {
 	commitFile(repo, "eval/go.mod", "module example.com/fx/eval\n\ngo 1.26.0\n")
 	commitFile(repo, coachConfigPath, string(policy))
 
-	fromDir, toDir := evalRingPackages[fromRing], evalRingPackages[toRing]
+	fromDir, toDir := ringPackages[fromRing], ringPackages[toRing]
 	toPackage, fromPackage := filepath.Base(toDir), filepath.Base(fromDir)
 	commitFile(repo, toDir+"/target.go", "package "+toPackage+"\n\nfunc Target() {}\n")
-	commitFile(repo, fromDir+"/caller.go", "package "+fromPackage+"\n\nimport \"example.com/fx/"+toDir+"\"\n\nfunc Caller() { "+toPackage+".Target() }\n")
+	commitFile(repo, fromDir+"/caller.go", "package "+fromPackage+"\n\nimport \""+"example.com/fx/"+toDir+"\"\n\nfunc Caller() { "+toPackage+".Target() }\n")
 	return repo
 }
 
 var _ = Describe("the eval rings in this repository's policy", func() {
-	DescribeTable("an import between eval rings",
+	entries := append(ringEdgeEntries(evalForbiddenEdges(), true), ringEdgeEntries(evalAllowedEdges, false)...)
+
+	DescribeTable("an import across a ring boundary",
 		func(fromRing, toRing string, forbidden bool) {
-			repo := commitEvalModuleEdge(fromRing, toRing)
+			repo := commitRingEdge(fromRing, toRing)
 
 			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", coachConfigPath, "--format=json")
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 
-			edge := layerViolationRule + ":" + evalRingPackages[fromRing] + "->" + evalRingPackages[toRing]
+			edge := layerViolationRule + ":" + ringPackages[fromRing] + "->" + ringPackages[toRing]
 			violation := ContainElement(HaveField("Subject", edge))
 			if forbidden {
 				Expect(decodeCoachReport(stdout).Signals).To(violation)
@@ -53,14 +117,6 @@ var _ = Describe("the eval rings in this repository's policy", func() {
 				Expect(decodeCoachReport(stdout).Signals).NotTo(violation)
 			}
 		},
-		Entry("generation may not import detection", "generation", "detection", true),
-		Entry("detection may not import generation", "detection", "generation", true),
-		Entry("generation may not import grading", "generation", "grading", true),
-		Entry("detection may not import grading", "detection", "grading", true),
-		Entry("real-code may not import generation", "real-code", "generation", true),
-		Entry("generation may not import real-code", "generation", "real-code", true),
-		Entry("an eval ring may not import tooling", "grading", "tooling", true),
-		Entry("grading may import detection", "grading", "detection", false),
-		Entry("tooling may import generation", "tooling", "generation", false),
+		entries,
 	)
 })

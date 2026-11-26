@@ -19,6 +19,26 @@ var evalRingPrefixes = map[string][]string{
 	"real-code":  {"eval/internal/evalhistory", "eval/internal/evalcensus"},
 }
 
+func allEvalRingPrefixes() []string {
+	var prefixes []string
+	for _, ringPrefixes := range evalRingPrefixes {
+		prefixes = append(prefixes, ringPrefixes...)
+	}
+	return prefixes
+}
+
+// rootModuleImports lists the import paths from go list output that belong to
+// the root module rather than to the eval module.
+func rootModuleImports(goListOutput string) []string {
+	var imports []string
+	for _, path := range strings.Fields(goListOutput) {
+		if strings.HasPrefix(path, "github.com/lousy-agents/coach/") && !strings.HasPrefix(path, evalModulePath) {
+			imports = append(imports, path)
+		}
+	}
+	return imports
+}
+
 func evalModulePackageDirs(moduleRoot string) []string {
 	var dirs []string
 	for _, dir := range goPackageDirs(filepath.Join(moduleRoot, "eval")) {
@@ -35,11 +55,7 @@ var _ = Describe("the eval module", func() {
 		It("has the package tree the design names, each package in exactly one ring", func() {
 			dirs := evalModulePackageDirs(moduleRoot)
 
-			var expected []string
-			for _, prefixes := range evalRingPrefixes {
-				expected = append(expected, prefixes...)
-			}
-			Expect(dirs).To(ConsistOf(expected))
+			Expect(dirs).To(ConsistOf(allEvalRingPrefixes()))
 			Expect(packagesNotInExactlyOneLayer(readLayerPolicy(policyPath), dirs)).To(BeEmpty())
 		})
 	})
@@ -63,13 +79,7 @@ var _ = Describe("the eval module", func() {
 			output, err := command.Output()
 			Expect(err).NotTo(HaveOccurred(), "go list -deps must run in the eval module")
 
-			var rootImports []string
-			for _, path := range strings.Fields(string(output)) {
-				if strings.HasPrefix(path, "github.com/lousy-agents/coach/") && !strings.HasPrefix(path, evalModulePath) {
-					rootImports = append(rootImports, path)
-				}
-			}
-			Expect(rootImports).To(BeEmpty())
+			Expect(rootModuleImports(string(output))).To(BeEmpty())
 		})
 	})
 })
