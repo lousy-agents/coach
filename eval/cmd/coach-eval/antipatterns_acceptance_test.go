@@ -204,6 +204,18 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 		Expect(expect.Note).To(ContainSubstring("not exhaustive"))
 	})
 
+	It("records, in the expect.json of the bypass-without-required-layer fixture, what the scan says about the silence", func() {
+		content, err := os.ReadFile(filepath.Join(repositoryRoot(), "eval", "fixtures", "antipatterns", "bypass-without-required-layer", "expect.json"))
+		Expect(err).NotTo(HaveOccurred())
+
+		var expect struct {
+			Note string `json:"note"`
+		}
+		Expect(json.Unmarshal(content, &expect)).To(Succeed())
+		Expect(expect.Note).To(ContainSubstring("project_layer_bypass_coverage_incomplete"))
+		Expect(expect.Note).To(ContainSubstring("--fail-on-incomplete-coverage"))
+	})
+
 	It("lists the anti-patterns Coach has no rule for as not_covered, and counts none of them as a pass", func() {
 		root := filepath.Join(repositoryRoot(), "eval", "fixtures", "antipatterns")
 
