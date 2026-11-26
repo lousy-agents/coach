@@ -185,6 +185,18 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 		Expect(decodeTable(outcome.stdout).Fixtures[0].Bad.Result).To(Equal("incomplete"))
 	})
 
+	It("exits 1 for an unexpectedly incomplete scan of the good variant of a known miss", func() {
+		writeFixture(fixtures, "global", missExpect, variantFiles(reportOf(), nil), incompleteVariant(reportOf()))
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(1), outcome.stderr)
+		Expect(outcome.stderr).To(ContainSubstring("FAIL global good"))
+		fixture := decodeTable(outcome.stdout).Fixtures[0]
+		Expect(fixture.Bad.Result).To(Equal("miss"))
+		Expect(fixture.Good.Result).To(Equal("incomplete"))
+	})
+
 	It("exits 2 when coach fails with a status that is neither complete nor incomplete", func() {
 		writeFixture(fixtures, "layer", layerExpect,
 			variantFiles(reportOf(layerSignal), map[string]string{"exit_code": "1"}), variantFiles(reportOf(), nil))
