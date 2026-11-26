@@ -376,10 +376,12 @@ go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 """
 
 # Runs every spec of the eval module with the race detector. Local only: no workflow runs it, because the owner
-# keeps the evaluation out of CI (#814); the timeout is part of the task because a full run takes about ten minutes.
+# keeps the evaluation out of CI (#814). It installs the JS packages the TypeScript specs need, and it takes about
+# ten to fifteen minutes (more under load), so the timeout is part of the task.
 [tasks.eval-test]
 description = "Run the eval module's specs (local only; CI never runs them)"
-run = "go -C eval test -race -timeout 30m ./..."
+depends = ["js-install"]
+run = "go -C eval test -race -timeout 45m ./..."
 
 # Prints the metric trend of one cell from the run ledger. Arguments after `--` reach the command.
 [tasks.eval-trend]
