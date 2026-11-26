@@ -23,6 +23,11 @@ const (
 // RunTypeScriptTests runs the given test files, each in its own process, under a reporter that gets the nonce on a
 // descriptor it reads and closes before any test runs. Tests inherit the record descriptor but never the nonce.
 func RunTypeScriptTests(node, dir string, files []string, nonce string) (TypeScriptRun, error) {
+	return RunTypeScriptTestsWithin(node, dir, files, nonce, runTimeout)
+}
+
+// RunTypeScriptTestsWithin is RunTypeScriptTests with the time after which node is killed.
+func RunTypeScriptTestsWithin(node, dir string, files []string, nonce string, timeout time.Duration) (TypeScriptRun, error) {
 	if err := checkRun(node, files, nonce); err != nil {
 		return TypeScriptRun{}, err
 	}
@@ -31,7 +36,7 @@ func RunTypeScriptTests(node, dir string, files []string, nonce string) (TypeScr
 		return TypeScriptRun{}, err
 	}
 	defer cleanup()
-	return runWithChannels(node, dir, reporter, files, nonce)
+	return runWithChannels(node, dir, reporter, files, nonce, timeout)
 }
 
 func checkRun(node string, files []string, nonce string) error {
@@ -60,7 +65,7 @@ func writeReporter() (path string, cleanup func(), err error) {
 	return path, func() { _ = os.RemoveAll(dir) }, nil
 }
 
-func runWithChannels(node, dir, reporter string, files []string, nonce string) (TypeScriptRun, error) {
+func runWithChannels(node, dir, reporter string, files []string, nonce string, timeout time.Duration) (TypeScriptRun, error) {
 	nonceRead, nonceWrite, err := os.Pipe()
 	if err != nil {
 		return TypeScriptRun{}, err
@@ -76,7 +81,7 @@ func runWithChannels(node, dir, reporter string, files []string, nonce string) (
 	}
 	defer recordRead.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	args := append([]string{"--test", "--test-isolation=process", "--test-reporter=" + reporter}, files...)
 	cmd := exec.CommandContext(ctx, node, args...)
