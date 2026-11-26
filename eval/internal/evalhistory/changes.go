@@ -1,52 +1,36 @@
 package evalhistory
 
-import (
-	"regexp"
-	"strconv"
-	"strings"
-)
+import "fmt"
 
-var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+`)
+// pathChange is one path fix changed: its name in fix's parent, and the
+// pathspec that limits a diff to it (both names, for a rename).
+type pathChange struct {
+	old      string
+	pathspec []string
+}
 
 // changedOldLines returns, per path in fix's parent, the lines fix changed
 // or deleted. Whitespace-only changes and pure additions change no old line.
+// Paths come from git's NUL-separated listing and never from a diff header,
+// which git quotes, tab-ends, or lets a removed "-- " line imitate.
 func changedOldLines(repoDir, fix string) (map[string][]lineRange, error) {
-	diff, err := git(repoDir, "diff", "-w", "-U0", "--no-color", "--no-ext-diff", fix+"^", fix)
+	listing, err := git(repoDir, "diff", "--name-status", "-z", "-M", "--no-color", fix+"^", fix)
 	if err != nil {
 		return nil, err
 	}
+	changes, err := parseNameStatus(listing)
+	if err != nil {
+		return nil, fmt.Errorf("fix %s: %w", fix, err)
+	}
 	changed := map[string][]lineRange{}
-	path := ""
-	for _, line := range strings.Split(diff, "\n") {
-		if strings.HasPrefix(line, "--- ") {
-			path = oldPath(line)
-			continue
+	for _, change := range changes {
+		ranges, err := oldHunks(repoDir, fix, change.pathspec)
+		if err != nil {
+			return nil, err
 		}
-		if r, ok := hunkOldRange(line); ok && path != "" {
-			changed[path] = append(changed[path], r)
+		if len(ranges) > 0 {
+			changed[change.old] = append(changed[change.old], ranges...)
 		}
 	}
 	return changed, nil
-}
-
-// oldPath reads the parent's path from a "--- a/<path>" header. An added
-// file's "--- /dev/null" has only zero-length hunks, which change no line.
-func oldPath(header string) string {
-	return strings.TrimPrefix(strings.TrimPrefix(header, "--- "), "a/")
-}
-
-func hunkOldRange(line string) (lineRange, bool) {
-	match := hunkHeader.FindStringSubmatch(line)
-	if match == nil {
-		return lineRange{}, false
-	}
-	start, _ := strconv.Atoi(match[1])
-	count := 1
-	if match[2] != "" {
-		count, _ = strconv.Atoi(match[2])
-	}
-	if count == 0 {
-		return lineRange{}, false
-	}
-	return lineRange{start: start, end: start + count - 1}, true
 }

@@ -1,6 +1,8 @@
 package evalhistory_test
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -132,6 +134,61 @@ var _ = Describe("which units a later fix touched", func() {
 			result, err := evalhistory.Involve(h.dir, since, unitsAB, fixesOf(scan))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.FixSHA).To(Equal([]string{"", first}))
+		})
+	})
+
+	DescribeTable("a fix that also changes another file still traces its unit, whatever that file is called or holds",
+		func(before, after map[string]string) {
+			h := newHistory()
+			before["p/p.go"] = baseSource
+			since := h.commit("base", before)
+			after["p/p.go"] = replaceLine(baseSource, 8, "\tx := 3")
+			fix := h.commit("fix: wrong value in B", after)
+
+			scan, err := evalhistory.FindFixes(h.dir, since, fix)
+			Expect(err).NotTo(HaveOccurred())
+			result, err := evalhistory.Involve(h.dir, since, unitsAB, fixesOf(scan))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.FixSHA).To(Equal([]string{"", fix}))
+		},
+		Entry("a path with a space, which git's diff header ends with a tab",
+			map[string]string{"docs/design notes.md": "one\ntwo\n"}, map[string]string{"docs/design notes.md": "one\nTWO\n"}),
+		Entry("a non-ASCII path, which git's diff header quotes",
+			map[string]string{"docs/été.md": "one\ntwo\n"}, map[string]string{"docs/été.md": "one\nTWO\n"}),
+		Entry("a removed line that starts with \"-- \", before a second hunk",
+			map[string]string{"q.sql": "-- one\nselect 1;\nselect 2;\nselect 3;\nselect 4;\n"}, map[string]string{"q.sql": "select 1;\nselect 2;\nselect 3;\nselect 5;\n"}),
+		Entry("a path that reads as a pathspec glob for another changed path",
+			map[string]string{"d/[a].md": "x\n", "d/a.md": strings.Repeat("line\n", 30)},
+			map[string]string{"d/[a].md": "y\n", "d/a.md": replaceLine(strings.Repeat("line\n", 30), 20, "changed")}),
+	)
+
+	When("a unit sits in a file with a non-ASCII name", func() {
+		It("traces a fix of that file to the unit", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{"p/é.go": baseSource})
+			fix := h.commit("fix: wrong value in B", map[string]string{"p/é.go": replaceLine(baseSource, 8, "\tx := 3")})
+
+			scan, err := evalhistory.FindFixes(h.dir, since, fix)
+			Expect(err).NotTo(HaveOccurred())
+			units := []evalhistory.Unit{{Path: "p/é.go", Start: 3, End: 5}, {Path: "p/é.go", Start: 7, End: 10}}
+			result, err := evalhistory.Involve(h.dir, since, units, fixesOf(scan))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.FixSHA).To(Equal([]string{"", fix}))
+		})
+	})
+
+	When("the fix itself renames the file and edits one unit", func() {
+		It("involves only the edited unit, not every unit of the renamed file", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{"p/p.go": baseSource})
+			h.git("mv", "p/p.go", "q.go")
+			fix := h.commit("fix: wrong value in B", map[string]string{"q.go": replaceLine(baseSource, 8, "\tx := 3")})
+
+			scan, err := evalhistory.FindFixes(h.dir, since, fix)
+			Expect(err).NotTo(HaveOccurred())
+			result, err := evalhistory.Involve(h.dir, since, unitsAB, fixesOf(scan))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.FixSHA).To(Equal([]string{"", fix}))
 		})
 	})
 
