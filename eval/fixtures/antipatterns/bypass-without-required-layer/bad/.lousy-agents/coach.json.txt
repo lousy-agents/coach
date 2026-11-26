@@ -1,0 +1,1 @@
+{"schema_version":"1","roots":["."],"layers":[{"name":"handler","prefixes":["internal/handler"]},{"name":"service","prefixes":["internal/service"]},{"name":"repository","prefixes":["internal/repository"]}],"required_layer":"service"}

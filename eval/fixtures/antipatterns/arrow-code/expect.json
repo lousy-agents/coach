@@ -13,5 +13,6 @@
       }
     ],
     "good": "none"
-  }
+  },
+  "note": "The expected rules are those of the smallest nest, one that trips only complexity.max_nesting_depth. A deeper, realistic arrow (six nested constructs) also trips complexity.cognitive_complexity (21 against a threshold of 15), so the single expected rule is not exhaustive of what Coach reports on arrow code."
 }

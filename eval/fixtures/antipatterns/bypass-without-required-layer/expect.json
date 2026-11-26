@@ -1,0 +1,11 @@
+{
+  "id": "bypass-without-required-layer",
+  "name": "Bypass of a required layer that has no package (known miss)",
+  "source": "Layer bypass with a required_layer the program does not have: the handler reaches the repository and the policy requires a service layer, but no package sits under the service prefix. Known miss, by design: pkg/projectmodel/go_layer_bypass.go treats a required layer with no call-graph node as ambiguous and reports nothing, so that a mistyped prefix cannot remove nothing and flag everything",
+  "seed": "none",
+  "status": "not_covered",
+  "expect": {
+    "bad": "none",
+    "good": "none"
+  }
+}
