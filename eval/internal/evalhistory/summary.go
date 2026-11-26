@@ -19,7 +19,8 @@ type Summary struct {
 }
 
 // UnmappedFixes counts the fixes whose changed lines fall in no function,
-// and in no production file, as they stood at the census SHA.
+// and in no production file, as they stood at the census SHA. An
+// untraceable fix counts at both levels and is listed in UnprocessedFixes.
 type UnmappedFixes struct {
 	Function int `json:"function"`
 	File     int `json:"file"`

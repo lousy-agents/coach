@@ -75,4 +75,5 @@ func (result *RepositoryHistory) countFixes(scan FixScan, involved involvements)
 		result.MatchRate = float64(len(scan.Fixes)) / float64(scan.Commits)
 	}
 	result.UnmappedFixes = UnmappedFixes{Function: involved.functions.Unmapped, File: involved.files.Unmapped}
+	result.UnprocessedFixes = involved.functions.Unprocessed
 }
