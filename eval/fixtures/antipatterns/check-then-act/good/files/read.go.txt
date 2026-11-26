@@ -1,0 +1,8 @@
+package files
+
+import "os"
+
+// Load reads a file and reports a missing one as the error the read itself returns, with no check before it.
+func Load(path string) ([]byte, error) {
+	return os.ReadFile(path)
+}

@@ -1,0 +1,21 @@
+package store
+
+// DB is the part of a database the store needs.
+type DB interface {
+	CountOrders() int
+}
+
+// Store keeps orders in a database.
+type Store struct {
+	db DB
+}
+
+// NewStore builds a store on the database it is given, so the caller decides which one and a test passes a fake.
+func NewStore(db DB) *Store {
+	return &Store{db: db}
+}
+
+// Count returns the number of stored orders.
+func (s *Store) Count() int {
+	return s.db.CountOrders()
+}

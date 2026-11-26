@@ -38,8 +38,14 @@ const (
 // report the real coach would give it.
 func cannedCoach() string {
 	path := filepath.Join(GinkgoT().TempDir(), "coach")
-	Expect(os.WriteFile(path, []byte("#!/bin/sh\ncat report.json\n"), 0o755)).To(Succeed())
+	Expect(os.WriteFile(path, []byte("#!/bin/sh\ncat report.json\nexit $(cat exit_code 2>/dev/null || echo 0)\n"), 0o755)).To(Succeed())
 	return path
+}
+
+// incompleteVariant is a variant whose scan reports incomplete coverage: coach exits 3, as --fail-on-incomplete-coverage does.
+func incompleteVariant(report string) map[string]string {
+	withDiagnostic := strings.TrimSuffix(report, "}") + `,"diagnostics":[{"kind":"project_coverage_incomplete"}]}`
+	return variantFiles(withDiagnostic, map[string]string{"exit_code": "3"})
 }
 
 func reportOf(signals ...string) string {
@@ -100,18 +106,23 @@ type antipatternTable struct {
 		ID     string `json:"id"`
 		Status string `json:"status"`
 		Bad    struct {
-			Result string `json:"result"`
-			Scan   string `json:"scan"`
+			Result           string   `json:"result"`
+			Scan             string   `json:"scan"`
+			CoverageComplete bool     `json:"coverage_complete"`
+			Diagnostics      []string `json:"diagnostics"`
 		} `json:"bad"`
 		Good struct {
-			Result string `json:"result"`
-			Scan   string `json:"scan"`
+			Result           string   `json:"result"`
+			Scan             string   `json:"scan"`
+			CoverageComplete bool     `json:"coverage_complete"`
+			Diagnostics      []string `json:"diagnostics"`
 		} `json:"good"`
 	} `json:"fixtures"`
 	Summary struct {
 		Pass       int      `json:"pass"`
 		Fail       int      `json:"fail"`
 		NotCovered []string `json:"not_covered"`
+		Incomplete []string `json:"incomplete"`
 	} `json:"summary"`
 }
 
@@ -119,22 +130,4 @@ func decodeTable(stdout string) antipatternTable {
 	var table antipatternTable
 	ExpectWithOffset(1, json.Unmarshal([]byte(stdout), &table)).To(Succeed(), stdout)
 	return table
-}
-
-func copyDirectory(from, to string) {
-	ExpectWithOffset(1, filepath.WalkDir(from, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(from, path)
-		target := filepath.Join(to, rel)
-		if entry.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		content, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
-		}
-		return os.WriteFile(target, content, 0o644)
-	})).To(Succeed())
 }

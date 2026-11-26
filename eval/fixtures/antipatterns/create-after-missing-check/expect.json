@@ -1,0 +1,11 @@
+{
+  "id": "create-after-missing-check",
+  "name": "Create after a missing-file check (TOCTOU)",
+  "source": "CWE-367: the canonical form, os.Stat reporting not-exist and then os.Create. Known miss: security.toctou_check_then_act gates on the file existing (os.Stat err == nil) and lists Open, OpenFile, Remove, RemoveAll and ReadFile as the acts, so this create-after-missing form is not reported",
+  "seed": "none",
+  "status": "not_covered",
+  "expect": {
+    "bad": "none",
+    "good": "none"
+  }
+}

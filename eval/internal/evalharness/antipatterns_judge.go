@@ -10,34 +10,64 @@ import (
 const (
 	resultPass       = "pass"
 	resultFail       = "fail"
-	resultNotCovered = "not_covered"
+	resultMiss       = "miss"
 	resultNowCovered = "now_covered"
+	resultIncomplete = "incomplete"
 )
 
 // variantReport is one variant's row of the table: what was expected, what Coach reported, and the verdict.
 type variantReport struct {
-	Scan     string            `json:"scan"`
-	Expected []expectedFinding `json:"expected"`
-	Actual   []observedFinding `json:"actual"`
-	Result   string            `json:"result"`
-	Detail   string            `json:"detail,omitempty"`
+	Scan             string            `json:"scan"`
+	Expected         []expectedFinding `json:"expected"`
+	Actual           []observedFinding `json:"actual"`
+	CoverageComplete bool              `json:"coverage_complete"`
+	Diagnostics      []string          `json:"diagnostics"`
+	Result           string            `json:"result"`
+	Detail           string            `json:"detail,omitempty"`
+	// ok is false when the variant makes the run exit 1.
+	ok bool
 }
 
-func judge(status string, expected []expectedFinding, scan scanResult) variantReport {
-	report := variantReport{Scan: scan.scan, Expected: nonNil(expected), Actual: nonNil(scan.findings)}
-	missing, unexpected := difference(expected, scan.findings)
-	switch {
-	case status == statusNotCovered && len(scan.findings) == 0:
-		report.Result = resultNotCovered
-	case status == statusNotCovered:
-		report.Result = resultNowCovered
-	case len(missing) == 0 && len(unexpected) == 0:
-		report.Result = resultPass
-	default:
-		report.Result = resultFail
-		report.Detail = describe(missing, unexpected)
+// judge compares what coach reported on a variant with what the fixture expects of it. incompleteExpected says that the
+// fixture declared this scan incomplete.
+func judge(status string, expected []expectedFinding, scan scanResult, incompleteExpected bool) variantReport {
+	report := variantReport{
+		Scan: scan.scan, Expected: nonNil(expected), Actual: nonNil(scan.findings),
+		CoverageComplete: scan.complete, Diagnostics: nonNil(scan.diagnostics), ok: true,
 	}
-	return report
+	switch {
+	case !scan.complete && !incompleteExpected:
+		return report.failed(resultIncomplete, "the scan was incomplete ("+strings.Join(scan.diagnostics, ", ")+"), so a silent result proves nothing")
+	case scan.complete && incompleteExpected:
+		return report.failed(resultFail, "the fixture expects an incomplete scan, but coverage was complete")
+	case status == statusNotCovered:
+		return report.knownMiss(scan, incompleteExpected)
+	}
+	missing, unexpected := difference(expected, scan.findings)
+	if len(missing) == 0 && len(unexpected) == 0 {
+		report.Result = resultPass
+		return report
+	}
+	return report.failed(resultFail, describe(missing, unexpected))
+}
+
+func (r variantReport) failed(result, detail string) variantReport {
+	r.Result, r.Detail, r.ok = result, detail, false
+	return r
+}
+
+// knownMiss is the result of a variant of a fixture Coach has no rule for: a miss when it is silent on a complete scan,
+// incomplete when the fixture says the scan is, and now_covered when Coach starts to report on it.
+func (r variantReport) knownMiss(scan scanResult, incompleteExpected bool) variantReport {
+	switch {
+	case len(scan.findings) > 0:
+		r.Result = resultNowCovered
+	case incompleteExpected:
+		r.Result = resultIncomplete
+	default:
+		r.Result = resultMiss
+	}
+	return r
 }
 
 func nonNil[T any](list []T) []T {

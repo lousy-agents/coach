@@ -1,0 +1,15 @@
+package orders
+
+import "strings"
+
+// Order is a customer's purchase.
+type Order struct {
+	ID     string
+	Status string
+}
+
+// Normalize cleans an order up for storage. It rewrites the caller's order in place, so a caller that kept a
+// reference to it, or passed it to another goroutine, sees it change without having asked.
+func Normalize(o *Order) {
+	o.Status = strings.ToLower(strings.TrimSpace(o.Status))
+}

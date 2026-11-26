@@ -1,0 +1,17 @@
+package orders
+
+import "fmt"
+
+// Validate reports why an order cannot be accepted.
+func Validate(o Order) error {
+	if o.ID == "" {
+		return fmt.Errorf("order has no id")
+	}
+	if o.Quantity <= 0 {
+		return fmt.Errorf("order %s has no items", o.ID)
+	}
+	if o.Price < 0 {
+		return fmt.Errorf("order %s has a negative price", o.ID)
+	}
+	return nil
+}

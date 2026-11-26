@@ -1,0 +1,14 @@
+package shop
+
+// Customers keeps the shop's customers.
+type Customers struct {
+	names map[string]string
+}
+
+// Add registers a customer.
+func (c *Customers) Add(id, name string) {
+	if c.names == nil {
+		c.names = map[string]string{}
+	}
+	c.names[id] = name
+}
