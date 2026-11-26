@@ -31,6 +31,11 @@ var _ = Describe("drawing size-matched controls", func() {
 		Expect(draw.Shortfall).To(BeZero())
 	})
 
+	It("draws exactly k controls per flagged unit when the bin has room", func() {
+		Expect(evalhistory.DrawControls(pool, []int{0}, 1, 7).Controls).To(HaveLen(1))
+		Expect(evalhistory.DrawControls(pool, []int{0}, 2, 7).Controls).To(HaveLen(2))
+	})
+
 	It("draws the same controls for the same seed, and may differ for another", func() {
 		first := evalhistory.DrawControls(pool, []int{0}, 2, 7)
 		again := evalhistory.DrawControls(pool, []int{0}, 2, 7)

@@ -1,6 +1,8 @@
 package evalhistory_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -189,6 +191,29 @@ var _ = Describe("which units a later fix touched", func() {
 			result, err := evalhistory.Involve(h.dir, since, unitsAB, fixesOf(scan))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.FixSHA).To(Equal([]string{"", fix}))
+		})
+	})
+
+	When("a fix cannot be traced, as when it bumps a submodule that blame cannot read", func() {
+		It("counts that fix as unmapped with its reason, and still traces the other fixes", func() {
+			h := newHistory()
+			Expect(os.MkdirAll(filepath.Join(h.dir, "sub"), 0o755)).To(Succeed(), "an unpopulated submodule's directory, so add -A keeps the gitlink")
+			h.git("update-index", "--add", "--cacheinfo", "160000,"+strings.Repeat("1", 40)+",sub")
+			since := h.commit("base", map[string]string{"p/p.go": baseSource})
+			h.git("update-index", "--add", "--cacheinfo", "160000,"+strings.Repeat("2", 40)+",sub")
+			h.git("commit", "-q", "-m", "fix: bump the submodule")
+			bump := h.git("rev-parse", "HEAD")
+			fixB := h.commit("fix: wrong value in B", map[string]string{"p/p.go": replaceLine(baseSource, 8, "\tx := 3")})
+
+			scan, err := evalhistory.FindFixes(h.dir, since, fixB)
+			Expect(err).NotTo(HaveOccurred())
+			result, err := evalhistory.Involve(h.dir, since, unitsAB, fixesOf(scan))
+			Expect(err).NotTo(HaveOccurred(), "one untraceable fix never fails the repository")
+			Expect(result.FixSHA).To(Equal([]string{"", fixB}))
+			Expect(result.Unmapped).To(Equal(1))
+			Expect(result.Unprocessed).To(HaveLen(1))
+			Expect(result.Unprocessed[0].SHA).To(Equal(bump))
+			Expect(result.Unprocessed[0].Reason).To(ContainSubstring("sub"))
 		})
 	})
 
