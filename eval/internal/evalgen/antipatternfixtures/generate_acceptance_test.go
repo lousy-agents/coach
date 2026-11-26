@@ -1,0 +1,110 @@
+package antipatternfixtures_test
+
+import (
+	"path/filepath"
+	"strconv"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/lousy-agents/coach/eval/internal/evalgen/antipatternfixtures"
+)
+
+func generate(raw []byte, out string) (antipatternfixtures.Result, error) {
+	return antipatternfixtures.Generate(raw, acceptAll, filepath.Dir(out), filepath.Base(out), antipatternfixtures.Templates(), antipatternfixtures.GoVet)
+}
+
+var _ = Describe("profile-derived anti-pattern fixtures (#872 Task 5)", func() {
+	var out string
+	BeforeEach(func() { out = filepath.Join(GinkgoT().TempDir(), "secret-label") })
+
+	When("the profile observed every shape a template reads", func() {
+		It("emits one fixture per observed #871 pattern, in #871's layout, with the sources stored as .txt (AC-4.1, AC-4.2)", func() {
+			result, err := generate(everyShape(), out)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ids(out)).To(Equal([]string{"arrow-code", "constructor-does-real-work", "god-file", "spaghetti-conditional"}))
+			Expect(result.Emitted).To(HaveLen(4))
+			Expect(allFiles(out)).To(HaveEach(Or(HaveSuffix("/expect.json"), HaveSuffix(".txt"))))
+			for _, id := range ids(out) {
+				Expect(tree(filepath.Join(out, id))).To(SatisfyAll(HaveKey("expect.json"), HaveKey("bad/go.mod.txt"), HaveKey("good/go.mod.txt")))
+			}
+		})
+
+		It("names the #871 entry, records the profile in seed, and keeps #871's expect.json fields (AC-4.3a, AC-4.7)", func() {
+			_, err := generate(everyShape(), out)
+			Expect(err).NotTo(HaveOccurred())
+
+			for _, id := range ids(out) {
+				Expect(readExpect(out, id)).To(SatisfyAll(
+					HaveField("ID", id), HaveField("Seed", "profile:"+profileIdentity),
+					HaveField("Source", SatisfyAll(ContainSubstring("#871"), ContainSubstring(id)))))
+			}
+		})
+
+		It("takes each expectation from the template's declaration, and writes a pattern with no rule as not_covered (AC-4.3, AC-4.4)", func() {
+			_, err := generate(everyShape(), out)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(badFindings(readExpect(out, "arrow-code"))).To(Equal([]finding{{RuleID: "complexity.max_nesting_depth", Path: "ledger/apply.go", Subject: ""}}))
+			Expect(badFindings(readExpect(out, "spaghetti-conditional"))).To(Equal([]finding{{RuleID: "complexity.cognitive_complexity", Path: "archive/select.go", Subject: "Expired"}}))
+			Expect(badFindings(readExpect(out, "god-file"))).To(Equal([]finding{{RuleID: "complexity.branch_density", Path: "orders/orders.go", Subject: ""}}))
+			constructor := readExpect(out, "constructor-does-real-work")
+			Expect(constructor.Status).To(Equal("not_covered"))
+			Expect(string(constructor.Expect.Bad)).To(Equal(`"none"`))
+			for _, id := range []string{"arrow-code", "spaghetti-conditional", "god-file"} {
+				Expect(readExpect(out, id).Status).To(Equal("covered"))
+				Expect(string(readExpect(out, id).Expect.Good)).To(Equal(`"none"`))
+			}
+		})
+
+		It("writes nothing of the reference: not its label, only the template's own names (AC-4.3a)", func() {
+			_, err := generate(everyShape(), out)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(allFiles(out)).To(HaveEach(Not(ContainSubstring("secret-label"))))
+			Expect(allContents(out)).To(HaveEach(Not(ContainSubstring("secret-label"))))
+		})
+	})
+
+	When("the profile observed no shape a template reads", func() {
+		It("emits no fixture and says so in the result", func() {
+			result, err := generate(profileWith(map[string]int{"2": 9}, map[string]int{"14": 1}, map[string]int{"11": 1}, 0), out)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Emitted).To(BeEmpty())
+			Expect(out).NotTo(BeADirectory())
+		})
+	})
+
+	It("emits nothing for a bucket over the threshold that counts no function", func() {
+		result, err := generate(profileWith(map[string]int{"2": 9, "6": 0}, map[string]int{}, map[string]int{}, 0), out)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Emitted).To(BeEmpty())
+	})
+
+	When("the output directory holds fixtures of an earlier run", func() {
+		It("replaces them, so a shape no longer observed leaves no fixture behind", func() {
+			_, err := generate(everyShape(), out)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = generate(profileWith(map[string]int{"4": 1}, map[string]int{}, map[string]int{}, 0), out)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ids(out)).To(Equal([]string{"arrow-code"}))
+		})
+	})
+
+	It("writes byte-identical fixtures from the same profile twice (AC-4.6)", func() {
+		again := filepath.Join(GinkgoT().TempDir(), "again")
+		_, err := generate(everyShape(), out)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = generate(everyShape(), again)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(tree(again)).To(Equal(tree(out)))
+	})
+})
+
+func itoa(n int) string { return strconv.Itoa(n) }

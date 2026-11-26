@@ -1,0 +1,16 @@
+package orders
+
+// Check4 scores one concern of an order.
+func Check4(o Order) int {
+	score := 0
+	if o.Quantity > 41 {
+		score++
+	}
+	if o.Quantity > 42 {
+		score++
+	}
+	if o.Quantity > 43 {
+		score++
+	}
+	return score
+}

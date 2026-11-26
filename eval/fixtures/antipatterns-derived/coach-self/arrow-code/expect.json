@@ -1,0 +1,18 @@
+{
+  "id": "arrow-code",
+  "name": "Arrow code (deep nesting)",
+  "source": "#871 catalogue entry arrow-code (eval/fixtures/antipatterns/arrow-code), scaled by a pattern profile",
+  "seed": "profile:8498d03cc7f53f37aed180bb6986cc2c2ef73f72c0c5be5b027f885db3a4ffe1",
+  "status": "covered",
+  "expect": {
+    "bad": [
+      {
+        "rule_id": "complexity.max_nesting_depth",
+        "path": "ledger/apply.go",
+        "subject": ""
+      }
+    ],
+    "good": "none"
+  },
+  "note": "Derived from pattern profile 8498d03cc7f53f37aed180bb6986cc2c2ef73f72c0c5be5b027f885db3a4ffe1: nesting depth 3, the most frequent value at or over Coach's threshold of 3, in the profile's units."
+}

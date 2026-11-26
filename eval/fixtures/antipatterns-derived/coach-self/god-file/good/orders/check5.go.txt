@@ -1,0 +1,10 @@
+package orders
+
+// Check5 scores one concern of an order.
+func Check5(o Order) int {
+	score := 0
+	if o.Quantity > 51 {
+		score++
+	}
+	return score
+}

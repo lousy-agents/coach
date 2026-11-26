@@ -1,0 +1,7 @@
+package orders
+
+// Order is a customer's purchase.
+type Order struct {
+	Quantity int
+	Price    int
+}

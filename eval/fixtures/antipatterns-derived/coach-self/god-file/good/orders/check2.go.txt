@@ -1,0 +1,16 @@
+package orders
+
+// Check2 scores one concern of an order.
+func Check2(o Order) int {
+	score := 0
+	if o.Quantity > 21 {
+		score++
+	}
+	if o.Quantity > 22 {
+		score++
+	}
+	if o.Quantity > 23 {
+		score++
+	}
+	return score
+}
