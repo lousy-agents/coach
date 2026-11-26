@@ -43,11 +43,19 @@ func parsedSources(directory string) []*ast.File {
 func constantCodes(file *ast.File) map[string]string {
 	codes := map[string]string{}
 	for _, declaration := range file.Decls {
-		if general, ok := declaration.(*ast.GenDecl); ok && general.Tok == token.CONST {
-			for _, spec := range general.Specs {
-				maps.Copy(codes, specCodes(spec.(*ast.ValueSpec)))
-			}
-		}
+		maps.Copy(codes, declarationCodes(declaration))
+	}
+	return codes
+}
+
+func declarationCodes(declaration ast.Decl) map[string]string {
+	codes := map[string]string{}
+	general, ok := declaration.(*ast.GenDecl)
+	if !ok || general.Tok != token.CONST {
+		return codes
+	}
+	for _, spec := range general.Specs {
+		maps.Copy(codes, specCodes(spec.(*ast.ValueSpec)))
 	}
 	return codes
 }
