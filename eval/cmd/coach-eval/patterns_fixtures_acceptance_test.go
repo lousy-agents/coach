@@ -147,6 +147,25 @@ var _ = Describe("coach-eval patterns fixtures (#872 Task 5)", func() {
 		Entry("another label's name", "other.profile.json"),
 	)
 
+	It("refuses, through the schema check alone, a profile named after a label the schema does not allow", func() {
+		profiles := standInProfiles()
+		path := filepath.Join(profiles, "stand-in.profile.json")
+		raw, err := os.ReadFile(path)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.WriteFile(filepath.Join(profiles, "Bad.profile.json"), []byte(strings.Replace(string(raw), `"label":"stand-in"`, `"label":"Bad"`, 1)), 0o644)).To(Succeed())
+		Expect(os.Remove(path)).To(Succeed())
+		sibling := filepath.Join(filepath.Dir(out), "sibling.txt")
+		Expect(os.WriteFile(sibling, []byte("kept\n"), 0o644)).To(Succeed())
+
+		outcome := runPatternsFixtures("--profiles", profiles, "--out", out)
+
+		Expect(outcome.exitCode).To(Equal(2))
+		Expect(outcome.stderr).To(ContainSubstring("Bad.profile.json"))
+		Expect(outcome.stderr).To(ContainSubstring("does not validate"))
+		Expect(sibling).To(BeAnExistingFile())
+		Expect(out).NotTo(BeADirectory())
+	})
+
 	It("refuses a profile whose own label is .., named after it, with exit 2, keeping --out and its sibling", func() {
 		profiles := standInProfiles()
 		path := filepath.Join(profiles, "stand-in.profile.json")
