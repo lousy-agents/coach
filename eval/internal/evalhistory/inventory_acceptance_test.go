@@ -9,8 +9,8 @@ import (
 )
 
 var _ = Describe("the unit inventory at since", func() {
-	When("the tree holds production Go files, a test file, vendored and testdata code, and other files", func() {
-		It("lists each production function with its lines, and each production file", func() {
+	When("the tree holds Go files the census admits (test files, testdata and hidden code), vendored code, and other files", func() {
+		It("lists each Go file the census admits, with its functions and lines, and leaves out vendored and other files", func() {
 			h := newHistory()
 			since := h.commit("base", map[string]string{
 				"p/p.go":          baseSource,
@@ -26,12 +26,18 @@ var _ = Describe("the unit inventory at since", func() {
 			inventory, err := evalhistory.GoInventory(h.dir, since, evalcensus.Repository{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(inventory.Functions).To(ConsistOf(
+				evalhistory.Unit{Path: ".hidden/h.go", Start: 3, End: 3},
 				evalhistory.Unit{Path: "p/p.go", Start: 3, End: 5},
 				evalhistory.Unit{Path: "p/p.go", Start: 7, End: 10},
+				evalhistory.Unit{Path: "p/p_test.go", Start: 3, End: 3},
+				evalhistory.Unit{Path: "p/testdata/t.go", Start: 3, End: 3},
 				evalhistory.Unit{Path: "q/q.go", Start: 5, End: 5},
 			))
 			Expect(inventory.Files).To(ConsistOf(
+				evalhistory.Unit{Path: ".hidden/h.go", Start: 1, End: 3},
 				evalhistory.Unit{Path: "p/p.go", Start: 1, End: 10},
+				evalhistory.Unit{Path: "p/p_test.go", Start: 1, End: 3},
+				evalhistory.Unit{Path: "p/testdata/t.go", Start: 1, End: 3},
 				evalhistory.Unit{Path: "q/q.go", Start: 1, End: 5},
 			))
 		})

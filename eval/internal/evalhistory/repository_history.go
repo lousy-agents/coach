@@ -24,18 +24,19 @@ func repositoryHistory(corpus evalcensus.Corpus, repo evalcensus.Repository, coa
 		result.Evidence = err.Error()
 		return result
 	}
-	if err := result.compare(corpus, dir, findings, seed); err != nil {
+	if err := result.compare(repo, corpus, dir, findings, seed); err != nil {
 		result.Evidence = err.Error()
 	}
 	return result
 }
 
-func (result *RepositoryHistory) compare(corpus evalcensus.Corpus, dir string, findings []finding, seed int64) error {
+func (result *RepositoryHistory) compare(repo evalcensus.Repository, corpus evalcensus.Corpus, dir string, findings []finding, seed int64) error {
+	findings = admittedFindings(repo, findings)
 	ruleIDs, err := goRuleIDs(corpus)
 	if err != nil {
 		return err
 	}
-	inventory, err := GoInventory(dir, result.Since)
+	inventory, err := GoInventory(dir, result.Since, repo)
 	if err != nil {
 		return err
 	}
@@ -55,4 +56,15 @@ func (result *RepositoryHistory) compare(corpus evalcensus.Corpus, dir string, f
 	result.Rules = append(result.Rules, rules...)
 	result.findings = append(result.findings, placed...)
 	return nil
+}
+
+// admittedFindings keeps the findings in repo's census scope, as the census counts them.
+func admittedFindings(repo evalcensus.Repository, findings []finding) []finding {
+	var kept []finding
+	for _, finding := range findings {
+		if repo.Admits(finding.Path) {
+			kept = append(kept, finding)
+		}
+	}
+	return kept
 }
