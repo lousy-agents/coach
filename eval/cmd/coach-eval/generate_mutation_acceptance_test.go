@@ -24,6 +24,8 @@ while [ $# -gt 0 ]; do
 done
 file=$(grep -rlE 'func (\(Service\) )?(Get|Set)[A-Za-z]*\(|func Run\(' --include=*.go internal | grep -v _test.go | head -1)
 mode="$STANDIN_MODE"
+if [ "$mode" = "empty" ]; then exit 0; fi
+if [ "$mode" = "unreadable" ]; then mkdir "$out"; exit 0; fi
 if [ "$mode" = "bad-once" ]; then
   if [ -e "$GREMLINS_STATE" ]; then mode=good; else : > "$GREMLINS_STATE"; mode=bad; fi
 fi
@@ -96,6 +98,33 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 			Expect(runs["pass_to_pass"].(map[string]any)["valid"]).To(BeEquivalentTo(5))
 			Expect(runs["fail_to_pass"].(map[string]any)["valid"]).To(BeEquivalentTo(5))
 			Expect(gremlins.runs()).To(Equal([]string{"base", "hidden"}), "the PASS_TO_PASS suite on the program, then the FAIL_TO_PASS suite on the first feature's oracle")
+		})
+	})
+
+	When("Gremlins finds nothing to mutate and writes no report", func() {
+		It("passes vacuously with no score, and says it checked (AC-24)", func() {
+			gremlins := newStandIn()
+
+			outcome := gated(GinkgoT().TempDir(), gremlins, "empty", "--cell", "1", "--seed", "3")
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			validation := validationOf(decodeGenerated(outcome.stdout))
+
+			Expect(validation["mutation_checked"]).To(Equal(true))
+			Expect(validation["mutation_score"]).To(BeNil())
+			runs := validation["mutation_runs"].(map[string]any)
+			Expect(runs["pass_to_pass"].(map[string]any)["valid"]).To(BeEquivalentTo(0))
+			Expect(runs["fail_to_pass"].(map[string]any)["valid"]).To(BeEquivalentTo(0))
+			Expect(gremlins.runs()).To(Equal([]string{"base", "hidden"}), "both suites ran; the empty result is not a skipped gate")
+		})
+	})
+
+	When("Gremlins leaves something at the report's path that cannot be read as a report", func() {
+		It("is an error that is not a rejection, and prints no program, instead of a vacuous pass (AC-24)", func() {
+			outcome := gated(GinkgoT().TempDir(), newStandIn(), "unreadable", "--cell", "1", "--seed", "3")
+
+			Expect(outcome.exitCode).To(Equal(1), outcome.stderr)
+			Expect(outcome.stdout).To(BeEmpty())
+			Expect(outcome.stderr).To(ContainSubstring(".gremlins-report.json"))
 		})
 	})
 
