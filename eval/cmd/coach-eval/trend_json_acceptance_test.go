@@ -204,6 +204,24 @@ var _ = Describe("eval-compare trend --format json", func() {
 		})
 	})
 
+	When("a metric value or change has more than six decimal places", func() {
+		It("prints the value and the change rounded to six decimal places", func() {
+			writeLedger(ledger,
+				ledgerLine("pre_run", "2026-11-01", "cell-a", trendRecord("run-1", 0.1234567)),
+				ledgerLine("pre_run", "2026-11-02", "cell-a", trendRecord("run-2", 0.7)),
+			)
+
+			outcome := runTrend(root, root, "--cell", "cell-a", "--ledger", ledger, "--format", "json")
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			expectMatchesSchema(trendOutputSchemaPath, []byte(outcome.stdout))
+			segment := decodeJSONObject(outcome.stdout)["segments"].([]any)[0].(map[string]any)
+			first := segment["first"].(map[string]any)
+			Expect(first["value"]).To(BeNumerically("==", 0.123457))
+			Expect(segment["change"]).To(BeNumerically("==", 0.576543))
+		})
+	})
+
 	When("run through the eval-trend mise task with --format json", func() {
 		It("prints the JSON trend through the task", func() {
 			writeLedger(ledger,

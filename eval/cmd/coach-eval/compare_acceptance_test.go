@@ -141,4 +141,17 @@ var _ = Describe("eval-compare", func() {
 			Expect(outcome.stderr).NotTo(ContainSubstring("warning:"), "text output on exit 4 keeps the state message alone")
 		})
 	})
+
+	When("--format follows the run ids", func() {
+		It("exits 2 and says the flag must come before the run ids", func() {
+			writeRunRecord(stateRoot, "run-a", completeRecord("run-a"))
+			writeRunRecord(stateRoot, "run-b", completeRecord("run-b"))
+
+			outcome := runCompare(stateRoot, "run-a", "run-b", "--format", "json")
+
+			Expect(outcome.exitCode).To(Equal(2), outcome.stderr)
+			Expect(outcome.stdout).To(BeEmpty())
+			Expect(outcome.stderr).To(ContainSubstring("--format must come before the run ids"))
+		})
+	})
 })
