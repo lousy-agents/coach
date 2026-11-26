@@ -95,6 +95,8 @@ var _ = Describe("the measure of one function (AC-2.3, AC-2.5, AC-2.6)", func() 
 			"package p\n\nimport \"net/http\"\n\ntype T struct{ err error }\n\nfunc NewT() T { _, err := http.NewRequest(\"GET\", \"u\", nil); return T{err: err} }\n", assignsOnly),
 		Entry("Do on another type built in place, which is not an http.Client",
 			"package p\n\nimport \"net/http\"\n\ntype fake struct{}\n\nfunc (fake) Do(*http.Request) error { return nil }\n\ntype T struct{ err error }\n\nfunc NewT() T { return T{err: (&fake{}).Do(nil)} }\n", assignsOnly),
+		Entry("another method on an http.Client built in place, which sends nothing",
+			"package p\n\nimport \"net/http\"\n\ntype T struct{}\n\nfunc NewT() *T { (&http.Client{}).CloseIdleConnections(); return &T{} }\n", assignsOnly),
 		Entry("a method named Getenv on a value, not the os package",
 			"package p\n\ntype env struct{}\n\nfunc (env) Getenv(string) string { return \"\" }\n\ntype T struct{ v string }\n\nfunc NewT(os env) T { return T{v: os.Getenv(\"V\")} }\n", assignsOnly),
 		Entry("Newer, which is not a constructor name",
