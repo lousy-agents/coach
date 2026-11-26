@@ -107,6 +107,8 @@ func censusRepositoryProblem(repo Repository) string {
 		return "licence is empty: a census needs the licence the code is published under"
 	case repo.Sample == nil || repo.Sample.Seed == nil:
 		return "sample.seed is missing: a census draws its sample with a recorded seed"
+	case repo.Sample.Size < 0:
+		return "sample.size is negative: name a size of at least 1, or leave it out for the default"
 	}
 	return ""
 }
