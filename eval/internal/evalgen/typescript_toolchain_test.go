@@ -40,11 +40,15 @@ func expectRefusal(t *testing.T, err error, words ...string) {
 }
 
 func TestANodeBelowTheSupportedMajorIsRefused(t *testing.T) {
-	stub := t.TempDir()
-	writeScript(t, stub, "node", "echo v22.1.0")
-	t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
+	for _, version := range []string{"v22.1.0", "v23.9.0"} {
+		t.Run(version, func(t *testing.T) {
+			stub := t.TempDir()
+			writeScript(t, stub, "node", "echo "+version)
+			t.Setenv("PATH", stub+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	_, err := evalgen.ResolveTypeScriptTools(repositoryRoot(t))
+			_, err := evalgen.ResolveTypeScriptTools(repositoryRoot(t))
 
-	expectRefusal(t, err, "node", "24", "v22.1.0")
+			expectRefusal(t, err, "node", "24", version)
+		})
+	}
 }

@@ -88,3 +88,14 @@ func firstSource(files map[string][]byte) string {
 	}
 	return ""
 }
+
+// Each visible test file must run in its own process: a file that leaves state behind must not reach the next one.
+func TestVisibleTestsRunInTheirOwnProcesses(t *testing.T) {
+	generated := program(t)
+	generated.Tree["src/zz_first.test.ts"] = []byte("import { test } from \"node:test\";\ntest(\"leaves state\", () => { (globalThis as { leaked?: number }).leaked = 1; });\n")
+	generated.Tree["src/zz_second.test.ts"] = []byte("import assert from \"node:assert/strict\";\nimport { test } from \"node:test\";\ntest(\"sees none\", () => { assert.equal((globalThis as { leaked?: number }).leaked, undefined); });\n")
+
+	if err := evalgen.ValidateTypeScript(generated, tools(t)); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -11,7 +11,10 @@ import (
 // toolsFor finds the toolchain the language's programs are validated with, before anything is generated.
 func toolsFor(language evalgen.Language) (evalgen.TypeScriptTools, error) {
 	if language == evalgen.LanguageTypeScript {
-		workingDir, _ := os.Getwd()
+		workingDir, err := os.Getwd()
+		if err != nil {
+			return evalgen.TypeScriptTools{}, fmt.Errorf("cannot find the working directory to look for the compiler: %v", err)
+		}
 		return evalgen.ResolveTypeScriptTools(workingDir)
 	}
 	if _, err := exec.LookPath("go"); err != nil {
