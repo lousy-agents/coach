@@ -20,17 +20,27 @@ func (r tsResolver) resolve(fromFile, specifier string, line int) (string, bool,
 		return "", false, err
 	}
 	if isRelativeSpecifier(specifier) {
-		return r.file(path.Join(path.Dir(fromFile), specifier))
+		target, ok := r.file(path.Join(path.Dir(fromFile), specifier), namesDirectory(specifier))
+		return target, ok, nil
 	}
 	for _, candidate := range r.pathsCandidates(specifier) {
-		if target, ok, err := r.file(candidate); ok || err != nil {
-			return target, ok, err
+		if target, ok := r.file(candidate, false); ok {
+			return target, true, nil
 		}
 	}
 	if r.config.hasBaseURL {
-		return r.file(path.Join(r.config.baseURL, specifier))
+		target, ok := r.file(path.Join(r.config.baseURL, specifier), namesDirectory(specifier))
+		return target, ok, nil
 	}
 	return "", false, nil
+}
+
+// namesDirectory reports whether a specifier can only name a directory:
+// ".", "..", or a path ending in "/" or in either of them. TS resolves such a
+// specifier to the directory's index, never to a file beside it.
+func namesDirectory(specifier string) bool {
+	base := path.Base(specifier)
+	return strings.HasSuffix(specifier, "/") || base == "." || base == ".."
 }
 
 func (r tsResolver) refuse(fromFile, specifier string, line int) error {

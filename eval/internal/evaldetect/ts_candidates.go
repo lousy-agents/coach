@@ -14,17 +14,26 @@ var tsSourceExtensions = map[string][]string{
 }
 
 // file returns the first existing file TS would load for a resolved path.
-func (r tsResolver) file(target string) (string, bool, error) {
+// A path that names a directory resolves only to the directory's index.
+func (r tsResolver) file(target string, directoryOnly bool) (string, bool) {
 	if target == ".." || strings.HasPrefix(target, "../") {
-		return "", false, nil
+		return "", false
 	}
-	for _, candidate := range fileCandidates(target) {
+	candidates := fileCandidates(target)
+	if directoryOnly {
+		candidates = indexCandidates(target)
+	}
+	for _, candidate := range candidates {
 		info, err := os.Stat(filepath.Join(r.root, filepath.FromSlash(candidate)))
 		if err == nil && info.Mode().IsRegular() {
-			return candidate, true, nil
+			return candidate, true
 		}
 	}
-	return "", false, nil
+	return "", false
+}
+
+func indexCandidates(dir string) []string {
+	return []string{dir + "/index.ts", dir + "/index.d.ts"}
 }
 
 func fileCandidates(target string) []string {
@@ -34,8 +43,8 @@ func fileCandidates(target string) []string {
 		candidates = append(candidates, strings.TrimSuffix(target, ext)+sourceExt)
 	}
 	candidates = append(candidates, target)
-	for _, suffix := range []string{".ts", ".d.ts", "/index.ts", "/index.d.ts"} {
+	for _, suffix := range []string{".ts", ".d.ts"} {
 		candidates = append(candidates, target+suffix)
 	}
-	return candidates
+	return append(candidates, indexCandidates(target)...)
 }
