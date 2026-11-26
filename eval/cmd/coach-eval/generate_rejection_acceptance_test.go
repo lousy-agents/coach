@@ -53,6 +53,9 @@ var _ = Describe("coach-eval generate rejection and replacement", Ordered, Conti
 		Entry("delete baseline", "delete_baseline"),
 		Entry("layer graph grader", "layer_graph"),
 		Entry("gocognit grader", "gocognit"),
+		Entry("follow-on stub", "followon_stub"),
+		Entry("follow-on delete baseline", "followon_delete_baseline"),
+		Entry("follow-on oracle", "followon_oracle"),
 	)
 
 	It("exits 0 at a rejection rate of exactly 50% (AC-15)", func() {
@@ -78,6 +81,9 @@ var _ = Describe("coach-eval generate rejection and replacement", Ordered, Conti
 		Entry("delete baseline", "delete_baseline"),
 		Entry("layer graph grader", "layer_graph"),
 		Entry("gocognit grader", "gocognit"),
+		Entry("follow-on stub", "followon_stub"),
+		Entry("follow-on delete baseline", "followon_delete_baseline"),
+		Entry("follow-on oracle", "followon_oracle"),
 	)
 
 	It("gives up after ten attempts in one cell and exits 8 (AC-15)", func() {
