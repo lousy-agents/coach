@@ -8,6 +8,23 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// The twelve tuning cells are a commitment: earlier tuning data came from them and the held-out panel excludes
+// them, so a change to this list is a change to the study.
+var pinnedTuningCells = []generatedCell{
+	{3, 2, "function", 2, "scalar", "read", "layering"},
+	{3, 2, "command", 2, "collection", "write", "complexity"},
+	{3, 3, "http_handler", 3, "scalar", "write", "layering"},
+	{3, 4, "method", 3, "nested", "read", "complexity"},
+	{4, 2, "function", 4, "collection", "read", "layering"},
+	{4, 2, "command", 4, "nested", "write", "complexity"},
+	{4, 3, "http_handler", 5, "collection", "write", "layering"},
+	{4, 4, "http_handler", 2, "scalar", "read", "complexity"},
+	{5, 2, "method", 2, "nested", "read", "layering"},
+	{5, 3, "function", 3, "scalar", "write", "complexity"},
+	{5, 3, "command", 3, "nested", "write", "layering"},
+	{5, 4, "http_handler", 4, "collection", "read", "complexity"},
+}
+
 var _ = Describe("coach-eval generate --tuning", func() {
 	It("emits the twelve fixed tuning cells, one valid program each, and the same programs again from a clean cache (AC-12)", func() {
 		first := runGenerate(GinkgoT().TempDir(), nil, "--tuning")
@@ -19,6 +36,11 @@ var _ = Describe("coach-eval generate --tuning", func() {
 		secondPrograms := decodeAllGenerated(second.stdout)
 
 		Expect(firstPrograms).To(HaveLen(12))
+		tuned := make([]generatedCell, 0, len(firstPrograms))
+		for _, program := range firstPrograms {
+			tuned = append(tuned, program.Cell)
+		}
+		Expect(tuned).To(Equal(pinnedTuningCells), "these twelve cells, in this order")
 		cells := map[string]bool{}
 		for index, program := range firstPrograms {
 			encoded, _ := json.Marshal(program.Cell)

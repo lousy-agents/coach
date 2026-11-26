@@ -2,6 +2,7 @@ package evalharness_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,6 +69,7 @@ var _ = Describe("the graded detectors over a generated base", func() {
 
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("architecture.layer_violation"))
+		Expect(rejectionStep(err)).To(Equal(evalgen.StepLayerGraph))
 	})
 
 	It("reject a base with a function at or over the cognitive-complexity threshold, naming the rule (AC-17)", func() {
@@ -80,8 +82,15 @@ var _ = Describe("the graded detectors over a generated base", func() {
 
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("complexity.cognitive_complexity"))
+		Expect(rejectionStep(err)).To(Equal(evalgen.StepGocognit))
 	})
 })
+
+func rejectionStep(err error) string {
+	var stepError *evalgen.StepError
+	Expect(errors.As(err, &stepError)).To(BeTrue(), "the grader rejects with a step, not a plain error: %v", err)
+	return stepError.Step
+}
 
 func moduleOf(generated evalgen.Program) string {
 	first, _, _ := strings.Cut(strings.TrimPrefix(string(generated.Tree["go.mod"]), "module "), "\n")

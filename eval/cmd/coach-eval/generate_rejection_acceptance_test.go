@@ -70,6 +70,7 @@ var _ = Describe("coach-eval generate rejection and replacement", Ordered, Conti
 			Expect(outcome.stdout).To(BeEmpty())
 			Expect(outcome.stderr).To(ContainSubstring("rejection rate"))
 			Expect(outcome.stderr).To(ContainSubstring("2 of 3"))
+			Expect(outcome.stderr).To(ContainSubstring("67%"), "two of three, rounded and not truncated")
 			Expect(outcome.stderr).To(ContainSubstring(step))
 			Expect(outcome.stderr).To(ContainSubstring("operators"))
 		},
@@ -88,6 +89,16 @@ var _ = Describe("coach-eval generate rejection and replacement", Ordered, Conti
 
 		Expect(outcome.exitCode).To(Equal(8), outcome.stderr)
 		Expect(outcome.stderr).To(ContainSubstring("10 of 10"))
+	})
+
+	It("exits 8 when one cell of a run is rejected at every attempt, although the whole run stays under 50% (AC-15)", func() {
+		lastTuningCell := "1661"
+		outcome := faulty("native:0,1,2,3,4,5,6,7,8,9@"+lastTuningCell, "--tuning")
+
+		Expect(outcome.exitCode).To(Equal(8), outcome.stderr)
+		Expect(outcome.stdout).To(BeEmpty(), "no program is printed for a run that lost a cell")
+		Expect(outcome.stderr).To(ContainSubstring("10 of 21"), "eleven first-try cells and ten rejections")
+		Expect(outcome.stderr).To(ContainSubstring("every attempt"))
 	})
 
 	It("is not reachable from the release build, which ignores the fault variable (AC-16)", func() {
