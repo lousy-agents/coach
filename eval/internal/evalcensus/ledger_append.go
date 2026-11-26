@@ -11,6 +11,14 @@ import (
 // appends it. A batch with any invalid record writes nothing, and no record
 // already in the ledger is ever rewritten.
 func AppendRecords(path string, records []Record) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	unlock, err := lockLedger(path)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	existing, err := LoadRecords(path)
 	if err != nil {
 		return err
@@ -30,12 +38,12 @@ func appendLines(path string, records []Record) error {
 		}
 		lines.Write(append(line, '\n'))
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return err
+	}
+	if endsMidLine(file) {
+		lines = *bytes.NewBuffer(append([]byte{'\n'}, lines.Bytes()...))
 	}
 	if _, err := file.Write(lines.Bytes()); err != nil {
 		file.Close()

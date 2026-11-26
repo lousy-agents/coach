@@ -71,6 +71,38 @@ var _ = Describe("the census record ledger", func() {
 		Entry("follow_up_fix", "follow_up_fix"),
 	)
 
+	DescribeTable("every allowed value is accepted",
+		func(mutate func(*evalcensus.Record), human bool) {
+			record := automatedRecord("r1", `"agree"`)
+			if human {
+				record = humanRecord("r1", `"true_positive"`)
+			}
+			mutate(&record)
+
+			Expect(evalcensus.AppendRecords(ledgerPath(), []evalcensus.Record{record})).To(Succeed())
+		},
+		Entry("the verdict true_positive", func(r *evalcensus.Record) { r.Value = json.RawMessage(`"true_positive"`) }, true),
+		Entry("the verdict false_positive", func(r *evalcensus.Record) { r.Value = json.RawMessage(`"false_positive"`) }, true),
+		Entry("the verdict unactionable_true_positive", func(r *evalcensus.Record) { r.Value = json.RawMessage(`"unactionable_true_positive"`) }, true),
+		Entry("the verdict not_adjudicable", func(r *evalcensus.Record) { r.Value = json.RawMessage(`"not_adjudicable"`) }, true),
+		Entry("the source kind szz", func(r *evalcensus.Record) { r.Source.Kind = "szz" }, false),
+		Entry("the source kind review_comment", func(r *evalcensus.Record) { r.Source.Kind = "review_comment" }, false),
+		Entry("the source kind follow_up_fix", func(r *evalcensus.Record) { r.Source.Kind = "follow_up_fix" }, false),
+		Entry("the measure flagged_vs_unflagged_association", func(r *evalcensus.Record) {
+			r.Measure, r.Value = "flagged_vs_unflagged_association", json.RawMessage(`0.25`)
+		}, false),
+		Entry("the disposition retune", func(r *evalcensus.Record) { r.Disposition = strPtr("retune") }, false),
+		Entry("the disposition rescope", func(r *evalcensus.Record) { r.Disposition = strPtr("rescope") }, false),
+		Entry("the disposition default_off", func(r *evalcensus.Record) { r.Disposition = strPtr("default_off") }, false),
+		Entry("the disposition accept_with_caveat", func(r *evalcensus.Record) { r.Disposition = strPtr("accept_with_caveat") }, false),
+		Entry("the engineer_action acted", func(r *evalcensus.Record) { r.EngineerAction = strPtr("acted") }, false),
+		Entry("the engineer_action deferred", func(r *evalcensus.Record) { r.EngineerAction = strPtr("deferred") }, false),
+		Entry("the engineer_action abandoned", func(r *evalcensus.Record) { r.EngineerAction = strPtr("abandoned") }, false),
+		Entry("the engineer_action no_usage_observed", func(r *evalcensus.Record) { r.EngineerAction = strPtr("no_usage_observed") }, false),
+		Entry("a one-line range", func(r *evalcensus.Record) { r.Target.Lines = [2]int{7, 7} }, false),
+		Entry("a range starting at line 1", func(r *evalcensus.Record) { r.Target.Lines = [2]int{1, 4} }, false),
+	)
+
 	DescribeTable("a record that is not a whole human verdict is refused",
 		func(mutate func(*evalcensus.Record)) {
 			record := humanRecord("r1", `"true_positive"`)
@@ -115,6 +147,11 @@ var _ = Describe("the census record ledger", func() {
 		Entry("an empty record_id", func(r *evalcensus.Record) { r.RecordID = "" }),
 		Entry("an empty corpus_id", func(r *evalcensus.Record) { r.Target.CorpusID = "" }),
 		Entry("a SHA that is not 40 hex digits", func(r *evalcensus.Record) { r.Target.SHA = "HEAD" }),
+		Entry("an uppercase SHA", func(r *evalcensus.Record) { r.Target.SHA = strings.ToUpper(fixtureSHA) }),
+		Entry("a SHA one digit short", func(r *evalcensus.Record) { r.Target.SHA = fixtureSHA[:39] }),
+		Entry("a SHA with a character before it", func(r *evalcensus.Record) { r.Target.SHA = "x" + fixtureSHA }),
+		Entry("a SHA with a character after it", func(r *evalcensus.Record) { r.Target.SHA = fixtureSHA + "x" }),
+		Entry("an empty value", func(r *evalcensus.Record) { r.Value = nil }),
 		Entry("an empty rule_id", func(r *evalcensus.Record) { r.Target.RuleID = "" }),
 		Entry("an empty path", func(r *evalcensus.Record) { r.Target.Path = "" }),
 		Entry("a line range that ends before it starts", func(r *evalcensus.Record) { r.Target.Lines = [2]int{9, 3} }),

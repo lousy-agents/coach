@@ -103,6 +103,16 @@ var _ = Describe("the analysis_status of each rule on a repository", func() {
 		})
 	})
 
+	When("Coach reports findings only for another censused rule", func() {
+		It("records not_exercised for this one", func() {
+			corpus.Rules = append(corpus.Rules, evalcensus.Rule{RuleID: "complexity.max_nesting_depth", Languages: []string{"go"}})
+			report := coachReport(signal{RuleID: "complexity.max_nesting_depth", Evidence: "max_nesting_depth=5"})
+
+			status := statusOf(evalcensus.StatusesFromReport(corpus, goRepo, report), "complexity.cognitive_complexity")
+			Expect(status.Status).To(Equal(evalcensus.NotExercised))
+		})
+	})
+
 	When("Coach reports findings of a rule the corpus does not census", func() {
 		It("records only the corpus's rules", func() {
 			statuses := evalcensus.StatusesFromReport(corpus, goRepo, coachReport(signal{RuleID: "structure.constructor_density"}))

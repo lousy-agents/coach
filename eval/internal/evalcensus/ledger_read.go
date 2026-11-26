@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"strings"
@@ -30,6 +31,9 @@ func LoadRecords(path string) ([]Record, error) {
 		}
 		records = append(records, record)
 	}
+	if err := validateBatch(nil, records); err != nil {
+		return nil, fmt.Errorf("census ledger %s: %w", path, err)
+	}
 	return records, nil
 }
 
@@ -39,6 +43,9 @@ func decodeRecord(line string) (Record, error) {
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&record); err != nil {
 		return Record{}, fmt.Errorf("%w: %v", ErrInvalidRecord, err)
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return Record{}, fmt.Errorf("%w: content follows the record on its line", ErrInvalidRecord)
 	}
 	return record, validateRecord(record)
 }
