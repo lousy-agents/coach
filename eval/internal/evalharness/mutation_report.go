@@ -24,7 +24,7 @@ const (
 	thresholdTolerance = 1e-9
 )
 
-// MutationCounts is what a Gremlins report holds for the files of the api surface's route.
+// MutationCounts is what a Gremlins report holds for the files of the mutation scope.
 type MutationCounts struct {
 	Killed, TimedOut, Lived, NotCovered int
 }
@@ -48,8 +48,8 @@ type gremlinsReport struct {
 	} `json:"files"`
 }
 
-// ParseMutationReport counts the mutants in the files whose directory is one of routeDirs, the packages
-// reachable from the api surface.
+// ParseMutationReport counts the mutants in the files whose directory is one of routeDirs, the mutation scope
+// (MutationScope).
 func ParseMutationReport(data []byte, routeDirs []string) (MutationCounts, error) {
 	var parsed gremlinsReport
 	if err := json.Unmarshal(data, &parsed); err != nil {

@@ -21,14 +21,10 @@ func mutationRuns(program evalgen.Program) []mutationRun {
 	return []mutationRun{{"pass_to_pass", program.Tree}, {"fail_to_pass", oracle}}
 }
 
-// routeDirectories are the packages reachable from the api surface: the entry's and each hop's.
+// routeDirectories are the packages of the api surface's symbols: the entry's and each hop's.
 func routeDirectories(program evalgen.Program) []string {
 	var directories []string
-	prefix := ""
-	if module := strings.TrimPrefix(string(program.Tree["go.mod"]), "module "); module != "" {
-		prefix, _, _ = strings.Cut(module, "\n")
-		prefix += "/"
-	}
+	prefix := moduleNameOf(program) + "/"
 	for _, symbol := range program.Manifest.Template.APISurface {
 		qualified := strings.TrimPrefix(symbol.Symbol, prefix)
 		directories = append(directories, qualified[:strings.LastIndex(qualified, ".")])
@@ -45,7 +41,10 @@ type mutationOutcome struct {
 // judgeMutation runs the gate and records the verdicts. A run that passes vacuously (no valid mutant, which is
 // every base program until operators add branches) is recorded with a null score.
 func judgeMutation(gremlins Gremlins, cache mutationCache, program evalgen.Program) (mutationOutcome, error) {
-	routes := routeDirectories(program)
+	scope, err := MutationScope(program)
+	if err != nil {
+		return mutationOutcome{}, err
+	}
 	runs := map[string]any{}
 	var scores, shares []float64
 	for _, run := range mutationRuns(program) {
@@ -53,7 +52,7 @@ func judgeMutation(gremlins Gremlins, cache mutationCache, program evalgen.Progr
 		if err != nil {
 			return mutationOutcome{}, err
 		}
-		counts, err := ParseMutationReport(report, routes)
+		counts, err := ParseMutationReport(report, scope)
 		if err != nil {
 			return mutationOutcome{}, err
 		}
