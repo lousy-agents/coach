@@ -67,7 +67,7 @@ var _ = Describe("eval-compare trend guard rules", func() {
 		It("does not trend it, so the cell has one trend run and exits 4", func() {
 			writeLedger(ledger,
 				ledgerLine("pre_run", "2026-11-01", "cell-a", trendRecord("run-1", 0.5)),
-				ledgerLine("history", "2026-11-02", "cell-a", trendRecord("run-2", 0.75)),
+				ledgerLine("history", "2026-11-02", "cell-a", historyRunRecord("run-2")),
 			)
 
 			outcome := runTrend(root, root, "--cell", "cell-a", "--ledger", ledger)

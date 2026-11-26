@@ -76,7 +76,7 @@ var _ = Describe("what a census run leaves behind", func() {
 				rationales[record["target"].(map[string]any)["sha"].(string)] = record["rationale"]
 			}
 			Expect(rationales[brokenSHA]).To(ContainSubstring("missing.json"))
-			Expect(rationales[busySHA]).To(Equal("findings=2 adjudicable=2"))
+			Expect(rationales[busySHA]).To(Equal("findings=2 adjudicable=2 sampled=2"))
 
 			ledger := jsonLines(outputs.ledger)
 			Expect(ledger).To(HaveLen(1))

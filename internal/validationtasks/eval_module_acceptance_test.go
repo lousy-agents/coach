@@ -16,7 +16,7 @@ var evalRingPrefixes = map[string][]string{
 	"generation": {"eval/internal/evalgen"},
 	"detection":  {"eval/internal/evaldetect"},
 	"grading":    {"eval/internal/evalgrade"},
-	"real-code":  {"eval/internal/evalhistory", "eval/internal/evalcensus"},
+	"real-code":  {"eval/internal/evalhistory", "eval/internal/evalcensus", "eval/internal/evalpatterns"},
 }
 
 func allEvalRingPrefixes() []string {

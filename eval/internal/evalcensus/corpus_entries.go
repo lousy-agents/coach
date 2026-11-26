@@ -29,7 +29,7 @@ func repositoryProblem(repo Repository) string {
 	case repo.HistoryUntil != "" && !shaPattern.MatchString(repo.HistoryUntil):
 		return "history_until is not 40 lowercase hex digits; pin a commit, not a ref"
 	}
-	return ""
+	return globsProblem(repo)
 }
 
 func rulesProblem(rules []Rule) string {

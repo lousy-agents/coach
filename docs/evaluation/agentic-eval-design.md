@@ -150,7 +150,7 @@ The analysis is intention to treat.
 - a literal branch;
 - a policy edit;
 - a dependency change that is not on the whitelist;
-- the static check finding non-test use of inherited descriptors, `os.NewFile`, `/proc/self/fd` or `process.binding`, or a write to stdout or an exit during initialisation.
+- the static check finding non-test use of inherited descriptors, `os.NewFile`, `/proc/self/fd`, `/proc/<pid>/fd`, `/proc/<pid>/mem`, `/dev/fd/`, a descriptor literal of 3 or more, in any base, passed to a Node `fs` descriptor call or to a Go `syscall`, `golang.org/x/sys/unix` or cgo call, or `process.binding`, or a write to stdout or an exit during initialisation. The static check is best effort: it flags these named patterns, and no static check can close every route. The binding control against reading the grading channel is the `evalgrade` nonce, with the nonce descriptor (fd 3) closed at load and the fd 4 verifier (section 7). That control exists today for TypeScript only. The Go test-binary harness that carries the nonce for Go is not built yet (#791), and until it is, Go trials have only the static check.
 
 **Target predicates (refactor).** The oracle is the unmutated program. Each predicate is the inverse of an operator's violation (d.4), with 3–8 predicates per template (d, proposed grader).
 
@@ -304,10 +304,10 @@ For each `(generator version, structural cell, seed)`, the generator emits a pro
   - black-box PASS_TO_PASS tests against `api_surface`;
   - FAIL_TO_PASS tests **in a separate test package** (Go) or test file set (TS), so the stub compiles;
   - the clean oracle;
-  - a follow-on slot with its own tests and oracle.
+  - a follow-on slot. The follow-on extends entry E so that it also returns a second field G beside F, through the same path the first feature built, so the follow-on's diff passes through the agent's first-feature code (H5 measures whether that code's structure changes the cost). G has F's type and its own name and values. The follow-on's hidden tests replace the first feature's hidden tests and assert both fields. Its oracle is an overlay on the first feature's oracle (`<oracle>/followon/tests`, `<oracle>/followon/solution`), validated in three steps: `followon_stub`, `followon_delete_baseline` and `followon_oracle`.
 - **Code below every published Coach threshold for every rule.** This is derived from `docs/cli-codesignal.md`, not from Coach. Each function's cognitive complexity and nesting are kept at least 3 below the threshold, branch sums stay within the file limit, and there are no density shapes.
 
-**Programs are never rejected on Coach output.** If Coach reports anything on an unmutated program, the program is kept, the finding is recorded as `coach_base_fp`, and the rate is reported. A program is rejected only by the graded detectors (which must report nothing on the base) or by oracle failure. `eval-detection` re-checks the base trees on every run.
+**Programs are never rejected on Coach output.** If Coach reports anything on an unmutated program, the program is kept, the finding is recorded as `coach_base_fp`, and the rate is reported. When no `coach` binary is available, `coach_base_fp` is null with a reason. A program is rejected only by the graded detectors (which must report nothing on the base) or by oracle failure. `eval-detection` re-checks the base trees on every run.
 
 ### Operators
 
@@ -338,7 +338,8 @@ Generated code is trusted, so **it runs natively, without Docker**. Docker isola
 6. **Mutation testing**, run on the **unmutated program** (for the PASS_TO_PASS suite) and the **feature oracle** (for FAIL_TO_PASS) **only**, never on detection fixtures:
    - **Scope:** packages reachable in the import graph from `api_surface`.
    - **Score:** f.2's detected ÷ valid, at least 0.8, with NOT COVERED at most 10% of valid (**our choice**; the threshold sits below 1 by our inference from equivalent mutants, f.3).
-   - **Tools:** pinned through mise.
+   - **Tools:** Gremlins will be pinned by a `tool` directive in `eval/go.mod` when 780c-2 lands, like gocognit (section 4), not through mise, so CI never installs it. It will resolve offline from the module cache, and resolution will fail with exit 2, without fetching, when the cache lacks it. StrykerJS will be pinned through mise when the TypeScript mutation gate lands; it is not pinned today.
+   - **Caching and skipping:** the gate's result is cached by the program's content hash plus the Gremlins version. `--no-mutation` skips the gate, is recorded as `mutation_checked: false`, and is refused for the held-out panel.
      - Gremlins (f.12): KILLED + TIMED OUT are detected; LIVED and NOT COVERED are undetected; NOT VIABLE is excluded.
      - StrykerJS (f.13), per f.2's states: killed and timeout are detected; survived and no coverage are undetected; compile and runtime errors are excluded.
 7. Every hidden test tagged to a site fails on that site's wrong-but-plausible variant (b.8).
@@ -455,7 +456,7 @@ The grade is assembled on the host.
 
 - **Hook script.** The `Stop` entry points at a **root-owned copy** of the hook script, outside the workspace. Its hash is asserted on every invocation and at the end of the trial. Settings are read-only.
 - **The yoked `generic_review` hook.** It prepends `coach` only inside its own process, runs the check silently, and sends the generic message only on a **findings** block. It uses the same `stop_hook_active` guard.
-- **Hook health**, a harness-caused check. On the unmodified instance, the hook must exit 0, with `matches_head` true and no `worktree_scan_incomplete`. A **probe edit** that introduces a known forbidden edge must make the hook block with that finding. TS programs use a TS variant of the hook until 15.17 is settled.
+- **Hook health**, a harness-caused check. On the unmodified instance, the hook must exit 0, with `matches_head` true and no `worktree_scan_incomplete`. A **probe edit** that introduces a known forbidden edge must make the hook block with that finding. 15.17 is resolved by #818: a policy with `language: typescript` selects the TS analysis, so the unchanged documented hook works on TS programs.
 - **Git state.** Commits are denied with `--disallowedTools "Bash(git commit:*)"` and a read-only `pre-commit`. At the end of the trial, the harness checks that `HEAD` == `initial_commit_sha`, that there are no new refs, and that the stash is empty. Grading uses the working tree.
 
 ### Integrity events, long runs and resumption
@@ -687,7 +688,7 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 | `eval-agent-pilot` | 360 trials; writes the estimates | 0 · 1 a harness-caused event (R) · 2 a refusal · 5 killed (R) · 6 a cap reached (R after the caps are raised) |
 | `eval-agent-study` | The study (section 5) | 0 complete · 1 a harness-caused event (R) · 2 a refusal: input missing or invalid, the commit not clean, the 15.15 record absent, the credential expires before the projected end · 5 killed (R; `--supervise` relaunches) · 6 the checkpoint said stop, or a cap was reached, including `run_hours` (R after the caps are raised) · 7 invalid: the model, CLI or credential identity changed (not resumable) |
 | `eval-census` | #260's census | 0 · 2 a SHA is unreachable, an input is unusable, or a repository is TypeScript (until the pinned image, #832) · 3 a repository's analysis failed (`coach` non-zero, or a report that cannot be read), after every repository is recorded |
-| `eval-history` | The association (section 13a) | 0 · 2 no network in online mode |
+| `eval-history` | The association (section 13a), offline only | 0 · 2 an input is unusable (no `--seed`, no `history_until`, a repository path that is not a local directory, a SHA that is unreachable or does not descend from the census SHA, or a TypeScript repository until #832), or `--online` · 3 a repository's analysis failed, after every repository is recorded |
 | `eval-harness-acceptance` | Harness tests | 0 · 1 a test failed · 2 no Docker |
 | `eval-compare` | Compares two runs | 0 comparable · 2 a run missing or invalid (fails the run schema) · 4 not comparable (a run not `complete`, or a comparable field differs) |
 | `eval-trend` | Trends one cell's metric from the ledger (#819) | 0 a trend prints · 2 a missing or invalid ledger, or an unknown cell · 4 no comparable adjacent pair |
@@ -700,7 +701,7 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 
 - **The decision record** `eval/protocol/decisions/15.15.json`. It holds the permission, the model, the caps (trials, tokens, turns, timeout, run hours) and the weekly-trials figure.
 - **Docker**, for grading and for `sbx` under (c).
-- **Pinned tools**, through mise: Node, the TS compiler, Gremlins and StrykerJS. gocognit is pinned by the `tool` directive in `eval/go.mod` (section 4).
+- **Pinned tools**: Node, through mise. The TS compiler is pinned in `js/semantics/package.json` and installed by `mise run js-install`, not through mise `[tools]`. StrykerJS will be pinned through mise when the TypeScript mutation gate lands; it is not pinned today. gocognit is pinned by a `tool` directive in `eval/go.mod` (section 4), and Gremlins will be too when 780c-2 lands (section 6).
 - **`claude`**, at the recorded version, with a valid credential.
 - **No API-key path:** no API-key variable, no `apiKeyHelper`, and no `sbx` secret.
 - **`EVAL_ORACLE_DIR`.**
@@ -717,7 +718,7 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 - the run state;
 - the results.
 
-**The ledger,** `eval/ledger/runs.jsonl`, takes pre-run lines, study results, census and history runs, and `eval-detection --record-baseline` runs. Each line is self-contained: `{schema_version, kind, recorded, cell, run}`, where `run` is the full run record validated against `run.schema.json`. The line schema is committed as `eval/internal/evalharness/ledger_line.schema.json`. `kind` is `pre_run`, `study`, `census`, `history` or `baseline`. `eval-trend` reads `pre_run`, `study` and `baseline` lines, and never a local `run.json`.
+**The ledger,** `eval/ledger/runs.jsonl`, takes pre-run lines, study results, census and history runs, and `eval-detection --record-baseline` runs. Each line is self-contained: `{schema_version, kind, recorded, cell, run}`, where `run` is validated against the schema for its kind: `census_run.schema.json` for `census`, `history_run.schema.json` for `history`, and `run.schema.json` otherwise. A census or history line names `coach` by base name, with its sha256 as its identity. A census or history run appends its records and its ledger line as one unit: it takes the ledger's lock and then the records' lock, reads the clock once for both dates, and cuts the records back if the line cannot be written. The line schema is committed as `eval/internal/evalharness/ledger_line.schema.json`. `kind` is `pre_run`, `study`, `census`, `history` or `baseline`. `eval-trend` reads `pre_run`, `study` and `baseline` lines, and never a local `run.json`.
 
 **`eval-compare`** pairs runs by cell (a.7, b.1). It returns exit 4 on any difference in solver, model, CLI, isolation, image, runtime, architecture, grader versions, caps, prompt, oracle or parameters.
 
@@ -811,16 +812,16 @@ The join key is `(source.sha, rule_id, path, subject, lines)`. This repository's
 
 **How the census runs.** `eval-census` runs `coach-eval census` in a pinned image (dependencies installed with `--ignore-scripts`; digest and compilers recorded). It scans with `coach codesignal --baseline --format json --no-interactive --fail-on-incomplete-coverage`, adding `--project-config` and, for TS, `--project-language typescript`. `analysis_status` is one of `measured`, `not_exercised`, `not_adjudicable_only`, `analysis_failed` or `out_of_scope`. Generated programs are excluded. Until the image lands (#832), the census runs Go repositories on the host:
 - each from a fresh local clone, checked out at its SHA;
-- with hooks, repository-supplied git configuration and global and system git configuration all disabled, so no repository code, filter or hook runs;
+- with hooks, repository-supplied git configuration and global and system git configuration all disabled, so no git hook or filter, and no repository-supplied git configuration, runs (Coach still runs `go` over the committed files, with `GOTOOLCHAIN=local` and `-buildvcs=false`);
 - and it refuses TypeScript repositories with exit 2, because Coach would resolve their compiler from the repository's own `node_modules`.
 
 **The census record:**
 
 ```json
 { "record_id": "string", "target": { "corpus_id": "string", "sha": "string", "rule_id": "string", "path": "string", "subject": "string or null", "lines": [1, 2], "fingerprint": "string or null" },
-  "measure": "detector_agreement | flagged_vs_unflagged_association | human_verdict",
-  "value": "agree | disagree | <number> | true_positive | false_positive | unactionable_true_positive | not_adjudicable",
-  "source": { "kind": "detector | szz | review_comment | follow_up_fix | human", "ref": "string" },
+  "measure": "detector_agreement | flagged_vs_unflagged_association | human_verdict | analysis_status",
+  "value": "agree | disagree | <number> | true_positive | false_positive | unactionable_true_positive | not_adjudicable | measured | not_exercised | not_adjudicable_only | analysis_failed | out_of_scope",
+  "source": { "kind": "detector | szz | review_comment | follow_up_fix | human | census", "ref": "string" },
   "rater": { "id": "string or null", "kind": "automated | human" },
   "date": "YYYY-MM-DD", "rationale": "string",
   "disposition": "retune | rescope | default_off | accept_with_caveat | null",
@@ -828,7 +829,7 @@ The join key is `(source.sha, rule_id, path, subject, lines)`. This repository's
   "supersedes": "record_id or null" }
 ```
 
-**Automated sources emit only `agree`, `disagree` or a number. Only `human_verdict` may emit TP or FP values.** Records are append-only (c.1, c.2).
+**Automated sources emit only `agree`, `disagree`, a number, or, for `analysis_status`, a status. Only `human_verdict` may emit TP or FP values.** Records are append-only (c.1, c.2). A census run writes one `analysis_status` record per repository and rule, from source `census` (ref: the `coach` sha256), targeting the repository root (`path` `.`, `lines` null), with the counts or the failure evidence as its rationale. A history run writes one `flagged_vs_unflagged_association` record per placed finding, from source `szz`: 1 with the first fix's SHA as `ref`, or 0 with `none`.
 
 **The two-repository red test** (#260) checks three things: "0 of 12" is distinct from `not_exercised`, a failed analysis is `analysis_failed`, and a mutated threshold turns it red.
 
@@ -891,9 +892,14 @@ No result here licenses "authority" language to customers.
 - **Secondary outcomes:**
   - a reviewer comment on a flagged line, versus on an unflagged line;
   - a merged follow-up change that touches the flagged code within N commits.
-- **Data source:**
-  - **Offline mode (the default):** commit messages and issue references only. No network or credential is needed, and the data is noisier.
-  - **Online mode (optional):** the GitHub REST API through `gh`, with the developer's GitHub login, read-only. Fetched data is snapshotted and hashed into the ledger.
+- **Data source:** offline only. Commit messages and issue references come from the local clone; no network or credential is used, and `--online` is refused with exit 2.
+
+**How it runs.** The manifest pins each repository's `history_until` (U) beside its census SHA (S); the repository path must be a local directory.
+- **Fixes:** the non-merge commits in S..U whose message matches a pinned regex. The run records the regex, its match rate, and per level the fixes that map to no unit. A fix that cannot be traced is counted unmapped and listed with git's reason, and never fails the repository. A window with no commits has a null match rate, with the reason.
+- **Involvement:** a fix involves a unit when a line it changed, blamed at the fix's parent (`-w -C`), has the identity of one of the unit's lines blamed at S. Units are functions or whole files at S, by the rule's level.
+- **Controls:** k = 3 per flagged unit, drawn seeded and without replacement from the unflagged units of the same size bin (floor(log2 lines)) and the same language. A bin too small is reported as a shortfall.
+- **Ratio:** a Katz-log 95% interval. It is null, with a reason, when any cell is zero, including when every flagged unit or every control is involved. The counts are always reported.
+- **Output:** every summary, record and ledger line states "association, not causation". Exits are in section 10.
 
 SZZ's accuracy is "an open problem" (f.9). These results are association, never precision or recall.
 
