@@ -972,7 +972,7 @@ prints `severity:` beside its `rule_id:`.
 ### Severity
 
 `severity` is one of `high`, `medium`, `advisory`, or `low`. There is no
-`critical`. Most rules emit a fixed value. Three rules measure a metric against
+`critical`. Most rules emit a fixed value. Four rules measure a metric against
 a threshold and emit `medium` from the threshold up. Two of them escalate to
 `high` when the measured value is at least twice the threshold. Escalation is
 part of the deterministic core, so coach-api baseline jobs, which share it
@@ -986,6 +986,7 @@ not change it:
 | `complexity.cognitive_complexity` | `cognitive_complexity=N` | 15 | 30 |
 | `complexity.max_nesting_depth` | `max_nesting_depth=N` | 4 | 8 |
 | `complexity.branch_density` | `branch_sum=N` | 12 | never; always `medium` |
+| `coupling.deep_relative_import` | `..` segments in the import path | 3 | never; always `medium` |
 
 `complexity.branch_density` does not escalate because `branch_sum` is a
 whole-file additive total: it grows with file length and a split clears it, so
