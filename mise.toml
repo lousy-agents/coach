@@ -363,6 +363,17 @@ go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 "$bin_dir/coach-eval" compare "$@"
 """
 
+# Generates one deterministic Go program for a structural cell. Arguments after `--` reach the command.
+[tasks.eval-generate]
+description = "Generate a Go eval program by cell (--cell N or every dimension flag); prints one JSON line, exit 2 on invalid input"
+run = """
+set -eu
+bin_dir=$(mktemp -d)
+trap 'rm -rf "$bin_dir"' EXIT
+go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
+"$bin_dir/coach-eval" generate "$@"
+"""
+
 # The single authoritative "everything CI proves" task. No longer the ship gate
 # -- GHA runs these as parallel required jobs -- but still the way to prove the
 # whole thing locally when you want to.
