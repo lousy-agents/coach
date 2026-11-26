@@ -147,16 +147,10 @@ func (s censusSummary) status(repoID string) censusStatus {
 // runCensus runs coach-eval census over corpus with coach, adding env to
 // the inherited environment.
 func runCensus(corpus, coach string, env ...string) (compareOutcome, censusSummary) {
-	cmd := exec.Command(coachEvalBinary, "census", "--coach", coach, corpus)
-	cmd.Env = append(os.Environ(), env...)
-	outcome := runCmd(cmd)
+	outcome := runProgram("", append(os.Environ(), env...), coachEvalBinary, "census", "--coach", coach, corpus)
 	var summary censusSummary
 	if outcome.exitCode != 2 {
 		Expect(json.Unmarshal([]byte(outcome.stdout), &summary)).To(Succeed(), "stdout: %s\nstderr: %s", outcome.stdout, outcome.stderr)
 	}
 	return outcome, summary
-}
-
-func commandFor(args ...string) *exec.Cmd {
-	return exec.Command(coachEvalBinary, args...)
 }

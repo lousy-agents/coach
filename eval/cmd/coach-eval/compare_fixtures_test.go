@@ -82,17 +82,16 @@ func runCompareThroughMise(stateRoot string, runIDs ...string) compareOutcome {
 }
 
 func runCommand(stateRoot, dir, name string, args ...string) compareOutcome {
-	cmd := exec.Command(name, args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "XDG_STATE_HOME="+stateRoot)
-	return runCmd(cmd)
+	return runProgram(dir, append(os.Environ(), "XDG_STATE_HOME="+stateRoot), name, args...)
 }
 
-// runCmd runs cmd to completion and returns its exit code and output.
-func runCmd(cmd *exec.Cmd) compareOutcome {
+// runProgram runs name with args in dir and env (nil inherits this
+// process's environment), and returns its exit code and output.
+func runProgram(dir string, env []string, name string, args ...string) compareOutcome {
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd := exec.Command(name, args...)
+	cmd.Dir, cmd.Env = dir, env
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	var exitErr *exec.ExitError
 	if err != nil && !errors.As(err, &exitErr) {

@@ -114,7 +114,7 @@ var _ = Describe("coach-eval census", func() {
 	When("the census input is not usable", func() {
 		DescribeTable("it exits 2, naming the problem",
 			func(problem string, args ...string) {
-				outcome := runCmd(commandFor(args...))
+				outcome := runProgram("", nil, coachEvalBinary, args...)
 				Expect(outcome.exitCode).To(Equal(2))
 				Expect(outcome.stderr).To(ContainSubstring(problem))
 			},
