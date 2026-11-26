@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -129,4 +132,36 @@ func goIn(dir string, args ...string) generateOutcome {
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOTOOLCHAIN=local", "GOPROXY=off", "GOWORK=off")
 	return runCommand(cmd)
+}
+
+func productionShapeViolations(path string, content []byte) []string {
+	parsed, err := parser.ParseFile(token.NewFileSet(), path, content, 0)
+	Expect(err).NotTo(HaveOccurred(), path)
+	var violations []string
+	ast.Inspect(parsed, func(node ast.Node) bool {
+		switch typed := node.(type) {
+		case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+			violations = append(violations, "control flow")
+		case *ast.FuncDecl:
+			violations = append(violations, constructorOrPointerReturn(typed)...)
+		}
+		return true
+	})
+	return violations
+}
+
+func constructorOrPointerReturn(function *ast.FuncDecl) []string {
+	var violations []string
+	if strings.HasPrefix(function.Name.Name, "New") {
+		violations = append(violations, "constructor "+function.Name.Name)
+	}
+	if function.Type.Results == nil {
+		return violations
+	}
+	for _, result := range function.Type.Results.List {
+		if _, pointer := result.Type.(*ast.StarExpr); pointer {
+			violations = append(violations, "pointer return in "+function.Name.Name)
+		}
+	}
+	return violations
 }
