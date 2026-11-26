@@ -150,13 +150,26 @@ func (s censusSummary) status(repoID string) censusStatus {
 	return censusStatus{}
 }
 
-// runCensus runs coach-eval census over corpus with coach, adding env to
-// the inherited environment.
+// runCensus runs coach-eval census over corpus with coach, writing records
+// and the ledger line into a fresh directory, adding env to the inherited
+// environment.
 func runCensus(corpus, coach string, env ...string) (compareOutcome, censusSummary) {
-	outcome := runProgram("", append(os.Environ(), env...), coachEvalBinary, "census", "--coach", coach, corpus)
+	outcome, summary, _ := runCensusInto(GinkgoT().TempDir(), corpus, coach, env...)
+	return outcome, summary
+}
+
+// censusOutputs names where a census run wrote its records and ledger line.
+type censusOutputs struct {
+	censusRoot string
+	ledger     string
+}
+
+func runCensusInto(dir, corpus, coach string, env ...string) (compareOutcome, censusSummary, censusOutputs) {
+	outputs := censusOutputs{censusRoot: filepath.Join(dir, "census"), ledger: filepath.Join(dir, "ledger", "runs.jsonl")}
+	outcome := runProgram("", append(os.Environ(), env...), coachEvalBinary, "census", "--coach", coach, "--census-root", outputs.censusRoot, "--ledger", outputs.ledger, corpus)
 	var summary censusSummary
 	if outcome.exitCode != 2 {
 		Expect(json.Unmarshal([]byte(outcome.stdout), &summary)).To(Succeed(), "stdout: %s\nstderr: %s", outcome.stdout, outcome.stderr)
 	}
-	return outcome, summary
+	return outcome, summary, outputs
 }
