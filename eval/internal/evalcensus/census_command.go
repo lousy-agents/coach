@@ -14,16 +14,16 @@ const (
 	CensusAnalysisFailed = 3
 )
 
-// LedgerWriter appends one census run's line to the ledger at path. The
+// LedgerLine builds one census run's ledger line, newline included. The
 // ledger's schema lives in the tooling ring, which this package may not
-// import, so coach-eval supplies the writer.
-type LedgerWriter func(path string, summary Summary, exit int) error
+// import, so coach-eval supplies the builder.
+type LedgerLine func(summary Summary, exit int) ([]byte, error)
 
 // Census runs `coach-eval census --coach <binary> --census-root <dir>
 // --ledger <runs.jsonl> <corpus.json>`. It appends each rule's status as a
 // record under the census root and the run as a ledger line, then prints the
 // run's summary as JSON.
-func Census(args []string, stdout, stderr io.Writer, writeLedger LedgerWriter) int {
+func Census(args []string, stdout, stderr io.Writer, ledgerLine LedgerLine) int {
 	parsed, err := parseCensusArgs(args)
 	if err != nil {
 		fmt.Fprintf(stderr, "coach-eval census: %v\n", err)
@@ -38,7 +38,7 @@ func Census(args []string, stdout, stderr io.Writer, writeLedger LedgerWriter) i
 	if summary.analysisFailed() {
 		exit = CensusAnalysisFailed
 	}
-	if err := recordRun(parsed, summary, exit, writeLedger); err != nil {
+	if err := recordRun(parsed, summary, exit, ledgerLine); err != nil {
 		fmt.Fprintf(stderr, "coach-eval census: %v\n", err)
 		return CensusInputInvalid
 	}
@@ -51,15 +51,13 @@ func Census(args []string, stdout, stderr io.Writer, writeLedger LedgerWriter) i
 	return exit
 }
 
-func recordRun(parsed censusArgs, summary Summary, exit int, writeLedger LedgerWriter) error {
+func recordRun(parsed censusArgs, summary Summary, exit int, ledgerLine LedgerLine) error {
+	line, err := ledgerLine(summary, exit)
+	if err != nil {
+		return fmt.Errorf("build census ledger line: %w", err)
+	}
 	today := time.Now().UTC().Format(time.DateOnly)
-	if err := AppendCorpusRecords(parsed.censusRoot, summary.CorpusID, StatusRecords(summary, today)); err != nil {
-		return fmt.Errorf("write census records: %w", err)
-	}
-	if err := writeLedger(parsed.ledger, summary, exit); err != nil {
-		return fmt.Errorf("write census ledger line: %w", err)
-	}
-	return nil
+	return AppendRun(parsed.ledger, line, parsed.censusRoot, summary.CorpusID, StatusRecords(summary, today))
 }
 
 func runCorpus(corpusPath, coach string) (Summary, error) {
