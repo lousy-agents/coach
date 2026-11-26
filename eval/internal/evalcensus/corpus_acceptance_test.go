@@ -33,6 +33,15 @@ var _ = Describe("the corpus manifest", func() {
 			Expect(corpus.Repositories[0].ProjectConfig).To(Equal(".lousy-agents/coach.json"))
 			Expect(corpus.Rules[1].Languages).To(Equal([]string{"typescript"}))
 		})
+
+		It("loads a repository's history_until, which a census does not need", func() {
+			manifest := validCorpus()
+			manifest["repositories"].([]any)[0].(map[string]any)["history_until"] = strings.Repeat("b", 40)
+			corpus, err := evalcensus.LoadCorpus(writeJSON(manifest))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(corpus.Repositories[0].HistoryUntil).To(Equal(strings.Repeat("b", 40)))
+			Expect(corpus.Repositories[1].HistoryUntil).To(BeEmpty())
+		})
 	})
 
 	DescribeTable("a malformed manifest is refused, naming the problem",
@@ -89,6 +98,12 @@ var _ = Describe("the corpus manifest", func() {
 		Entry("a rule with an unknown language", func(m map[string]any) {
 			m["rules"].([]any)[0].(map[string]any)["languages"] = []any{"go", "cobol"}
 		}, "language"),
+		Entry("a history_until that is a ref, not a SHA", func(m map[string]any) {
+			m["repositories"].([]any)[0].(map[string]any)["history_until"] = "main"
+		}, "history_until"),
+		Entry("an uppercase history_until", func(m map[string]any) {
+			m["repositories"].([]any)[0].(map[string]any)["history_until"] = strings.Repeat("B", 40)
+		}, "history_until"),
 	)
 
 	When("the file is not JSON", func() {

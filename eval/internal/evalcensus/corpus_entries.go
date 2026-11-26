@@ -26,6 +26,8 @@ func repositoryProblem(repo Repository) string {
 		return "sha is not 40 lowercase hex digits; pin a commit, not a ref"
 	case !languages[repo.Language]:
 		return "language must be go or typescript"
+	case repo.HistoryUntil != "" && !shaPattern.MatchString(repo.HistoryUntil):
+		return "history_until is not 40 lowercase hex digits; pin a commit, not a ref"
 	}
 	return ""
 }

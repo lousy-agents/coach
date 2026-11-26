@@ -8,24 +8,40 @@ import (
 	"strings"
 )
 
-// scanRepository runs Coach's baseline scan in the checked-out repository
-// and turns its report, or its failure, into rule statuses. coach is an
+// CoachRun is one Coach baseline scan of a checkout: its JSON report, or the
+// exit status and the evidence of its failure.
+type CoachRun struct {
+	Report  []byte
+	Exit    int
+	Failure string
+}
+
+// RunCoach runs Coach's baseline scan in the checkout at dir. coach is an
 // absolute path, because the scan runs from inside the checkout.
-func scanRepository(corpus Corpus, repo Repository, coach, dir string) RepositoryResult {
-	result := RepositoryResult{ID: repo.ID, SHA: repo.SHA}
+func RunCoach(repo Repository, coach, dir string) CoachRun {
 	var stdout, stderr bytes.Buffer
 	cmd := exec.Command(coach, coachArgs(repo)...)
 	cmd.Dir = dir
 	cmd.Env = isolatedEnv()
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
-	if err == nil {
-		result.Statuses = StatusesFromReport(corpus, repo, stdout.Bytes())
+	if err := cmd.Run(); err != nil {
+		exit := exitCode(err)
+		return CoachRun{Exit: exit, Failure: fmt.Sprintf("coach exited %d: %s", exit, strings.TrimSpace(stderr.String()))}
+	}
+	return CoachRun{Report: stdout.Bytes()}
+}
+
+// scanRepository turns a Coach scan of the checkout, or its failure, into
+// rule statuses.
+func scanRepository(corpus Corpus, repo Repository, coach, dir string) RepositoryResult {
+	result := RepositoryResult{ID: repo.ID, SHA: repo.SHA}
+	run := RunCoach(repo, coach, dir)
+	if run.Failure == "" {
+		result.Statuses = StatusesFromReport(corpus, repo, run.Report)
 		return result
 	}
-	result.CoachExit = exitCode(err)
-	evidence := fmt.Sprintf("coach exited %d: %s", result.CoachExit, strings.TrimSpace(stderr.String()))
-	result.Statuses = StatusesFromFailure(corpus, repo, evidence)
+	result.CoachExit = run.Exit
+	result.Statuses = StatusesFromFailure(corpus, repo, run.Failure)
 	return result
 }
 

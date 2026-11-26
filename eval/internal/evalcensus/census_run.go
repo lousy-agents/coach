@@ -33,7 +33,7 @@ type RepositoryResult struct {
 // Run checks out every corpus repository before scanning any, so an
 // unreachable SHA stops the run with nothing scanned, then scans each.
 func Run(corpus Corpus, coach string) (Summary, error) {
-	identity, err := identifyCoach(coach)
+	identity, err := IdentifyCoach(coach)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -53,7 +53,9 @@ func Run(corpus Corpus, coach string) (Summary, error) {
 	return summary, nil
 }
 
-func identifyCoach(coach string) (CoachIdentity, error) {
+// IdentifyCoach reads the Coach binary at coach and names it by absolute
+// path and SHA-256.
+func IdentifyCoach(coach string) (CoachIdentity, error) {
 	raw, err := os.ReadFile(coach)
 	if err != nil {
 		return CoachIdentity{}, fmt.Errorf("--coach %s: %w", coach, err)
@@ -70,7 +72,7 @@ func checkoutAll(corpus Corpus, workRoot string) ([]string, error) {
 	dirs := make([]string, len(corpus.Repositories))
 	for i, repo := range corpus.Repositories {
 		dirs[i] = filepath.Join(workRoot, fmt.Sprintf("%02d", i))
-		if err := checkoutRepository(repo, dirs[i]); err != nil {
+		if err := CheckoutRepository(repo, dirs[i]); err != nil {
 			return nil, err
 		}
 	}
