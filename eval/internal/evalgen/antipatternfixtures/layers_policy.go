@@ -9,7 +9,7 @@ const layerPolicyPath = ".lousy-agents/coach.json"
 
 // layerPackages are the packages a layer holds, the first of which every
 // layer fixture builds on.
-var layerPackages = []string{"orders", "billing", "audit"}
+var layerPackages = [...]string{"orders", "billing", "audit"}
 
 type policyLayer struct {
 	Name     string   `json:"name"`

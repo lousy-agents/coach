@@ -17,8 +17,8 @@ var layerRoles = map[int][]string{
 const (
 	minLayers = 3
 	maxLayers = 5
-	// maxPackagesPerRole may not exceed len(layerPackages): a layer fixture names one package for each.
-	maxPackagesPerRole = 3
+	// maxPackagesPerRole is the packages layerPackages names: a layer holds at most one of each.
+	maxPackagesPerRole = len(layerPackages)
 )
 
 // observeLayers reads the layer count the profile records in the generator's
