@@ -1,9 +1,6 @@
 package evalgen_test
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"strings"
 	"testing"
 
@@ -13,13 +10,24 @@ import (
 // The generated base has to stay below every Coach threshold by construction, so no entry kind, direction or
 // field type may add a branch, a constructor or a pointer return.
 func TestEveryCellEmitsBranchFreeProductionCodeWithoutPointerReturns(t *testing.T) {
-	for index := 0; index < evalgen.CellCount; index++ {
-		for _, seed := range []int64{0, 3} {
-			for _, violation := range violationsOfCell(t, index, seed) {
-				t.Errorf("cell %d seed %d: %s", index, seed, violation)
-			}
+	for _, run := range cellRuns() {
+		for _, violation := range violationsOfCell(t, run.index, run.seed) {
+			t.Errorf("cell %d seed %d: %s", run.index, run.seed, violation)
 		}
 	}
+}
+
+type cellRun struct {
+	index int
+	seed  int64
+}
+
+func cellRuns() []cellRun {
+	runs := make([]cellRun, 0, 2*evalgen.CellCount)
+	for index := 0; index < evalgen.CellCount; index++ {
+		runs = append(runs, cellRun{index, 0}, cellRun{index, 3})
+	}
+	return runs
 }
 
 func violationsOfCell(t *testing.T, index int, seed int64) []string {
@@ -38,55 +46,6 @@ func violationsOfCell(t *testing.T, index int, seed int64) []string {
 			for _, violation := range shapeViolations(t, path, content) {
 				violations = append(violations, path+": "+violation)
 			}
-		}
-	}
-	return violations
-}
-
-func shapeViolations(t *testing.T, path string, content []byte) []string {
-	t.Helper()
-	parsed, err := parser.ParseFile(token.NewFileSet(), path, content, 0)
-	if err != nil {
-		t.Fatalf("%s: %v", path, err)
-	}
-	var violations []string
-	ast.Inspect(parsed, func(node ast.Node) bool {
-		violations = append(violations, nodeViolations(node)...)
-		return true
-	})
-	return violations
-}
-
-func nodeViolations(node ast.Node) []string {
-	switch typed := node.(type) {
-	case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.GoStmt, *ast.DeferStmt:
-		return []string{"control flow"}
-	case *ast.UnaryExpr:
-		return addressOf(typed)
-	case *ast.FuncDecl:
-		return funcViolations(typed)
-	}
-	return nil
-}
-
-func addressOf(expression *ast.UnaryExpr) []string {
-	if expression.Op == token.AND {
-		return []string{"address-of"}
-	}
-	return nil
-}
-
-func funcViolations(function *ast.FuncDecl) []string {
-	var violations []string
-	if strings.HasPrefix(function.Name.Name, "New") {
-		violations = append(violations, "constructor "+function.Name.Name)
-	}
-	if function.Type.Results == nil {
-		return violations
-	}
-	for _, result := range function.Type.Results.List {
-		if _, pointer := result.Type.(*ast.StarExpr); pointer {
-			violations = append(violations, "pointer return in "+function.Name.Name)
 		}
 	}
 	return violations
