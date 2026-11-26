@@ -278,6 +278,15 @@ var _ = Describe("the static call depth of a profile's entries (AC-2.4, AC-2.8)"
 		Entry("an indented module line", "  module example.invalid/one\n\ngo 1.26.0\n"),
 	)
 
+	It("extracts a checkout with no go.mod, following only same-package calls", func() {
+		root := filepath.Join(GinkgoT().TempDir(), "nomod")
+		writeFile(filepath.Join(root, "a", "a.go"), "package a\n\nfunc Entry() { helper() }\n\nfunc helper() {}\n")
+
+		profile := decodeProfile(extract(root))
+
+		Expect(measure(profile, "dimensions", "depth")).To(Equal(map[string]any{"1": 1.0}))
+	})
+
 	It("lists the out-of-range shapes in a fixed order: depth, layers, packages", func() {
 		profile := profileOfFiles(map[string]string{"a/a.go": "package a\n\nfunc Entry() {}\n"})
 
