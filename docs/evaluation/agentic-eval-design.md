@@ -150,7 +150,7 @@ The analysis is intention to treat.
 - a literal branch;
 - a policy edit;
 - a dependency change that is not on the whitelist;
-- the static check finding non-test use of inherited descriptors, `os.NewFile`, `/proc/self/fd` or `process.binding`, or a write to stdout or an exit during initialisation.
+- the static check finding non-test use of inherited descriptors, `os.NewFile`, `/proc/self/fd`, `/proc/<pid>/fd`, `/proc/<pid>/mem`, `/dev/fd/`, a descriptor literal of 3 or more, in any base, passed to a Node `fs` descriptor call or to a Go `syscall`, `golang.org/x/sys/unix` or cgo call, or `process.binding`, or a write to stdout or an exit during initialisation. The static check is best effort: it flags these named patterns, and no static check can close every route. The binding control against reading the grading channel is the `evalgrade` nonce, with the nonce descriptor (fd 3) closed at load and the fd 4 verifier (section 7). That control exists today for TypeScript only. The Go test-binary harness that carries the nonce for Go is not built yet (#791), and until it is, Go trials have only the static check.
 
 **Target predicates (refactor).** The oracle is the unmutated program. Each predicate is the inverse of an operator's violation (d.4), with 3–8 predicates per template (d, proposed grader).
 
@@ -338,7 +338,7 @@ Generated code is trusted, so **it runs natively, without Docker**. Docker isola
 6. **Mutation testing**, run on the **unmutated program** (for the PASS_TO_PASS suite) and the **feature oracle** (for FAIL_TO_PASS) **only**, never on detection fixtures:
    - **Scope:** packages reachable in the import graph from `api_surface`.
    - **Score:** f.2's detected ÷ valid, at least 0.8, with NOT COVERED at most 10% of valid (**our choice**; the threshold sits below 1 by our inference from equivalent mutants, f.3).
-   - **Tools:** Gremlins is pinned by a `tool` directive in `eval/go.mod`, like gocognit (section 4), not through mise, so CI never installs it. It resolves offline from the module cache, and resolution fails with exit 2, without fetching, when the cache lacks it. StrykerJS is pinned through mise.
+   - **Tools:** Gremlins will be pinned by a `tool` directive in `eval/go.mod` when 780c-2 lands, like gocognit (section 4), not through mise, so CI never installs it. It will resolve offline from the module cache, and resolution will fail with exit 2, without fetching, when the cache lacks it. StrykerJS will be pinned through mise when the TypeScript mutation gate lands; it is not pinned today.
    - **Caching and skipping:** the gate's result is cached by the program's content hash plus the Gremlins version. `--no-mutation` skips the gate, is recorded as `mutation_checked: false`, and is refused for the held-out panel.
      - Gremlins (f.12): KILLED + TIMED OUT are detected; LIVED and NOT COVERED are undetected; NOT VIABLE is excluded.
      - StrykerJS (f.13), per f.2's states: killed and timeout are detected; survived and no coverage are undetected; compile and runtime errors are excluded.
@@ -701,7 +701,7 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 
 - **The decision record** `eval/protocol/decisions/15.15.json`. It holds the permission, the model, the caps (trials, tokens, turns, timeout, run hours) and the weekly-trials figure.
 - **Docker**, for grading and for `sbx` under (c).
-- **Pinned tools**, through mise: Node, the TS compiler and StrykerJS. gocognit and Gremlins are pinned by `tool` directives in `eval/go.mod` (sections 4 and 6).
+- **Pinned tools**: Node, through mise. The TS compiler is pinned in `js/semantics/package.json` and installed by `mise run js-install`, not through mise `[tools]`. StrykerJS will be pinned through mise when the TypeScript mutation gate lands; it is not pinned today. gocognit is pinned by a `tool` directive in `eval/go.mod` (section 4), and Gremlins will be too when 780c-2 lands (section 6).
 - **`claude`**, at the recorded version, with a valid credential.
 - **No API-key path:** no API-key variable, no `apiKeyHelper`, and no `sbx` secret.
 - **`EVAL_ORACLE_DIR`.**

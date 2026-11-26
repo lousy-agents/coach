@@ -19,16 +19,25 @@ const (
 // RuleStatus is one rule's census outcome on one repository. Adjudicable
 // counts the findings that carry evidence a reviewer can judge.
 type RuleStatus struct {
-	RuleID      string `json:"rule_id"`
-	Status      Status `json:"analysis_status"`
-	Findings    int    `json:"findings"`
-	Adjudicable int    `json:"adjudicable"`
-	Evidence    string `json:"evidence,omitempty"`
+	RuleID      string   `json:"rule_id"`
+	Status      Status   `json:"analysis_status"`
+	Findings    int      `json:"findings"`
+	Adjudicable int      `json:"adjudicable"`
+	Frame       string   `json:"frame,omitempty"`
+	SampledKeys []string `json:"sampled_keys,omitempty"`
+	Evidence    string   `json:"evidence,omitempty"`
 }
 
 type reportSignal struct {
-	RuleID   string `json:"rule_id"`
-	Evidence string `json:"evidence"`
+	RuleID      string `json:"rule_id"`
+	Path        string `json:"path"`
+	Subject     string `json:"subject"`
+	Fingerprint string `json:"fingerprint"`
+	Evidence    string `json:"evidence"`
+	Location    struct {
+		StartRow uint `json:"start_row"`
+		EndRow   uint `json:"end_row"`
+	} `json:"location"`
 }
 
 // StatusesFromReport derives each corpus rule's status from Coach's JSON
@@ -53,15 +62,18 @@ func ruleStatus(rule Rule, repo Repository, signals []reportSignal) RuleStatus {
 		status.Status = OutOfScope
 		return status
 	}
+	var findings []reportSignal
 	for _, signal := range signals {
-		if signal.RuleID != rule.RuleID {
+		if signal.RuleID != rule.RuleID || !admitted(repo, signal.Path) {
 			continue
 		}
+		findings = append(findings, signal)
 		status.Findings++
 		if signal.Evidence != "" {
 			status.Adjudicable++
 		}
 	}
+	status.Frame, status.SampledKeys = drawSample(findings, sampleSeed(repo))
 	status.Status = countedStatus(status)
 	return status
 }

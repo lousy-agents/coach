@@ -34,7 +34,7 @@ func RunCoach(repo Repository, coach, dir string) CoachRun {
 // scanRepository turns a Coach scan of the checkout, or its failure, into
 // rule statuses.
 func scanRepository(corpus Corpus, repo Repository, coach, dir string) RepositoryResult {
-	result := RepositoryResult{ID: repo.ID, SHA: repo.SHA}
+	result := RepositoryResult{ID: repo.ID, SHA: repo.SHA, Sample: &RepositorySample{Seed: sampleSeed(repo)}}
 	run := RunCoach(repo, coach, dir)
 	if run.Failure == "" {
 		result.Statuses = StatusesFromReport(corpus, repo, run.Report)

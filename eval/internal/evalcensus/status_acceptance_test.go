@@ -42,7 +42,10 @@ var _ = Describe("the analysis_status of each rule on a repository", func() {
 			report := coachReport(repeated(12, signal{RuleID: "complexity.cognitive_complexity", Evidence: "cognitive_complexity=17"})...)
 
 			status := statusOf(evalcensus.StatusesFromReport(corpus, goRepo, report), "complexity.cognitive_complexity")
-			Expect(status).To(Equal(evalcensus.RuleStatus{RuleID: "complexity.cognitive_complexity", Status: evalcensus.Measured, Findings: 12, Adjudicable: 12}))
+			Expect(status.Status).To(Equal(evalcensus.Measured))
+			Expect(status.Findings).To(Equal(12))
+			Expect(status.Adjudicable).To(Equal(12))
+			Expect(status.Frame).To(Equal(evalcensus.FrameAllFindings))
 		})
 	})
 
@@ -128,13 +131,14 @@ var _ = Describe("the analysis_status records of a census run", func() {
 			CorpusID: "pilot",
 			Coach:    evalcensus.CoachIdentity{Path: "/opt/coach", SHA256: "ab"},
 			Repositories: []evalcensus.RepositoryResult{{ID: "coach", SHA: fixtureSHA, Statuses: []evalcensus.RuleStatus{
-				{RuleID: "complexity.cognitive_complexity", Status: evalcensus.NotAdjudicableOnly, Findings: 3, Adjudicable: 0},
+				{RuleID: "complexity.cognitive_complexity", Status: evalcensus.NotAdjudicableOnly, Findings: 3, Adjudicable: 0,
+					Frame: evalcensus.FrameAllFindings, SampledKeys: []string{"fp1", "fp2", "fp3"}},
 			}}},
 		}
 
 		records := evalcensus.StatusRecords(summary, "2026-11-26")
 
 		Expect(records).To(HaveLen(1))
-		Expect(records[0].Rationale).To(Equal("findings=3 adjudicable=0"))
+		Expect(records[0].Rationale).To(Equal("findings=3 adjudicable=0 sampled=3"))
 	})
 })

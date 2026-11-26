@@ -1,8 +1,6 @@
 package evalhistory
 
 import (
-	"slices"
-
 	"github.com/lousy-agents/coach/eval/internal/evalcensus"
 )
 
@@ -33,6 +31,10 @@ func repositoryHistory(corpus evalcensus.Corpus, repo evalcensus.Repository, coa
 }
 
 func (result *RepositoryHistory) compare(corpus evalcensus.Corpus, dir string, findings []finding, seed int64) error {
+	ruleIDs, err := goRuleIDs(corpus)
+	if err != nil {
+		return err
+	}
 	inventory, err := GoInventory(dir, result.Since)
 	if err != nil {
 		return err
@@ -46,37 +48,11 @@ func (result *RepositoryHistory) compare(corpus evalcensus.Corpus, dir string, f
 		return err
 	}
 	result.countFixes(scan, involved)
-	for _, rule := range corpus.Rules {
-		if !slices.Contains(rule.Languages, "go") {
-			continue
-		}
-		ruleResult, placed := compareRule(inventory, involved, findings, rule.RuleID, seed)
-		result.Rules = append(result.Rules, ruleResult)
-		result.findings = append(result.findings, placed...)
+	rules, placed, err := compareRules(ruleIDs, inventory, involved, findings, seed)
+	if err != nil {
+		return err
 	}
+	result.Rules = append(result.Rules, rules...)
+	result.findings = append(result.findings, placed...)
 	return nil
-}
-
-func involveAll(dir, since string, inventory Inventory, fixes []FixCommit) (involvements, error) {
-	functions, err := Involve(dir, since, inventory.Functions, fixes)
-	if err != nil {
-		return involvements{}, err
-	}
-	files, err := Involve(dir, since, inventory.Files, fixes)
-	if err != nil {
-		return involvements{}, err
-	}
-	return involvements{functions: functions, files: files}, nil
-}
-
-func (result *RepositoryHistory) countFixes(scan FixScan, involved involvements) {
-	result.Commits, result.Fixes = scan.Commits, len(scan.Fixes)
-	if scan.Commits == 0 {
-		result.MatchRateNullReason = "no commits between since and until"
-	} else {
-		rate := float64(len(scan.Fixes)) / float64(scan.Commits)
-		result.MatchRate = &rate
-	}
-	result.UnmappedFixes = UnmappedFixes{Function: involved.functions.Unmapped, File: involved.files.Unmapped}
-	result.UnprocessedFixes = append(result.UnprocessedFixes, involved.functions.Unprocessed...)
 }

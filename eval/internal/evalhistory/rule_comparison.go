@@ -10,8 +10,11 @@ type placedFinding struct {
 
 // compareRule compares ruleID's flagged units with controls drawn from the
 // unflagged units at the same level.
-func compareRule(inventory Inventory, involved involvements, findings []finding, ruleID string, seed int64) (RuleResult, []placedFinding) {
-	flagged := FlaggedUnits(inventory, signalsOf(findings), ruleID)
+func compareRule(inventory Inventory, involved involvements, findings []finding, ruleID string, seed int64) (RuleResult, []placedFinding, error) {
+	flagged, err := FlaggedUnits(inventory, signalsOf(findings), ruleID)
+	if err != nil {
+		return RuleResult{}, nil, err
+	}
 	pool, involvement := inventory.Functions, involved.functions
 	if flagged.Level == FileLevel {
 		pool, involvement = inventory.Files, involved.files
@@ -25,7 +28,7 @@ func compareRule(inventory Inventory, involved involvements, findings []finding,
 	}
 	association := RiskRatio(result.FlaggedInvolved, result.Flagged, result.ControlsInvolved, result.Controls)
 	result.RiskRatio, result.Low, result.High, result.Reason = association.RiskRatio, association.Low, association.High, association.Reason
-	return result, placeFindings(inventory, involvement, findings, ruleID, flagged.Level)
+	return result, placeFindings(inventory, involvement, findings, ruleID, flagged.Level), nil
 }
 
 func countInvolved(involvement Involvement, units []int) int {

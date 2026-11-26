@@ -61,7 +61,7 @@ The direction is enforced at two grains.
 | generation | `eval/internal/evalgen` |
 | detection | `eval/internal/evaldetect` |
 | grading | `eval/internal/evalgrade` |
-| real-code | `eval/internal/evalhistory`, `eval/internal/evalcensus` |
+| real-code | `eval/internal/evalhistory`, `eval/internal/evalcensus`, `eval/internal/evalpatterns` |
 
 The evaluation rings fence each other: generation and detection may not import each other, neither may import grading, grading may import only detection among them, and real-code may not import generation or grading, nor be imported by them. These fences keep a grader from sharing code with the generator whose output it checks (`docs/evaluation/agentic-eval-design.md` §9).
 
