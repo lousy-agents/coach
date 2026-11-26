@@ -32,8 +32,9 @@ func Generate(args []string, stdout, stderr io.Writer) int {
 	if err != nil && !errors.Is(err, errSlotExhausted) {
 		return failed(stderr, exitFor(err), err)
 	}
-	if run.tally.exceeded() {
-		fmt.Fprintf(stderr, "coach-eval generate: %s\n", run.tally.message())
+	exhausted := errors.Is(err, errSlotExhausted)
+	if exhausted || run.tally.exceeded() {
+		fmt.Fprintf(stderr, "coach-eval generate: %s\n", run.tally.message(exhausted))
 		return GenerateRejectedMost
 	}
 	for _, output := range lines {

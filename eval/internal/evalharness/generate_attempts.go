@@ -36,7 +36,7 @@ func (r *generateRun) generateAndSave(cell evalgen.Cell, key string) (evalgen.Lo
 // could not run, which is not a rejection.
 func (r *generateRun) validate(program evalgen.Program, seed int64) (string, error) {
 	for _, step := range evalgen.ValidationSteps {
-		if r.faults.rejectsAt(step, seed) {
+		if r.faults.rejectsAt(step, seed, program.Cell.Index()) {
 			return step, nil
 		}
 	}

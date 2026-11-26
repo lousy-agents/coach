@@ -1,8 +1,13 @@
 package evalharness
 
-// faults maps a validation step to the seeds it rejects regardless of the program.
-type faults map[string]map[int64]bool
+// faults is one injected rejection: a validation step that rejects the given seeds, in every cell or in one.
+type faults struct {
+	step    string
+	seeds   map[int64]bool
+	cell    int
+	allCell bool
+}
 
-func (f faults) rejectsAt(step string, seed int64) bool {
-	return f[step][seed]
+func (f faults) rejectsAt(step string, seed int64, cell int) bool {
+	return f.step == step && f.seeds[seed] && (f.allCell || f.cell == cell)
 }
