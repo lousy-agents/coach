@@ -2,6 +2,7 @@ package evalhistory
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/lousy-agents/coach/eval/internal/evalcensus"
 )
@@ -11,6 +12,9 @@ import (
 // own compiler on the host until the pinned image (#832) exists.
 func refuseUnusable(corpus evalcensus.Corpus) error {
 	for _, repo := range corpus.Repositories {
+		if info, err := os.Stat(repo.Path); err != nil || !info.IsDir() {
+			return fmt.Errorf("repository %q path %s is not a local directory; the history reads only local clones and never fetches", repo.ID, repo.Path)
+		}
 		if repo.HistoryUntil == "" {
 			return fmt.Errorf("repository %q has no history_until; pin the last commit the history reads", repo.ID)
 		}

@@ -399,6 +399,17 @@ go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 "$bin_dir/coach-eval" census --coach "$bin_dir/coach" --census-root eval/census --ledger eval/ledger/runs.jsonl "$@"
 """
 
+[tasks.eval-history]
+description = "Trace a pinned corpus's later fixes to Coach's findings, offline; exit 0 complete, 2 an input unusable, a SHA unreachable or --online, 3 a repository's analysis failed"
+run = """
+set -eu
+bin_dir=$(mktemp -d)
+trap 'rm -rf "$bin_dir"' EXIT
+go build -o "$bin_dir/coach" ./cmd/coach
+go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
+"$bin_dir/coach-eval" history --coach "$bin_dir/coach" --census-root eval/census --ledger eval/ledger/runs.jsonl "$@"
+"""
+
 # The single authoritative "everything CI proves" task. No longer the ship gate
 # -- GHA runs these as parallel required jobs -- but still the way to prove the
 # whole thing locally when you want to.

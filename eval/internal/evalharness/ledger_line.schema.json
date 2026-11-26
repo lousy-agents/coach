@@ -15,7 +15,11 @@
     {
       "if": {"properties": {"kind": {"const": "census"}}, "required": ["kind"]},
       "then": {"properties": {"run": {"$ref": "census_run.schema.json"}}},
-      "else": {"properties": {"run": {"$ref": "run.schema.json"}}}
+      "else": {
+        "if": {"properties": {"kind": {"const": "history"}}, "required": ["kind"]},
+        "then": {"properties": {"run": {"$ref": "history_run.schema.json"}}},
+        "else": {"properties": {"run": {"$ref": "run.schema.json"}}}
+      }
     }
   ]
 }

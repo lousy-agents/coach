@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "coach-eval history run, schema version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "corpus_id", "coach", "seed", "controls_per_flagged", "fix_pattern", "statement", "repositories", "exit"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "run_id": {"type": "string", "minLength": 1},
+    "corpus_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+    "coach": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "seed": {"type": "integer"},
+    "controls_per_flagged": {"type": "integer", "minimum": 1},
+    "fix_pattern": {"type": "string", "minLength": 1},
+    "statement": {"type": "string", "pattern": "association, not causation"},
+    "repositories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "since", "until", "coach_exit", "commits", "fixes", "match_rate", "unmapped_fixes", "unprocessed_fixes", "rules"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "since": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+          "until": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+          "coach_exit": {"type": "integer"},
+          "evidence": {"type": "string"},
+          "commits": {"type": "integer", "minimum": 0},
+          "fixes": {"type": "integer", "minimum": 0},
+          "match_rate": {"type": "number", "minimum": 0, "maximum": 1},
+          "unmapped_fixes": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["function", "file"],
+            "properties": {
+              "function": {"type": "integer", "minimum": 0},
+              "file": {"type": "integer", "minimum": 0}
+            }
+          },
+          "unprocessed_fixes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["sha", "reason"],
+              "properties": {
+                "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+                "reason": {"type": "string", "minLength": 1}
+              }
+            }
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["rule_id", "level", "flagged", "flagged_involved", "controls", "controls_involved", "control_shortfall", "unplaced_findings", "risk_ratio", "ci95_low", "ci95_high"],
+              "properties": {
+                "rule_id": {"type": "string", "minLength": 1},
+                "level": {"enum": ["function", "file"]},
+                "flagged": {"type": "integer", "minimum": 0},
+                "flagged_involved": {"type": "integer", "minimum": 0},
+                "controls": {"type": "integer", "minimum": 0},
+                "controls_involved": {"type": "integer", "minimum": 0},
+                "control_shortfall": {"type": "integer", "minimum": 0},
+                "unplaced_findings": {"type": "integer", "minimum": 0},
+                "risk_ratio": {"type": ["number", "null"]},
+                "ci95_low": {"type": ["number", "null"]},
+                "ci95_high": {"type": ["number", "null"]},
+                "null_reason": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "exit": {"enum": [0, 3]}
+  }
+}
