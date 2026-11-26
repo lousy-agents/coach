@@ -51,7 +51,7 @@ func targetProblem(target Target) string {
 		return "target.rule_id is empty"
 	case target.Path == "":
 		return "target.path is empty"
-	case target.Lines[0] < 1 || target.Lines[1] < target.Lines[0]:
+	case target.Lines != nil && (target.Lines[0] < 1 || target.Lines[1] < target.Lines[0]):
 		return "target.lines is not a range starting at 1 or later"
 	}
 	return ""

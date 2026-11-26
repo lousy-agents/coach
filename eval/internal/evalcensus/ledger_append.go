@@ -3,6 +3,8 @@ package evalcensus
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -42,12 +44,21 @@ func appendLines(path string, records []Record) error {
 	if err != nil {
 		return err
 	}
-	if endsMidLine(file) {
-		lines = *bytes.NewBuffer(append([]byte{'\n'}, lines.Bytes()...))
-	}
-	if _, err := file.Write(lines.Bytes()); err != nil {
+	size, err := file.Seek(0, io.SeekEnd)
+	if err != nil {
 		file.Close()
 		return err
 	}
+	if endsMidLine(file) {
+		lines = *bytes.NewBuffer(append([]byte{'\n'}, lines.Bytes()...))
+	}
+	if _, err := writeLedger(file, lines.Bytes()); err != nil {
+		return errors.Join(err, file.Truncate(size), file.Close())
+	}
 	return file.Close()
+}
+
+// writeLedger writes an append's bytes to the open ledger.
+var writeLedger = func(file *os.File, data []byte) (int, error) {
+	return file.Write(data)
 }
