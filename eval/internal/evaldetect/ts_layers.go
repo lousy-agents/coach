@@ -1,14 +1,10 @@
 package evaldetect
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 )
-
-var tsSourceSuffixes = []string{".ts", ".tsx", ".mts", ".cts"}
 
 // TSLayerViolations reports every import in a TS file under root that
 // crosses one of the policy's forbidden edges. It lexes and resolves imports
@@ -31,18 +27,9 @@ func TSLayerViolations(root string, policy Policy) ([]Finding, error) {
 	return policy.violations(edges), nil
 }
 
-func isTSSource(name string) bool {
-	for _, suffix := range tsSourceSuffixes {
-		if strings.HasSuffix(name, suffix) {
-			return true
-		}
-	}
-	return false
-}
-
 func tsFileEdges(resolver tsResolver, rel string) ([]importEdge, error) {
-	if strings.HasSuffix(rel, ".tsx") {
-		return nil, fmt.Errorf("%w: %s: a .tsx source; JSX is outside the subset the lexer reads", ErrRefused, rel)
+	if err := refuseJSX(rel); err != nil {
+		return nil, err
 	}
 	src, err := os.ReadFile(filepath.Join(resolver.root, filepath.FromSlash(rel)))
 	if err != nil {
