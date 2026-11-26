@@ -170,6 +170,20 @@ var _ = Describe("a history run over a pinned corpus", func() {
 		})
 	})
 
+	When("a production Go file at the census SHA does not parse", func() {
+		It("marks the repository's analysis failed, naming the file, and writes no record for it", func() {
+			h.commit("docs: a broken file", map[string]string{"p/broken.go": "package p\n\nfunc {\n"})
+			until = h.commit("fix: B again", map[string]string{"p/s.go": replaceLine(unitsSource, 8, "\tx := 21")})
+			broken := corpusFor(h, h.git("rev-parse", "HEAD~1"), until, goRule(cognitive))
+			summary, err := evalhistory.Run(broken, fakeCoach(signals), 7)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(summary.AnalysisFailed()).To(BeTrue())
+			Expect(summary.Repositories[0].Evidence).To(ContainSubstring("p/broken.go"))
+			Expect(summary.Repositories[0].Rules).To(BeEmpty())
+			Expect(evalhistory.Records(summary, "2026-11-26")).To(BeEmpty())
+		})
+	})
+
 	When("Coach's output is not a JSON report", func() {
 		It("marks the repository's analysis failed", func() {
 			summary, err := evalhistory.Run(corpus, fakeCoachPrinting("not json"), 7)
