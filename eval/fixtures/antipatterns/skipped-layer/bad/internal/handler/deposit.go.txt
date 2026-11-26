@@ -1,0 +1,17 @@
+package handler
+
+import (
+	"database/sql"
+	"net/http"
+
+	"example.com/accounts/internal/repository"
+)
+
+// Deposit is the HTTP handler for a deposit. It calls the repository itself, past the service, so the rule that every
+// deposit is checked against the account's limits lives nowhere, and the handler grows its own copy of whatever it needs.
+func Deposit(w http.ResponseWriter, r *http.Request) {
+	var db *sql.DB
+	if _, err := repository.Find(db, r.URL.Query().Get("id")); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}

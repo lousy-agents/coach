@@ -1,0 +1,20 @@
+package repository
+
+import "database/sql"
+
+// Account is a stored account row.
+type Account struct {
+	ID      string
+	Balance int
+}
+
+// Find loads an account by id.
+func Find(db *sql.DB, id string) (Account, error) {
+	row, err := db.Query("SELECT id, balance FROM accounts WHERE id = $1", id)
+	if err != nil {
+		return Account{}, err
+	}
+	defer row.Close()
+	account := Account{ID: id}
+	return account, row.Err()
+}

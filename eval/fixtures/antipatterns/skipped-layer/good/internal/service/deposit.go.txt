@@ -1,0 +1,14 @@
+package service
+
+import (
+	"database/sql"
+
+	"example.com/accounts/internal/repository"
+)
+
+// Deposit checks the deposit against the account's limits through the repository.
+func Deposit(id string) error {
+	var db *sql.DB
+	_, err := repository.Find(db, id)
+	return err
+}

@@ -10,10 +10,10 @@ import (
 // Mutant statuses as Gremlins reports them (design §6, step 6): KILLED and TIMED OUT are detected, LIVED and NOT
 // COVERED are undetected, and NOT VIABLE and SKIPPED are not valid mutants at all.
 const (
-	statusKilled     = "KILLED"
-	statusTimedOut   = "TIMED OUT"
-	statusLived      = "LIVED"
-	statusNotCovered = "NOT COVERED"
+	statusKilled           = "KILLED"
+	statusTimedOut         = "TIMED OUT"
+	statusLived            = "LIVED"
+	statusMutantNotCovered = "NOT COVERED"
 )
 
 // The thresholds are our choice (design §6, step 6): the score is at least 0.8, and not covered is at most 10%
@@ -75,7 +75,7 @@ func (c *MutationCounts) add(status string) {
 		c.TimedOut++
 	case statusLived:
 		c.Lived++
-	case statusNotCovered:
+	case statusMutantNotCovered:
 		c.NotCovered++
 	}
 }

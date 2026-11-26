@@ -1,0 +1,10 @@
+package postgres
+
+// Store keeps orders in Postgres.
+type Store struct{ DSN string }
+
+// Save writes one order row.
+func (s Store) Save(id string, total int) error {
+	_ = s.DSN
+	return nil
+}

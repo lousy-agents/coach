@@ -69,6 +69,7 @@ func EvaluateGoLayerBypass(result domain.LayerBypassResult, ruleVersion, backend
 			Message: "go layer-bypass search coverage is incomplete; absence of a witness for a source/sink pair in this run does not mean no bypass exists",
 		})
 	}
+	diagnostics = append(diagnostics, requiredLayerUnmatchedDiagnostics(result.Coverage)...)
 
 	witnesses := highConfidenceWitnessesBySourceSink(result.Witnesses)
 	if len(witnesses) == 0 {
@@ -100,6 +101,7 @@ func EvaluateTypeScriptLayerBypass(result domain.LayerBypassResult, ruleVersion,
 			Message: "typescript layer-bypass search coverage is incomplete; absence of a witness for a source/sink pair in this run does not mean no bypass exists",
 		})
 	}
+	diagnostics = append(diagnostics, requiredLayerUnmatchedDiagnostics(result.Coverage)...)
 
 	witnesses := highConfidenceWitnessesBySourceSink(result.Witnesses)
 	if len(witnesses) == 0 {

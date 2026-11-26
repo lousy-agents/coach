@@ -65,7 +65,9 @@ var _ = Describe("coach-eval history", func() {
 			Expect(repo["unmapped_fixes"]).To(Equal(map[string]any{"function": 0.0, "file": 0.0}))
 			rule := repo["rules"].([]any)[0].(map[string]any)
 			Expect([]any{rule["flagged"], rule["flagged_involved"], rule["controls"], rule["controls_involved"]}).To(Equal([]any{2.0, 1.0, 3.0, 1.0}))
+			Expect(rule["unplaced_reasons"]).To(BeEmpty(), "every finding was placed, so no reason is recorded")
 			Expect(rule["risk_ratio"]).To(BeNumerically("~", 1.5, 1e-9))
+			Expect(rule["unplaced_findings"]).To(BeEquivalentTo(0), "the copy under eval/ is outside the census scope, so its findings are dropped rather than left unplaced")
 		})
 	})
 
@@ -78,6 +80,31 @@ var _ = Describe("coach-eval history", func() {
 			Expect(repo["commits"]).To(BeEquivalentTo(0))
 			Expect(repo).To(HaveKeyWithValue("match_rate", BeNil()))
 			Expect(repo["match_rate_null_reason"]).To(Equal("no commits between since and until"))
+		})
+	})
+
+	When("the corpus names a Go rule the placement table does not hold", func() {
+		It("refuses the repository before any rule is compared, names the rule, and writes no rule for it", func() {
+			corpus := writeHistoryCorpusRules([]string{"complexity.cognitive_complexity", "architecture.made_up"}, historyRepoEntry{ID: "r", Path: path, SHA: since, HistoryUntil: until, Language: "go"})
+
+			outcome, outputs := runHistory(nil, corpus, "--seed", "7")
+
+			Expect(outcome.exitCode).To(Equal(3), outcome.stderr)
+			repo := jsonLines(outputs.ledger)[0]["run"].(map[string]any)["repositories"].([]any)[0].(map[string]any)
+			Expect(repo["evidence"]).To(ContainSubstring("architecture.made_up"))
+			Expect(repo["rules"]).To(BeEmpty(), "the rule before it is not written either")
+		})
+	})
+
+	When("the corpus names Go rules in an order that is not alphabetical", func() {
+		It("writes the rules in the corpus's order, so the ledger line follows it", func() {
+			corpus := writeHistoryCorpusRules([]string{"complexity.cognitive_complexity", "complexity.branch_density"}, historyRepoEntry{ID: "r", Path: path, SHA: since, HistoryUntil: until, Language: "go"})
+
+			outcome, outputs := runHistory(nil, corpus, "--seed", "7")
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			rules := jsonLines(outputs.ledger)[0]["run"].(map[string]any)["repositories"].([]any)[0].(map[string]any)["rules"].([]any)
+			Expect([]any{rules[0].(map[string]any)["rule_id"], rules[1].(map[string]any)["rule_id"]}).To(Equal([]any{"complexity.cognitive_complexity", "complexity.branch_density"}))
 		})
 	})
 

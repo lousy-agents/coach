@@ -1,0 +1,40 @@
+package shop
+
+// Manager does everything the shop does: it keeps customers, stock, prices, mail and the books.
+type Manager struct {
+	Customers  map[string]string
+	Stock      map[string]int
+	Prices     map[string]int
+	Outbox     []string
+	Ledger     []int
+	TaxRate    int
+	SMTPServer string
+	LogLevel   string
+}
+
+// AddCustomer registers a customer.
+func (m *Manager) AddCustomer(id, name string) { m.Customers[id] = name }
+
+// Restock adds stock for an item.
+func (m *Manager) Restock(item string, n int) { m.Stock[item] += n }
+
+// SetPrice sets an item's price.
+func (m *Manager) SetPrice(item string, price int) { m.Prices[item] = price }
+
+// Quote prices n of an item with tax.
+func (m *Manager) Quote(item string, n int) int { return m.Prices[item] * n * (100 + m.TaxRate) / 100 }
+
+// Notify queues a message.
+func (m *Manager) Notify(to, text string) { m.Outbox = append(m.Outbox, to+": "+text) }
+
+// Book records a payment.
+func (m *Manager) Book(amount int) { m.Ledger = append(m.Ledger, amount) }
+
+// Balance sums the books.
+func (m *Manager) Balance() int {
+	sum := 0
+	for _, a := range m.Ledger {
+		sum += a
+	}
+	return sum
+}

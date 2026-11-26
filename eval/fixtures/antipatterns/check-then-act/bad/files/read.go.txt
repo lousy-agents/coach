@@ -1,0 +1,12 @@
+package files
+
+import "os"
+
+// Load reads a file if it exists. The file can be removed or replaced between the check and the read, so the check
+// proves nothing about the read that follows, and the read must handle the missing file anyway.
+func Load(path string) ([]byte, error) {
+	if _, err := os.Stat(path); err == nil {
+		return os.ReadFile(path)
+	}
+	return nil, os.ErrNotExist
+}

@@ -1,0 +1,17 @@
+{
+  "id": "dependency-rule-breach",
+  "name": "Dependency-rule breach",
+  "source": "Robert C. Martin, Clean Architecture, ch. 22: source code dependencies point inward, so the domain never names an adapter",
+  "seed": "architecture.layer_violation in internal/agentloop importing internal/acceptanceharness (a baseline scan of main at 6d98ea0)",
+  "status": "covered",
+  "expect": {
+    "bad": [
+      {
+        "rule_id": "architecture.layer_violation",
+        "path": "internal/domain/order.go",
+        "subject": "architecture.layer_violation:internal/domain->internal/infra/postgres"
+      }
+    ],
+    "good": "none"
+  }
+}

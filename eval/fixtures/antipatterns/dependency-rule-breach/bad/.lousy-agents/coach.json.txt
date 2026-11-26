@@ -1,0 +1,1 @@
+{"schema_version":"1","roots":["."],"layers":[{"name":"domain","prefixes":["internal/domain"]},{"name":"infrastructure","prefixes":["internal/infra"]}],"forbidden_imports":[{"from":"domain","to":"infrastructure"}]}

@@ -865,7 +865,10 @@ path: , kind: worktree_scan_incomplete, message: an untracked nested repository 
   `project_root_scope_incomplete` / `base_project_root_scope_incomplete`
   model-coverage diagnostics, the CLI's
   `project_layer_bypass_coverage_incomplete` /
-  `base_project_layer_bypass_coverage_incomplete` diagnostics, and
+  `base_project_layer_bypass_coverage_incomplete` and
+  `project_layer_bypass_required_layer_unmatched` /
+  `base_project_layer_bypass_required_layer_unmatched` (the policy's
+  `required_layer` matched no package, named in its message) diagnostics, and
   `project_change_lifecycle_indeterminate` for a project change degraded to
   `lifecycle: unknown` — additionally carries optional `side` (`"head"` or
   `"base"`) and `revision` (that side's resolved commit SHA — for `base`, the
