@@ -83,6 +83,8 @@ var _ = Describe("the measure of one function (AC-2.3, AC-2.5, AC-2.6)", func() 
 			"package p\n\nimport o \"os\"\n\ntype T struct{ v string }\n\nfunc NewT() T { return T{v: o.Getenv(\"V\")} }\n", doesWork),
 		Entry("os.Stat, which is not on the outward list",
 			"package p\n\nimport \"os\"\n\ntype T struct{ err error }\n\nfunc NewT() T { _, err := os.Stat(\"x\"); return T{err: err} }\n", assignsOnly),
+		Entry("os.CreateTemp, which shares a prefix with os.Create but is not on the list",
+			"package p\n\nimport \"os\"\n\ntype T struct{ err error }\n\nfunc NewT() T { _, err := os.CreateTemp(\"\", \"x\"); return T{err: err} }\n", assignsOnly),
 		Entry("a method named Getenv on a value, not the os package",
 			"package p\n\ntype env struct{}\n\nfunc (env) Getenv(string) string { return \"\" }\n\ntype T struct{ v string }\n\nfunc NewT(os env) T { return T{v: os.Getenv(\"V\")} }\n", assignsOnly),
 		Entry("Newer, which is not a constructor name",
@@ -118,6 +120,7 @@ var _ = Describe("the measure of one function (AC-2.3, AC-2.5, AC-2.6)", func() 
 		Entry("http.Head", "net/http", `func() error { _, err := http.Head("u"); return err }()`),
 		Entry("http.DefaultClient.Do", "net/http", `func() error { _, err := http.DefaultClient.Do(nil); return err }()`),
 		Entry("http.ListenAndServe, a ListenAndServe* name", "net/http", `http.ListenAndServe("x", nil)`),
+		Entry("http.ListenAndServeTLS, a ListenAndServe* name", "net/http", `http.ListenAndServeTLS("x", "c", "k", nil)`),
 		Entry("sql.Open", "database/sql", `func() error { _, err := sql.Open("d", "s"); return err }()`),
 		Entry("anything in syscall", "syscall", `syscall.Getpid()`),
 	)
