@@ -1127,7 +1127,7 @@ If the answer to 15.15 is "not permitted", agent self-review stays unjudged by t
     - Continue only with named adjudicator and author hours committed.
     - *Recommend:* go-fallback over stop if the fallback MDE is at most 25 points (**our choice**), because stop leaves the PRD gate unjudged.
 13. **Oracle access and whose subscription.**
-    - **Who runs what:** `eval-agent-study` runs on the owner's subscription. Private-repository access goes only to people who run it. **Only `eval-detection`, and `eval-agent-wiring` for the changes it gates, are expected of contributors.**
+    - **Who runs what:** `eval-agent-study` runs on the owner's subscription. Private-repository access goes only to people who run it. **Only `eval-detection` and `eval-hook-health` are expected of contributors; `eval-agent-wiring` is the owner's pre-merge duty for the changes it gates.**
     - **Public suites:** the tuning panel's hidden suites can be public, because that panel is never evidence.
 14. **Isolation and which credential.**
     - *Recommend:* option (c) (**our choice**), once all twelve pilot gates pass (section 7).
