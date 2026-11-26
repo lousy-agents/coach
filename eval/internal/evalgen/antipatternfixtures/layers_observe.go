@@ -15,8 +15,9 @@ var layerRoles = map[int][]string{
 }
 
 const (
-	minLayers          = 3
-	maxLayers          = 5
+	minLayers = 3
+	maxLayers = 5
+	// maxPackagesPerRole may not exceed len(layerPackages): a layer fixture names one package for each.
 	maxPackagesPerRole = 3
 )
 
@@ -33,7 +34,10 @@ func observeLayers(p profile) (observation, bool) {
 	if !ok {
 		return observation{}, false
 	}
-	packages, basis := packagesPerLayer(p, layers)
+	packages, basis, ok := packagesPerLayer(p, layers)
+	if !ok {
+		return observation{}, false
+	}
 	return observation{measure: "layer count", value: layers, from: layers, threshold: minLayers, limit: maxLayers, packages: packages, basis: basis}, true
 }
 
@@ -49,8 +53,11 @@ func layerCount(distribution map[string]int) (int, bool) {
 }
 
 // packagesPerLayer is the most frequent package count the roles of the layer
-// count observed, capped, with the account of it for the note.
-func packagesPerLayer(p profile, layers int) (int, string) {
+// count observed, capped, with the account of it for the note. Roles are
+// recorded only for layers an ordered policy places, so a profile with none
+// has observed no ordered layers, and the layer count its package tree gave
+// stands for nothing a fixture may model.
+func packagesPerLayer(p profile, layers int) (int, string, bool) {
 	merged := map[string]int{}
 	for _, role := range layerRoles[layers] {
 		for bucket, count := range p.Roles[role].Packages {
@@ -59,11 +66,11 @@ func packagesPerLayer(p profile, layers int) (int, string) {
 	}
 	seen, ok := typical(merged, "packages per layer", 1, maxPackagesPerRole)
 	if !ok {
-		return 1, "the most frequent layer count from 3 to 5, with packages per layer 1 because no packages were observed for its roles"
+		return 0, "", false
 	}
 	capped := ""
 	if seen.from != seen.value {
 		capped = fmt.Sprintf(", capped at %d from %d, so the fixture stays readable", seen.value, seen.from)
 	}
-	return seen.value, fmt.Sprintf("the most frequent layer count from 3 to 5, with packages per layer %d, the most frequent count its roles observed%s", seen.value, capped)
+	return seen.value, fmt.Sprintf("the most frequent layer count from 3 to 5, with packages per layer %d, the most frequent count its roles observed%s", seen.value, capped), true
 }
