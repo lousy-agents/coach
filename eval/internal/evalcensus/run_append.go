@@ -9,31 +9,52 @@ import (
 )
 
 // AppendRun writes a run's records and its ledger line as one unit, so a
-// re-run never duplicates records: it holds the run ledger's lock across
-// both writes, and when the ledger line fails it cuts the corpus's records
-// back to what they were before the run.
+// re-run never duplicates records. It holds the run ledger's lock and then
+// the records' lock, always in that order so two runs cannot deadlock,
+// across both writes; when the ledger line fails it cuts the corpus's
+// records back to what they were before the run, and no other writer can
+// have appended in between.
 func AppendRun(ledgerPath string, line []byte, censusRoot, corpusID string, records []Record) error {
-	if err := os.MkdirAll(filepath.Dir(ledgerPath), 0o755); err != nil {
-		return fmt.Errorf("write census ledger line: %w", err)
+	if err := corpusRecordsProblem(corpusID, records); err != nil {
+		return fmt.Errorf("write census records: %w", err)
 	}
-	unlock, err := lockLedger(ledgerPath)
+	recordsPath := corpusRecordsPath(censusRoot, corpusID)
+	unlock, err := lockBoth(ledgerPath, recordsPath)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	recordsPath := corpusRecordsPath(censusRoot, corpusID)
 	restore, err := snapshotLength(recordsPath)
 	if err != nil {
 		return err
 	}
 	afterRecordsSnapshot()
-	if err := AppendCorpusRecords(censusRoot, corpusID, records); err != nil {
+	if err := appendLocked(recordsPath, checkedRecordLines(recordsPath, records)); err != nil {
 		return fmt.Errorf("write census records: %w", err)
 	}
 	if err := appendBytes(ledgerPath, line); err != nil {
 		return errors.Join(fmt.Errorf("write census ledger line: %w", err), restore())
 	}
 	return nil
+}
+
+// lockBoth takes the run ledger's lock, then the records' lock.
+func lockBoth(ledgerPath, recordsPath string) (func(), error) {
+	for _, path := range []string{ledgerPath, recordsPath} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return nil, fmt.Errorf("write census ledger line: %w", err)
+		}
+	}
+	unlockLedger, err := lockLedger(ledgerPath)
+	if err != nil {
+		return nil, err
+	}
+	unlockRecords, err := lockLedger(recordsPath)
+	if err != nil {
+		unlockLedger()
+		return nil, err
+	}
+	return func() { unlockRecords(); unlockLedger() }, nil
 }
 
 // afterRecordsSnapshot runs between noting the records' length and writing

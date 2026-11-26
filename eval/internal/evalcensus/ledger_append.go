@@ -9,7 +9,13 @@ import (
 // appends it. A batch with any invalid record writes nothing, and no record
 // already in the ledger is ever rewritten.
 func AppendRecords(path string, records []Record) error {
-	return AppendToLedger(path, func() ([]byte, error) {
+	return AppendToLedger(path, checkedRecordLines(path, records))
+}
+
+// checkedRecordLines validates records against the ledger at path, which
+// the caller has locked, and returns them as JSON lines.
+func checkedRecordLines(path string, records []Record) func() ([]byte, error) {
+	return func() ([]byte, error) {
 		existing, err := LoadRecords(path)
 		if err != nil {
 			return nil, err
@@ -18,7 +24,7 @@ func AppendRecords(path string, records []Record) error {
 			return nil, err
 		}
 		return recordLines(records)
-	})
+	}
 }
 
 func recordLines(records []Record) ([]byte, error) {

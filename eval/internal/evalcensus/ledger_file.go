@@ -22,6 +22,12 @@ func AppendToLedger(path string, lines func() ([]byte, error)) error {
 		return err
 	}
 	defer unlock()
+	return appendLocked(path, lines)
+}
+
+// appendLocked builds and appends lines to the ledger at path, whose lock
+// the caller holds.
+func appendLocked(path string, lines func() ([]byte, error)) error {
 	data, err := lines()
 	if err != nil {
 		return err
