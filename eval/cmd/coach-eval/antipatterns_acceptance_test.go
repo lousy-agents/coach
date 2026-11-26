@@ -82,7 +82,7 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 		for _, fixture := range table.Fixtures {
 			if fixture.ID == "global" {
 				Expect(fixture.Status).To(Equal("not_covered"))
-				Expect(fixture.Bad.Result).To(Equal("not_covered"))
+				Expect(fixture.Bad.Result).To(Equal("miss"))
 			}
 		}
 		Expect(table.Summary.Pass).To(Equal(1), "a known miss is never counted as a pass")
@@ -106,6 +106,92 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 
 		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 		Expect(decodeTable(outcome.stdout).Fixtures[0].Bad.Result).To(Equal("now_covered"))
+	})
+
+	It("reports, for every variant, whether coverage was complete and which diagnostics the scan raised", func() {
+		writeFixture(fixtures, "layer", layerExpect, variantFiles(reportOf(layerSignal), nil), variantFiles(reportOf(), nil))
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		fixture := decodeTable(outcome.stdout).Fixtures[0]
+		Expect(fixture.Bad.CoverageComplete).To(BeTrue())
+		Expect(fixture.Good.CoverageComplete).To(BeTrue())
+		Expect(fixture.Bad.Diagnostics).To(BeEmpty())
+	})
+
+	DescribeTable("exits 1 and says the scan was incomplete when a variant's coverage was not complete and the fixture did not say so",
+		func(bad, good map[string]string, variant string) {
+			writeFixture(fixtures, "layer", layerExpect, bad, good)
+
+			outcome := runAntipatterns(fixtures, cannedCoach())
+
+			Expect(outcome.exitCode).To(Equal(1), outcome.stderr)
+			Expect(outcome.stderr).To(ContainSubstring("layer " + variant))
+			Expect(outcome.stderr).To(ContainSubstring("incomplete"))
+			Expect(decodeTable(outcome.stdout).Fixtures[0]).NotTo(BeNil())
+		},
+		Entry("a silent good variant on an incomplete scan is not a pass",
+			variantFiles(reportOf(layerSignal), nil), incompleteVariant(reportOf()), "good"),
+		Entry("a bad variant that has its finding but whose scan was incomplete is not a pass",
+			incompleteVariant(reportOf(layerSignal)), variantFiles(reportOf(), nil), "bad"),
+	)
+
+	It("marks the variant's result incomplete, with its diagnostics, rather than pass", func() {
+		writeFixture(fixtures, "layer", layerExpect, variantFiles(reportOf(layerSignal), nil), incompleteVariant(reportOf()))
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		good := decodeTable(outcome.stdout).Fixtures[0].Good
+		Expect(good.Result).To(Equal("incomplete"))
+		Expect(good.CoverageComplete).To(BeFalse())
+		Expect(good.Diagnostics).To(ConsistOf("project_coverage_incomplete"))
+	})
+
+	const incompleteMissExpect = `{"id":"global","name":"Bypass","source":"none","seed":"none","status":"not_covered","expect_incomplete":true,
+ "expect":{"bad":"none","good":"none"}}`
+
+	It("accepts an incomplete scan that the fixture declares, and records it as incomplete rather than as a miss", func() {
+		writeFixture(fixtures, "global", incompleteMissExpect, incompleteVariant(reportOf()), variantFiles(reportOf(), nil))
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		table := decodeTable(outcome.stdout)
+		Expect(table.Fixtures[0].Bad.Result).To(Equal("incomplete"))
+		Expect(table.Fixtures[0].Good.Result).To(Equal("miss"))
+		Expect(table.Summary.Incomplete).To(Equal([]string{"global"}))
+	})
+
+	It("exits 1 when a fixture declares an incomplete scan and the scan was complete", func() {
+		writeFixture(fixtures, "global", incompleteMissExpect, variantFiles(reportOf(), nil), variantFiles(reportOf(), nil))
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(1), outcome.stderr)
+		Expect(outcome.stderr).To(ContainSubstring("global bad"))
+		Expect(outcome.stderr).To(ContainSubstring("complete"))
+	})
+
+	It("exits 1 for an unexpectedly incomplete scan of a known miss, which is not a miss", func() {
+		writeFixture(fixtures, "global", missExpect, incompleteVariant(reportOf()), variantFiles(reportOf(), nil))
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(1), outcome.stderr)
+		Expect(outcome.stderr).To(ContainSubstring("global bad"))
+		Expect(decodeTable(outcome.stdout).Fixtures[0].Bad.Result).To(Equal("incomplete"))
+	})
+
+	It("exits 2 when coach fails with a status that is neither complete nor incomplete", func() {
+		writeFixture(fixtures, "layer", layerExpect,
+			variantFiles(reportOf(layerSignal), map[string]string{"exit_code": "1"}), variantFiles(reportOf(), nil))
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(2), outcome.stderr)
+		Expect(outcome.stdout).To(BeEmpty())
+		Expect(outcome.stderr).To(ContainSubstring("layer"))
 	})
 
 	It("scans each variant with --baseline, and with --project-config only when the variant has a policy", func() {
@@ -173,6 +259,24 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 		Entry("a bad variant that fails go vet", layerExpect, variantFiles(reportOf(layerSignal), map[string]string{"main.go": "package main\n\nfunc main() { var unused int }\n"}), "go vet"),
 		Entry("a bad variant with no go.mod", layerExpect, map[string]string{"main.go": validMain, "report.json": reportOf(layerSignal)}, "bad"),
 	)
+
+	It("records, for the real coach, the unmatched-required-layer fixture as an incomplete scan with the diagnostic that says so", func() {
+		root := filepath.Join(repositoryRoot(), "eval", "fixtures", "antipatterns")
+
+		outcome := runAntipatterns(root, antipatternCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		for _, fixture := range decodeTable(outcome.stdout).Fixtures {
+			if fixture.ID == "bypass-without-required-layer" {
+				Expect(fixture.Bad.Result).To(Equal("incomplete"))
+				Expect(fixture.Bad.Diagnostics).To(ContainElement("project_layer_bypass_coverage_incomplete"))
+				Expect(fixture.Good.CoverageComplete).To(BeTrue())
+				continue
+			}
+			Expect(fixture.Bad.CoverageComplete).To(BeTrue(), fixture.ID)
+			Expect(fixture.Good.CoverageComplete).To(BeTrue(), fixture.ID)
+		}
+	})
 
 	It("passes every committed fixture against the real coach: Coach reports each anti-pattern on bad and stays silent on good", func() {
 		root := filepath.Join(repositoryRoot(), "eval", "fixtures", "antipatterns")

@@ -42,8 +42,12 @@ func coveredFixtureIDs(table antipatternTable) map[string]bool {
 func expectKnownMissesSilent(table antipatternTable) {
 	for _, fixture := range table.Fixtures {
 		if fixture.Status == "not_covered" {
-			ExpectWithOffset(1, fixture.Bad.Result).To(Equal("not_covered"), fixture.ID+": Coach is silent on its bad variant today; if it is not, promote the fixture")
-			ExpectWithOffset(1, fixture.Good.Result).To(Equal("not_covered"), fixture.ID)
+			wantBad := "miss"
+			if fixture.ID == "bypass-without-required-layer" {
+				wantBad = "incomplete"
+			}
+			ExpectWithOffset(1, fixture.Bad.Result).To(Equal(wantBad), fixture.ID+": Coach is silent on its bad variant today; if it is not, promote the fixture")
+			ExpectWithOffset(1, fixture.Good.Result).To(Equal("miss"), fixture.ID)
 		}
 	}
 }

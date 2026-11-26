@@ -38,8 +38,13 @@ const (
 // report the real coach would give it.
 func cannedCoach() string {
 	path := filepath.Join(GinkgoT().TempDir(), "coach")
-	Expect(os.WriteFile(path, []byte("#!/bin/sh\ncat report.json\n"), 0o755)).To(Succeed())
+	Expect(os.WriteFile(path, []byte("#!/bin/sh\ncat report.json\nexit $(cat exit_code 2>/dev/null || echo 0)\n"), 0o755)).To(Succeed())
 	return path
+}
+
+// incompleteVariant is a variant whose scan reports incomplete coverage: coach exits 3, as --fail-on-incomplete-coverage does.
+func incompleteVariant(report string) map[string]string {
+	return variantFiles(report, map[string]string{"exit_code": "3"})
 }
 
 func reportOf(signals ...string) string {
@@ -95,18 +100,23 @@ type antipatternTable struct {
 		ID     string `json:"id"`
 		Status string `json:"status"`
 		Bad    struct {
-			Result string `json:"result"`
-			Scan   string `json:"scan"`
+			Result           string   `json:"result"`
+			Scan             string   `json:"scan"`
+			CoverageComplete bool     `json:"coverage_complete"`
+			Diagnostics      []string `json:"diagnostics"`
 		} `json:"bad"`
 		Good struct {
-			Result string `json:"result"`
-			Scan   string `json:"scan"`
+			Result           string   `json:"result"`
+			Scan             string   `json:"scan"`
+			CoverageComplete bool     `json:"coverage_complete"`
+			Diagnostics      []string `json:"diagnostics"`
 		} `json:"good"`
 	} `json:"fixtures"`
 	Summary struct {
 		Pass       int      `json:"pass"`
 		Fail       int      `json:"fail"`
 		NotCovered []string `json:"not_covered"`
+		Incomplete []string `json:"incomplete"`
 	} `json:"summary"`
 }
 
