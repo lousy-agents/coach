@@ -3,6 +3,8 @@
 package evalharness
 
 import (
+	"time"
+
 	"github.com/lousy-agents/coach/eval/internal/evaldetect"
 	"github.com/lousy-agents/coach/eval/internal/evalgen"
 )
@@ -22,3 +24,6 @@ func detectorVersion() string { return evaldetect.PinnedGocognitVersion }
 func validationSteps() []string { return evalgen.ValidationSteps }
 
 func validationVersion() string { return ValidationVersion }
+
+// gremlinsLimit is how long a Gremlins run may take, in every build but the acceptance one.
+func gremlinsLimit() time.Duration { return DefaultGremlinsLimit }

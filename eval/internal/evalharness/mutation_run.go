@@ -1,12 +1,17 @@
 package evalharness
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/lousy-agents/coach/eval/internal/evalgen"
 )
@@ -26,10 +31,7 @@ func runGremlins(gremlins Gremlins, tree map[string][]byte) ([]byte, error) {
 		return nil, err
 	}
 	reportPath := filepath.Join(directory, ".gremlins-report.json")
-	command := exec.Command(gremlins.Binary, "unleash", "--output", reportPath)
-	command.Dir = directory
-	command.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOPROXY=off", "GOWORK=off", "GOTOOLCHAIN=local")
-	if output, err := command.CombinedOutput(); err != nil {
+	if output, err := unleash(gremlins, directory, reportPath); err != nil {
 		return nil, fmt.Errorf("gremlins: %v\n%s", err, output)
 	}
 	report, err := os.ReadFile(reportPath)
@@ -37,6 +39,37 @@ func runGremlins(gremlins Gremlins, tree map[string][]byte) ([]byte, error) {
 		return []byte(emptyGremlinsReport), nil
 	}
 	return report, err
+}
+
+// DefaultGremlinsLimit is how long one Gremlins run may take. A run mutates each covered branch and runs the suite,
+// so a large program takes minutes; a run that outlasts this is hung.
+const DefaultGremlinsLimit = 30 * time.Minute
+
+// gremlinsOutputGrace is how long a process that outlives Gremlins may keep the run's output open after the kill.
+const gremlinsOutputGrace = 2 * time.Second
+
+// unleash runs Gremlins in its own process group and kills the group when the time limit passes, so a hung run, or
+// one that left a child behind, cannot stall generation.
+func unleash(gremlins Gremlins, directory, reportPath string) (string, error) {
+	limit := gremlins.Limit
+	if limit <= 0 {
+		limit = DefaultGremlinsLimit
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
+	var output bytes.Buffer
+	command := exec.CommandContext(ctx, gremlins.Binary, "unleash", "--output", reportPath)
+	command.Dir = directory
+	command.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOPROXY=off", "GOWORK=off", "GOTOOLCHAIN=local")
+	command.Stdout, command.Stderr = &output, &output
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGKILL) }
+	command.WaitDelay = gremlinsOutputGrace
+	err := command.Run()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return output.String(), fmt.Errorf("did not finish within the time limit of %s", limit)
+	}
+	return output.String(), err
 }
 
 // mutationCache keeps a Gremlins report by the content of what it judged and the Gremlins version, so the same

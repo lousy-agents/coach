@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // PinnedGremlinsVersion is the Gremlins the eval module's tool directive requires; CheckVersion fails if
@@ -26,6 +27,8 @@ var offlineGoEnv = []string{"GOPROXY=off", "GOTOOLCHAIN=local"}
 type Gremlins struct {
 	Binary  string
 	Version string
+	// Limit is how long one run may take before it is killed; zero means DefaultGremlinsLimit.
+	Limit time.Duration
 }
 
 // ResolveGremlins builds the eval module's pinned Gremlins from the module cache alone and checks its version.
