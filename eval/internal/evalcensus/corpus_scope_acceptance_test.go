@@ -69,7 +69,7 @@ var _ = Describe("the corpus manifest's scope", func() {
 	When("a repository's sample has no seed", func() {
 		It("refuses the manifest, naming the repository and the seed", func() {
 			manifest := scopedCorpus()
-			firstRepository(manifest)["sample"] = map[string]any{"size": 30}
+			firstRepository(manifest)["sample"] = map[string]any{}
 
 			_, err := evalcensus.LoadCensusCorpus(writeJSON(manifest))
 

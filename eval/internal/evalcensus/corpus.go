@@ -37,10 +37,9 @@ type Repository struct {
 	Sample *Sample `json:"sample,omitempty"`
 }
 
-// Sample is the seed and size of a census's draw of a rule's findings.
+// Sample is the seed of a census's draw of a rule's findings. The draw keeps SampleSize of them.
 type Sample struct {
 	Seed *int64 `json:"seed,omitempty"`
-	Size int    `json:"size,omitempty"`
 }
 
 // Rule is one censused rule and the languages it applies to.
@@ -107,8 +106,6 @@ func censusRepositoryProblem(repo Repository) string {
 		return "licence is empty: a census needs the licence the code is published under"
 	case repo.Sample == nil || repo.Sample.Seed == nil:
 		return "sample.seed is missing: a census draws its sample with a recorded seed"
-	case repo.Sample.Size < 0:
-		return "sample.size is negative: name a size of at least 1, or leave it out for the default"
 	}
 	return ""
 }

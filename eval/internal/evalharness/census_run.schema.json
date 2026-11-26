@@ -30,10 +30,9 @@
           "sample": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["seed", "size"],
+            "required": ["seed"],
             "properties": {
-              "seed": {"type": "integer"},
-              "size": {"type": "integer", "minimum": 1}
+              "seed": {"type": "integer"}
             }
           },
           "statuses": {
@@ -47,7 +46,7 @@
                 "analysis_status": {"enum": ["measured", "not_exercised", "not_adjudicable_only", "analysis_failed", "out_of_scope"]},
                 "findings": {"type": "integer", "minimum": 0},
                 "adjudicable": {"type": "integer", "minimum": 0},
-                "frame": {"enum": ["all_findings", "sampled"]},
+                "frame": {"enum": ["all_findings", "random_30", "not_sampled"]},
                 "sampled_keys": {"type": "array", "items": {"type": "string"}},
                 "evidence": {"type": "string"}
               }

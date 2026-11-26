@@ -31,10 +31,9 @@ type RepositoryResult struct {
 	Statuses  []RuleStatus      `json:"statuses"`
 }
 
-// RepositorySample is the seed and size a repository's sample is drawn with.
+// RepositorySample is the seed a repository's sample is drawn with.
 type RepositorySample struct {
 	Seed int64 `json:"seed"`
-	Size int   `json:"size"`
 }
 
 // Run checks out every corpus repository before scanning any, so an

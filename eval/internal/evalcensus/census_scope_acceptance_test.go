@@ -261,12 +261,4 @@ var _ = Describe("the census's path scope and sample", func() {
 		})
 	})
 
-	When("the manifest names a sample size of 5 and a rule has 31 findings", func() {
-		It("draws 5 of them, not one fewer than the rule has", func() {
-			statuses := statusesOf(map[string]any{"sample": map[string]any{"seed": 7, "size": 5}},
-				findingsReport(manyFindings(31)...))
-
-			Expect(statusFor(statuses, scopedRule)["sampled_keys"]).To(HaveLen(5))
-		})
-	})
 })

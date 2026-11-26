@@ -73,7 +73,7 @@ func ruleStatus(rule Rule, repo Repository, signals []reportSignal) RuleStatus {
 			status.Adjudicable++
 		}
 	}
-	status.Frame, status.SampledKeys = drawSample(findings, sampleSeed(repo), sampleSize(repo))
+	status.Frame, status.SampledKeys = drawSample(findings, sampleSeed(repo))
 	status.Status = countedStatus(status)
 	return status
 }

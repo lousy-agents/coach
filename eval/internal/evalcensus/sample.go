@@ -7,24 +7,26 @@ import (
 	"strings"
 )
 
-// DefaultSampleSize is how many of a rule's findings a repository's sample keeps when its manifest names no size.
-const DefaultSampleSize = 30
+// SampleSize is how many of a rule's findings a repository's sample keeps. It is fixed, as #260 and the design's
+// §11 fix it, so a manifest cannot change it.
+const SampleSize = 30
 
-// Frames a rule's sample can report. A rule with no more findings than the sample size keeps them all.
+// Frames a rule's sample can report. A rule with no more findings than SampleSize keeps them all. The design's
+// not_sampled frame is in the schema but never emitted, since every census draws with a recorded seed.
 const (
 	FrameAllFindings = "all_findings"
-	FrameSampled     = "sampled"
+	FrameRandom30    = "random_30"
 )
 
 // drawSample returns the frame and the sorted keys a seeded draw keeps of one rule's findings. The findings are
 // put in a total order first, so the draw does not depend on the order Coach reported them in.
-func drawSample(findings []reportSignal, seed int64, size int) (string, []string) {
+func drawSample(findings []reportSignal, seed int64) (string, []string) {
 	slices.SortFunc(findings, compareFindings)
-	if len(findings) <= size {
+	if len(findings) <= SampleSize {
 		return FrameAllFindings, sortedKeys(findings, allIndexes(len(findings)))
 	}
 	rng := rand.New(rand.NewPCG(uint64(seed), 0))
-	return FrameSampled, sortedKeys(findings, rng.Perm(len(findings))[:size])
+	return FrameRandom30, sortedKeys(findings, rng.Perm(len(findings))[:SampleSize])
 }
 
 func allIndexes(count int) []int {
@@ -62,12 +64,4 @@ func sampleSeed(repo Repository) int64 {
 		return 0
 	}
 	return *repo.Sample.Seed
-}
-
-// sampleSize is the manifest's size, or DefaultSampleSize when it names none.
-func sampleSize(repo Repository) int {
-	if repo.Sample == nil || repo.Sample.Size == 0 {
-		return DefaultSampleSize
-	}
-	return repo.Sample.Size
 }
