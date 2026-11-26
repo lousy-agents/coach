@@ -17,16 +17,18 @@ func brokenTemplate() antipatternfixtures.Template {
 	broken := antipatternfixtures.Templates()[0]
 	broken.ID = "broken-template"
 	good := broken.Good
-	broken.Good = func(value int) map[string]string {
-		files := good(value)
-		for name := range files {
-			if strings.HasSuffix(name, ".go") {
-				files[name] += "\nfunc unused() { x := 1 }\n"
-			}
-		}
-		return files
-	}
+	broken.Good = func(value int) map[string]string { return withUnusedVariable(good(value)) }
 	return broken
+}
+
+// withUnusedVariable adds to each Go file a function that go vet refuses.
+func withUnusedVariable(files map[string]string) map[string]string {
+	for name := range files {
+		if strings.HasSuffix(name, ".go") {
+			files[name] += "\nfunc unused() { x := 1 }\n"
+		}
+	}
+	return files
 }
 
 var _ = Describe("refusing a profile or a fixture (#872 Task 5, AC-4.5)", func() {

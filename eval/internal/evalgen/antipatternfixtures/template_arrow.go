@@ -6,9 +6,13 @@ import (
 )
 
 // Coach's thresholds for the complexity rules the templates trip, in the
-// profile's units. Coach counts the function body as a block, so its
-// nesting threshold of 4 is three nested constructs in the profile; its
-// cognitive (15) and branch density (12) thresholds are reached at equal.
+// profile's units. Coach counts every block in a function, the body
+// included, so through if, for and range bodies, the only nesting the arrow
+// template builds, its nesting threshold of 4 is three nested constructs in
+// a profile. A switch or select case body is not a block, so there the two
+// counts agree, and a profile's nesting value can include functions Coach
+// would not flag. Its cognitive (15) and branch density (12) thresholds are
+// reached at equal.
 const (
 	nestingThreshold   = 3
 	cognitiveThreshold = 15
