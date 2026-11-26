@@ -48,12 +48,13 @@ type Rater struct {
 }
 
 var (
-	measures        = setOf("detector_agreement", "flagged_vs_unflagged_association", "human_verdict")
-	sourceKinds     = setOf("detector", "szz", "review_comment", "follow_up_fix", "human")
+	measures        = setOf("detector_agreement", "flagged_vs_unflagged_association", "human_verdict", "analysis_status")
+	sourceKinds     = setOf("detector", "szz", "review_comment", "follow_up_fix", "human", "census")
 	raterKinds      = setOf("automated", "human")
 	dispositions    = setOf("retune", "rescope", "default_off", "accept_with_caveat")
 	engineerActions = setOf("acted", "deferred", "abandoned", "no_usage_observed")
 	automatedValues = setOf("agree", "disagree")
+	statusValues    = setOf(string(Measured), string(NotExercised), string(NotAdjudicableOnly), string(AnalysisFailed), string(OutOfScope))
 	verdictValues   = setOf("true_positive", "false_positive", "unactionable_true_positive", "not_adjudicable")
 )
 

@@ -32,7 +32,7 @@ func segmentChange(segment trendSegment) string {
 		return describeValue(first)
 	}
 	if first.hasValue && last.hasValue {
-		return fmt.Sprintf("%g -> %g (change %+g)", first.value, last.value, last.value-first.value)
+		return fmt.Sprintf("%g -> %g (change %+g)", first.value, last.value, roundMetric(last.value-first.value))
 	}
 	return fmt.Sprintf("%s -> %s", describeValue(first), describeValue(last))
 }

@@ -120,10 +120,9 @@ var _ = Describe("eval-compare trend mode", func() {
 
 	When("the ledger holds census lines for the same cell", func() {
 		It("trends only the pre_run, study and baseline lines", func() {
-			census := withPath(trendRecord("run-x", 0.1), "solver.model", "claude-other-model")
 			writeLedger(ledger,
 				ledgerLine("pre_run", "2026-11-01", "cell-a", trendRecord("run-1", 0.5)),
-				ledgerLine("census", "2026-11-02", "cell-a", census),
+				ledgerLine("census", "2026-11-02", "cell-a", censusRunRecord("census-x")),
 				ledgerLine("pre_run", "2026-11-03", "cell-a", trendRecord("run-2", 0.75)),
 			)
 
@@ -227,6 +226,51 @@ var _ = Describe("eval-compare trend mode", func() {
 
 			Expect(outcome.exitCode).To(Equal(2), outcome.stderr)
 			Expect(outcome.stderr).To(ContainSubstring("cell"))
+		})
+	})
+
+	When("a metric change has float noise", func() {
+		It("prints the change rounded to six decimal places", func() {
+			writeLedger(ledger,
+				ledgerLine("pre_run", "2026-11-01", "cell-a", trendRecord("run-1", 0.5)),
+				ledgerLine("pre_run", "2026-11-02", "cell-a", trendRecord("run-2", 0.7)),
+			)
+
+			outcome := runTrend(root, root, "--cell", "cell-a", "--ledger", ledger)
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			Expect(outcome.stdout).To(ContainSubstring("(change +0.2)"))
+		})
+	})
+
+	When("a metric falls by less than a millionth", func() {
+		It("prints the change as +0, not -0", func() {
+			writeLedger(ledger,
+				ledgerLine("pre_run", "2026-11-01", "cell-a", trendRecord("run-1", 0.5)),
+				ledgerLine("pre_run", "2026-11-02", "cell-a", trendRecord("run-2", 0.4999999)),
+			)
+
+			outcome := runTrend(root, root, "--cell", "cell-a", "--ledger", ledger)
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			Expect(outcome.stdout).To(ContainSubstring("(change +0)"))
+		})
+	})
+
+	When("a metric value is a tiny negative number", func() {
+		It("prints the value and the change as 0, not -0", func() {
+			tinyNegative := func(runID string) record {
+				return withPath(completeRecord(runID), "parameters.k", -0.0000001)
+			}
+			writeLedger(ledger,
+				ledgerLine("pre_run", "2026-11-01", "cell-a", tinyNegative("run-1")),
+				ledgerLine("pre_run", "2026-11-02", "cell-a", tinyNegative("run-2")),
+			)
+
+			outcome := runTrend(root, root, "--cell", "cell-a", "--ledger", ledger, "--metric", "parameters.k")
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			Expect(outcome.stdout).To(ContainSubstring("0 -> 0 (change +0)"))
 		})
 	})
 

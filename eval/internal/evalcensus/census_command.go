@@ -2,10 +2,9 @@ package evalcensus
 
 import (
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 	"io"
+	"time"
 )
 
 // Exit codes of `coach-eval census` (docs/evaluation/agentic-eval-design.md §10).
@@ -15,16 +14,31 @@ const (
 	CensusAnalysisFailed = 3
 )
 
-// Census runs `coach-eval census --coach <binary> <corpus.json>` and prints
-// the run's summary as JSON.
-func Census(args []string, stdout, stderr io.Writer) int {
-	coach, corpusPath, err := parseCensusArgs(args)
+// LedgerLine builds one census run's ledger line, newline included. The
+// ledger's schema lives in the tooling ring, which this package may not
+// import, so coach-eval supplies the builder.
+type LedgerLine func(summary Summary, exit int) ([]byte, error)
+
+// Census runs `coach-eval census --coach <binary> --census-root <dir>
+// --ledger <runs.jsonl> <corpus.json>`. It appends each rule's status as a
+// record under the census root and the run as a ledger line, then prints the
+// run's summary as JSON.
+func Census(args []string, stdout, stderr io.Writer, ledgerLine LedgerLine) int {
+	parsed, err := parseCensusArgs(args)
 	if err != nil {
 		fmt.Fprintf(stderr, "coach-eval census: %v\n", err)
 		return CensusInputInvalid
 	}
-	summary, err := runCorpus(corpusPath, coach)
+	summary, err := runCorpus(parsed.corpus, parsed.coach)
 	if err != nil {
+		fmt.Fprintf(stderr, "coach-eval census: %v\n", err)
+		return CensusInputInvalid
+	}
+	exit := CensusComplete
+	if summary.analysisFailed() {
+		exit = CensusAnalysisFailed
+	}
+	if err := recordRun(parsed, summary, exit, ledgerLine); err != nil {
 		fmt.Fprintf(stderr, "coach-eval census: %v\n", err)
 		return CensusInputInvalid
 	}
@@ -34,26 +48,16 @@ func Census(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "coach-eval census: %v\n", err)
 		return CensusInputInvalid
 	}
-	if summary.analysisFailed() {
-		return CensusAnalysisFailed
-	}
-	return CensusComplete
+	return exit
 }
 
-func parseCensusArgs(args []string) (string, string, error) {
-	flags := flag.NewFlagSet("census", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	coach := flags.String("coach", "", "the coach binary to scan with")
-	if err := flags.Parse(args); err != nil {
-		return "", "", err
+func recordRun(parsed censusArgs, summary Summary, exit int, ledgerLine LedgerLine) error {
+	line, err := ledgerLine(summary, exit)
+	if err != nil {
+		return fmt.Errorf("build census ledger line: %w", err)
 	}
-	switch {
-	case *coach == "":
-		return "", "", errors.New("--coach <coach binary> is required")
-	case flags.NArg() != 1:
-		return "", "", errors.New("expected exactly one corpus manifest")
-	}
-	return *coach, flags.Arg(0), nil
+	today := time.Now().UTC().Format(time.DateOnly)
+	return AppendRun(parsed.ledger, line, parsed.censusRoot, summary.CorpusID, StatusRecords(summary, today))
 }
 
 func runCorpus(corpusPath, coach string) (Summary, error) {

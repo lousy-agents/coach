@@ -19,7 +19,7 @@
       "required": ["run_id", "value"],
       "properties": {
         "run_id": {"type": "string", "minLength": 1},
-        "value": {"type": ["number", "null"]}
+        "value": {"type": ["number", "null"], "description": "rounded to six decimal places"}
       }
     },
     "segment": {
@@ -30,7 +30,7 @@
         "runs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
         "first": {"$ref": "#/$defs/run_value"},
         "last": {"$ref": "#/$defs/run_value"},
-        "change": {"type": ["number", "null"]}
+        "change": {"type": ["number", "null"], "description": "rounded to six decimal places"}
       }
     },
     "break": {

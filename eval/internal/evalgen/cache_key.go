@@ -20,8 +20,8 @@ func DefaultStore() Store {
 }
 
 // Key hashes everything that decides the emitted bytes.
-func Key(cell Cell, seed int64, panel string) string {
+func Key(language Language, cell Cell, seed int64, panel string) string {
 	cellJSON, _ := json.Marshal(cell)
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%d|%s|operators=", GeneratorVersion, cellJSON, seed, panel)))
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%d|%s|operators=", language, language.Version(), cellJSON, seed, panel)))
 	return hex.EncodeToString(sum[:])
 }
