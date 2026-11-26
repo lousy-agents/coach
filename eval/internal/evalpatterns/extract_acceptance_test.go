@@ -153,6 +153,7 @@ var _ = Describe("extracting a profile from a checkout (#872 Task 2)", func() {
 			Expect(errors.As(err, &refusal)).To(BeTrue(), "ExtractProfile returned %v", err)
 			Expect(refusal.Exit).To(Equal(3))
 			Expect(err.Error()).To(HavePrefix(`reference "stand-in": `))
+			Expect(err.Error()).NotTo(ContainSubstring(root), "the refusal names the checkout's file, not the host path")
 			Expect(err.Error()).To(ContainSubstring("pick/broken.go"))
 		})
 	})
@@ -266,7 +267,7 @@ func treeListing(root string) []string {
 // goldenStandInProfile is the stand-in tree's profile, recorded from the
 // first green run after each measure was checked by hand in the rows above.
 const goldenStandInProfile = `{"dimensions":{"depth":{"0":6,"1":1},"direction":null,"entry":{"function":4,"http_handler":2,"method":1},"field":null,"layers":{"2":1},"trap":null},` +
-	`"extractor_version":"0.1.0","identity":"c3d91aa940e2fcf8b37c6a0ed8ace79b3361cdf61bb2497725d3acc06933ea8f",` +
+	`"extractor_version":"0.2.0","identity":"9f87ebb4975623bf1ad7d139ff883963ea06dc1145be2ce51ab83cf486e8ebcd",` +
 	`"label":"stand-in","licence":"MIT","not_covered":[{"count":7,"reason":"out_of_range","shape":"depth"},{"count":1,"reason":"out_of_range","shape":"layers"},{"count":2,"reason":"out_of_range","shape":"packages"}],` +
 	`"roles":{},"schema_version":"1","sha":"0123456789abcdef0123456789abcdef01234567",` +
 	`"shapes":{"branch_density":{"3":1,"4":1},"cognitive":{"0":6,"11":1,"3":1},"constructor":{"assigns_only":1,"does_work":1},"nesting":{"0":6,"1":1,"4":1}}}` + "\n"

@@ -65,7 +65,7 @@ func validProfile() map[string]any {
 		"label":             "stand-in",
 		"sha":               sampleSHA,
 		"licence":           "MIT",
-		"extractor_version": "0.1.0",
+		"extractor_version": "0.2.0",
 		"roles": map[string]any{
 			"api":   map[string]any{"packages": map[string]any{"1": 1}},
 			"store": map[string]any{"packages": map[string]any{"2": 1}},
