@@ -1,9 +1,6 @@
 package evalharness
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 // trendRun is one complete run of a cell, with its metric when the run carries it.
 type trendRun struct {
@@ -55,19 +52,6 @@ func segmentTrend(lines []LedgerLine, metric string) ([]trendSegment, []trendBre
 	return segments, breaks
 }
 
-// breakReason names why a complete run cannot continue the open segment, or returns "" when it can.
-func breakReason(open bool, previous, run map[string]any, metric string) string {
-	if open {
-		if fields := differingFields(previous, run); len(fields) > 0 {
-			return differReason(fields)
-		}
-	}
-	if _, ok := metricValue(run, metric); !ok {
-		return "metric absent"
-	}
-	return ""
-}
-
 // hasComparablePair reports whether some segment holds two adjacent runs that both carry the metric.
 func hasComparablePair(segments []trendSegment) bool {
 	for _, segment := range segments {
@@ -85,11 +69,4 @@ func segmentHasComparablePair(segment trendSegment) bool {
 		}
 	}
 	return false
-}
-
-func differReason(fields []string) string {
-	if len(fields) == 1 {
-		return fields[0] + " differs"
-	}
-	return strings.Join(fields, ", ") + " differ"
 }
