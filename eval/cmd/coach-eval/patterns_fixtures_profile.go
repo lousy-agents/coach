@@ -45,16 +45,13 @@ func exitOf(err error) int {
 }
 
 // labelledProfile reads the profile at path and requires its file to be
-// named after the label it holds. The label is checked against the profile
-// schema's path-segment pattern, so a file name cannot point the output
-// outside --out, where the generator clears its directory before writing.
+// named after the label it holds. Generate then validates the profile, whose
+// schema holds the label to a path segment, and clears only the label's own
+// directory under --out.
 func labelledProfile(path, label string) ([]byte, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
-	}
-	if err := evalpatterns.ValidateProfile(raw); err != nil {
-		return nil, fmt.Errorf("the profile does not validate: %v", err)
 	}
 	var held struct {
 		Label string `json:"label"`
