@@ -5,14 +5,14 @@ import (
 	"path/filepath"
 )
 
-// AppendCorpusRecords appends records to the corpus's ledger,
+// appendCorpusRecords appends records to the corpus's ledger,
 // <censusRoot>/<corpusID>/records.jsonl. The corpus_id names a directory, so
 // it must be a path segment, and every record must belong to that corpus.
-func AppendCorpusRecords(censusRoot, corpusID string, records []Record) error {
+func appendCorpusRecords(censusRoot, corpusID string, records []Record) error {
 	if err := corpusRecordsProblem(corpusID, records); err != nil {
 		return err
 	}
-	return AppendRecords(corpusRecordsPath(censusRoot, corpusID), records)
+	return appendRecords(corpusRecordsPath(censusRoot, corpusID), records)
 }
 
 func corpusRecordsProblem(corpusID string, records []Record) error {

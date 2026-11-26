@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 )
 
-// AppendRecords validates the whole batch against itself and the ledger, then
+// appendRecords validates the whole batch against itself and the ledger, then
 // appends it. A batch with any invalid record writes nothing, and no record
 // already in the ledger is ever rewritten.
-func AppendRecords(path string, records []Record) error {
-	return AppendToLedger(path, checkedRecordLines(path, records))
+func appendRecords(path string, records []Record) error {
+	return appendToLedger(path, checkedRecordLines(path, records))
 }
 
 // checkedRecordLines validates records against the ledger at path, which

@@ -12,7 +12,7 @@ import (
 // cell history:<corpus_id>, validated against the ledger line schema. Like
 // a census line, it names the Coach binary by base name.
 func HistoryLine(summary evalhistory.Summary, exit int, recorded time.Time) ([]byte, error) {
-	now := time.Now().UTC()
+	now := recorded.UTC()
 	data, err := validLedgerLine(map[string]any{
 		"schema_version": "1",
 		"kind":           "history",

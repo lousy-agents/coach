@@ -139,7 +139,7 @@ var _ = Describe("a history run over a pinned corpus", func() {
 
 		It("writes records the corpus ledger accepts", func() {
 			root := GinkgoT().TempDir()
-			Expect(evalcensus.AppendCorpusRecords(root, "history", evalhistory.Records(summary, "2026-11-26"))).To(Succeed())
+			Expect(evalcensus.AppendRun(filepath.Join(root, "runs.jsonl"), []byte("{}\n"), root, "history", evalhistory.Records(summary, "2026-11-26"))).To(Succeed())
 		})
 
 		It("draws the same controls again from the same seed", func() {

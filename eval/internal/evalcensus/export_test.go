@@ -20,3 +20,10 @@ func OnRecordsSnapshot(hook func()) (restore func()) {
 	afterRecordsSnapshot = hook
 	return func() { afterRecordsSnapshot = saved }
 }
+
+// AppendRecords and AppendCorpusRecords are the unlocked-by-the-run appends
+// that only AppendRun may call in production; specs drive them directly.
+var (
+	AppendRecords       = appendRecords
+	AppendCorpusRecords = appendCorpusRecords
+)

@@ -16,7 +16,8 @@ const (
 	HistoryAnalysisFailed = 3
 )
 
-// LedgerLine builds one history run's ledger line, newline included. The
+// LedgerLine builds one history run's ledger line, newline included. recorded
+// is the run's one clock reading, which the records' date also comes from. The
 // ledger's schema lives in the tooling ring, which this package may not
 // import, so coach-eval supplies the builder.
 type LedgerLine func(summary Summary, exit int, recorded time.Time) ([]byte, error)
@@ -26,7 +27,7 @@ type LedgerLine func(summary Summary, exit int, recorded time.Time) ([]byte, err
 // association records and its ledger line as one unit, then prints the
 // run's summary as JSON.
 func History(args []string, stdout, stderr io.Writer, ledgerLine LedgerLine, now func() time.Time) int {
-	summary, exit, err := history(args, ledgerLine)
+	summary, exit, err := history(args, ledgerLine, now)
 	if err != nil {
 		fmt.Fprintf(stderr, "coach-eval history: %v\n", err)
 		return HistoryInputInvalid
@@ -40,7 +41,7 @@ func History(args []string, stdout, stderr io.Writer, ledgerLine LedgerLine, now
 	return exit
 }
 
-func history(args []string, ledgerLine LedgerLine) (Summary, int, error) {
+func history(args []string, ledgerLine LedgerLine, now func() time.Time) (Summary, int, error) {
 	parsed, err := parseHistoryArgs(args)
 	if err != nil {
 		return Summary{}, 0, err
@@ -57,12 +58,12 @@ func history(args []string, ledgerLine LedgerLine) (Summary, int, error) {
 	if summary.AnalysisFailed() {
 		exit = HistoryAnalysisFailed
 	}
-	line, err := ledgerLine(summary, exit, time.Now().UTC())
+	at := now().UTC()
+	line, err := ledgerLine(summary, exit, at)
 	if err != nil {
 		return Summary{}, 0, fmt.Errorf("build history ledger line: %w", err)
 	}
-	today := time.Now().UTC().Format(time.DateOnly)
-	if err := evalcensus.AppendRun(parsed.ledger, line, parsed.censusRoot, summary.CorpusID, Records(summary, today)); err != nil {
+	if err := evalcensus.AppendRun(parsed.ledger, line, parsed.censusRoot, summary.CorpusID, Records(summary, at.Format(time.DateOnly))); err != nil {
 		return Summary{}, 0, err
 	}
 	return summary, exit, nil
