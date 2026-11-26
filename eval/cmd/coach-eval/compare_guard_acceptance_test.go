@@ -61,7 +61,7 @@ var _ = Describe("the eval-compare guard rules", func() {
 	},
 		Entry("the coach commit", "coach_sha", "fedcba9876543210fedcba9876543210fedcba98"),
 		Entry("the protocol", "protocol_hash", "sha256:other-protocol"),
-		Entry("the results", "results.clean_success", 3),
+		Entry("the results", "results.clean_success", 0.25),
 		Entry("the usage", "usage.hours", 9.5),
 	)
 
