@@ -75,9 +75,13 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["shape", "count"],
+        "required": ["shape", "reason", "count"],
         "properties": {
           "shape": { "enum": ["layers", "packages", "entry", "depth", "nesting", "cognitive", "branch_density", "constructor"] },
+          "reason": {
+            "description": "Why the shape is not covered: a value outside the generator's range, a policy whose forbidden pairs give no total order, or a policy that places no package because it declares no layers or its layers match none.",
+            "enum": ["out_of_range", "no_total_order", "policy_declares_no_layers", "policy_layers_match_no_package"]
+          },
           "count": { "type": "integer", "minimum": 1 }
         }
       }
