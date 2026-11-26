@@ -65,6 +65,15 @@ var _ = Describe("the api_surface check (design §4, G2: an api_surface symbol m
 		}),
 	)
 
+	It("never finds a symbol whose name is not exported, even when a function of that name is declared (AC-30)", func() {
+		findings, err := check(map[string]string{
+			"internal/api/entry/entry.go": "package entry\n\nfunc run() {}\n",
+		}, evaldetect.Symbol{Dir: "internal/api/entry", Name: "run"})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(findings).To(HaveLen(1))
+	})
+
 	It("reports each absent symbol of several, in a stable order (AC-30)", func() {
 		findings, err := check(map[string]string{
 			"internal/api/entry/entry.go": "package entry\n\nfunc Run() {}\n",
