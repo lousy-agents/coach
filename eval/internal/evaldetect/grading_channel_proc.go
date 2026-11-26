@@ -4,7 +4,7 @@ import "regexp"
 
 var (
 	procBuilt  = regexp.MustCompile(`^/proc/$`)
-	procFD     = regexp.MustCompile(`/proc/[^/]+/fd(/|$)`)
+	procFD     = regexp.MustCompile(`/proc/[^/]+/fd(/|$)|/dev/fd(/|$)`)
 	procMemory = regexp.MustCompile(`/proc/[^/]+/mem(/|$)`)
 )
 

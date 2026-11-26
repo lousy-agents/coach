@@ -56,12 +56,17 @@ var _ = Describe("every route the G2 check names to a descriptor, in both forms 
 		Entry(".cjs", "src/a/a.cjs"),
 	)
 
-	It("does not read a declaration file, which cannot run", func() {
-		findings, err := scanTS("src/a/a.d.ts", "declare const b: typeof process.binding;\n")
+	DescribeTable("does not read a declaration file, which cannot run",
+		func(path string) {
+			findings, err := scanTS(path, "declare const b: typeof process.binding;\n")
 
-		Expect(err).NotTo(HaveOccurred())
-		Expect(findings).To(BeEmpty())
-	})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(findings).To(BeEmpty())
+		},
+		Entry(".d.ts", "src/a/a.d.ts"),
+		Entry(".d.mts", "src/a/a.d.mts"),
+		Entry(".d.cts", "src/a/a.d.cts"),
+	)
 
 	DescribeTable("a Go call into syscall or x/sys/unix on an inherited descriptor",
 		func(source string, want []evaldetect.Finding) {

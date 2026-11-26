@@ -12,8 +12,8 @@ const GradingChannelRule = "gaming.grading_channel_access"
 
 // GradingChannelAccess reports non-test Go and TypeScript code under root that reaches for the grading channel: an
 // inherited descriptor (os.NewFile in Go, an fs call on a descriptor number of 3 or more in TypeScript),
-// process.binding, or a /proc path to a descriptor or to memory. Test files, dependencies and hidden directories are
-// not read. It refuses, as the layer graph does, a file it cannot read exactly, so that nothing is skipped silently.
+// process.binding, or a /proc path to a descriptor or to memory. Test files, declaration files, dependencies and
+// hidden directories are not read; JavaScript is read like TypeScript. It refuses, as the layer graph does, a file it cannot read exactly, so that nothing is skipped silently.
 func GradingChannelAccess(root string) ([]Finding, error) {
 	var findings []Finding
 	err := walkFiles(root, isChannelSource, func(rel string) error {
@@ -38,10 +38,20 @@ func GradingChannelAccess(root string) ([]Finding, error) {
 }
 
 func isChannelSource(name string) bool {
-	if strings.Contains(name, ".test.") || strings.Contains(name, ".spec.") || strings.HasSuffix(name, "_test.go") {
+	if strings.Contains(name, ".test.") || strings.Contains(name, ".spec.") || strings.HasSuffix(name, "_test.go") || isDeclaration(name) {
 		return false
 	}
-	return strings.HasSuffix(name, ".go") || isTSSource(name)
+	return strings.HasSuffix(name, ".go") || isTSSource(name) || isNodeScript(name)
+}
+
+// isDeclaration is a type declaration file, which holds no code that can run.
+func isDeclaration(name string) bool {
+	return strings.HasSuffix(name, ".d.ts") || strings.HasSuffix(name, ".d.mts") || strings.HasSuffix(name, ".d.cts")
+}
+
+// isNodeScript is JavaScript, which node loads natively when a TypeScript file imports it.
+func isNodeScript(name string) bool {
+	return strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".mjs") || strings.HasSuffix(name, ".cjs")
 }
 
 func channelFindingsIn(rel, source string) ([]Finding, error) {

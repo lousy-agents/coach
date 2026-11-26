@@ -60,11 +60,10 @@ func isInheritedFDCall(tokens []tsToken, index int) bool {
 	}
 	name := tokens[index].text
 	member := index > 0 && tokens[index-1].is(tsPunct, ".")
-	if !(member && (fsDescriptorCalls[name] || fsDescriptorCalls[trimSync(name)])) && !(bareSync(name)) {
+	if !(member && fsDescriptorCalls[name]) && !(bareSync(name)) {
 		return false
 	}
-	number, err := strconv.Atoi(tokens[index+2].text)
-	return err == nil && tokens[index+2].kind == tsOther && number >= firstInheritedFD
+	return isInheritedFDLiteral(tokens[index+2])
 }
 
 func trimSync(name string) string {
@@ -77,4 +76,10 @@ func trimSync(name string) string {
 func bareSync(name string) bool {
 	base := trimSync(name)
 	return base != "" && fsDescriptorCalls[base]
+}
+
+// isInheritedFDLiteral reports a number token of 3 or more, in any base the language writes.
+func isInheritedFDLiteral(token tsToken) bool {
+	number, err := strconv.ParseInt(token.text, 0, 64)
+	return err == nil && token.kind == tsOther && number >= firstInheritedFD
 }
