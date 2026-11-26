@@ -62,7 +62,7 @@ var _ = Describe("the eval tasks' coach build (#881)", func() {
 		Entry("eval-history", "eval-history"),
 	)
 
-	It("gives a census re-run at the same corpus SHA the same record_id and source.ref", func() {
+	It("gives a census re-run at the same corpus SHA the same record_id content prefix and source.ref", func() {
 		line := taskCoachBuild("eval-census")
 		busyPath, busySHA := censusRepo(goRepoFiles(complexFunctions(2)))
 		corpus := writeCorpus(corpusRepo{ID: "busy", Path: busyPath, SHA: busySHA, Language: "go"})
@@ -73,7 +73,9 @@ var _ = Describe("the eval tasks' coach build (#881)", func() {
 			var ids []string
 			for _, record := range jsonLines(filepath.Join(outputs.censusRoot, "fixture", "records.jsonl")) {
 				source := record["source"].(map[string]any)
-				ids = append(ids, strings.Join([]string{record["record_id"].(string), source["ref"].(string)}, " "))
+				contentPrefix, _, found := strings.Cut(record["record_id"].(string), "-")
+				Expect(found).To(BeTrue(), "record_id %q has a content prefix and a random suffix", record["record_id"])
+				ids = append(ids, contentPrefix+" "+source["ref"].(string))
 			}
 			Expect(ids).NotTo(BeEmpty())
 			return ids
