@@ -150,6 +150,35 @@ var _ = Describe("the TypeScript resolver's clauses", func() {
 		})
 	})
 
+	DescribeTable("a specifier that names a directory resolves to its index, never to a same-named sibling file",
+		func(files map[string]string) {
+			files[".lousy-agents/coach.json"] = `{"schema_version":"1","roots":["."],"layers":[{"name":"inner","prefixes":["src/core/inner"]},{"name":"outer","prefixes":["src/core"]}],"forbidden_imports":[{"from":"inner","to":"outer"}]}`
+			files["src/core/inner/index.ts"] = "export const I = 1;\n"
+			files["src/core/inner.ts"] = "export const S = 1;\n"
+			root := writeTree(GinkgoT().TempDir(), files)
+
+			findings, err := tsViolations(root)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(findings).To(BeEmpty())
+		},
+		Entry(".", map[string]string{"src/core/inner/d.ts": "import { I } from \".\";\n"}),
+		Entry("..", map[string]string{"src/core/inner/sub/d.ts": "import { I } from \"..\";\n"}),
+		Entry("a path with a trailing slash", map[string]string{"src/core/inner/d.ts": "import { I } from \"../inner/\";\n"}),
+	)
+
+	When("a file imports its own directory as . and baseUrl names another layer", func() {
+		It("resolves . relative to the file, not through baseUrl", func() {
+			findings, err := tsViolations(tsTree(map[string]string{
+				"tsconfig.json":       `{"compilerOptions":{"baseUrl":"src/app"}}`,
+				"src/app/index.ts":    "export const A = 1;\n",
+				"src/domain/index.ts": "export const D = 1;\n",
+				"src/domain/d.ts":     "import { D } from \".\";\n",
+			}))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(findings).To(BeEmpty())
+		})
+	})
+
 	When("a bare specifier only starts with the package's own name", func() {
 		It("is not refused as a self-reference", func() {
 			findings, err := tsViolations(tsTree(map[string]string{

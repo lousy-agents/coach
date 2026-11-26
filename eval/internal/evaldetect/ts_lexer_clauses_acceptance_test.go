@@ -24,6 +24,16 @@ func ambiguousWordRows() []TableEntry {
 	return rows
 }
 
+// ambiguousPunctuatorRows puts a slash after each punctuator other than ],
+// where a regular expression can begin (`!/re/.test(s)`, `a ? /x/ : /y/`).
+func ambiguousPunctuatorRows() []TableEntry {
+	var rows []TableEntry
+	for _, punctuator := range []string{"!", "~", "-", "?", ":", ";", "{", "&", "|", "<", ">", "*", "%", "^", "@", "."} {
+		rows = append(rows, Entry("a slash after "+punctuator, "f(a "+punctuator+" /x/);\n"))
+	}
+	return rows
+}
+
 func valueWordRows() []TableEntry {
 	var rows []TableEntry
 	for _, word := range []string{"this", "super", "null", "true", "false"} {
@@ -74,6 +84,7 @@ var _ = Describe("the TypeScript lexer's clauses", func() {
 		Entry("a function named require", "function require(id: string) { return id; }\nexport const D = 1;\n"),
 		Entry("a tagged template named from after a statement end", "export { D };\nfrom`../app/a`;\nconst D = 1;\n"),
 		Entry("a tagged template named from after an assignment", "export { D }\nconst x = from`../app/a`;\nconst D = 1;\n"),
+		Entry("import.meta followed by a tagged template named from", "const from = (s: TemplateStringsArray) => s;\nfoo(import.meta.url, from`../app/a`);\n"),
 	)
 
 	DescribeTable("a slash the lexer cannot classify as a division is refused by name",
@@ -91,6 +102,7 @@ var _ = Describe("the TypeScript lexer's clauses", func() {
 		Entry("a slash after }, which may close a block", "const D = {} / 2;\n"),
 		Entry("a slash after ++, which may be a prefix", "let i = 0; const D = i++ / 2;\n"),
 		ambiguousWordRows(),
+		ambiguousPunctuatorRows(),
 	)
 
 	When("a slash is refused", func() {
