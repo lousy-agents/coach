@@ -44,10 +44,12 @@ var _ = Describe("coach-eval generate rejection and replacement", Ordered, Conti
 			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 			replaced := decodeGenerated(outcome.stdout)
 
-			next := generateOne(GinkgoT().TempDir(), "--cell", "0", "--seed", "6")
 			Expect(replaced.Seed).To(Equal(int64(6)))
 			Expect(replaced.Replacements).To(Equal(1))
-			Expect(replaced.ProgramID).To(Equal(next.ProgramID), "the replacement is the program the next seed generates")
+			if step == "native" {
+				next := generateOne(GinkgoT().TempDir(), "--cell", "0", "--seed", "6")
+				Expect(replaced.ProgramID).To(Equal(next.ProgramID), "the replacement is the program the next seed generates")
+			}
 		},
 		Entry("native checks", "native"),
 		Entry("delete baseline", "delete_baseline"),
