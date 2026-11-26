@@ -54,12 +54,12 @@ func scanVariant(coach, fixture, variant string) (scanResult, error) {
 	if err != nil {
 		return scanResult{}, fmt.Errorf("fixture %s: %v", label, err)
 	}
-	return scanResult{scan: strings.Join(args, " "), findings: report.Signals, complete: status == 0, diagnostics: report.kinds()}, nil
+	return scanResult{scan: strings.Join(args, " "), findings: *report.Signals, complete: status == 0, diagnostics: report.kinds()}, nil
 }
 
 // coachReport is the part of a coach report the table reads.
 type coachReport struct {
-	Signals     []observedFinding `json:"signals"`
+	Signals     *[]observedFinding `json:"signals"`
 	Diagnostics []struct {
 		Kind string `json:"kind"`
 	} `json:"diagnostics"`
@@ -77,6 +77,9 @@ func readReport(report string) (coachReport, error) {
 	var parsed coachReport
 	if err := json.Unmarshal([]byte(report), &parsed); err != nil {
 		return coachReport{}, fmt.Errorf("the coach report is not JSON: %v", err)
+	}
+	if parsed.Signals == nil {
+		return coachReport{}, fmt.Errorf("the coach report has no signals key")
 	}
 	return parsed, nil
 }

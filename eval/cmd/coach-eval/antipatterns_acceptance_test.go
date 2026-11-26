@@ -232,14 +232,38 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 	})
 
 	It("leaves nothing of a scanned variant behind", func() {
-		before, _ := filepath.Glob(filepath.Join(os.TempDir(), "coach-eval-antipattern*"))
+		scratch := GinkgoT().TempDir()
 		writeFixture(fixtures, "layer", layerExpect, variantFiles(reportOf(layerSignal), nil), variantFiles(reportOf(), nil))
+
+		outcome := runAntipatternsWith([]string{"TMPDIR=" + scratch}, fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		left, err := os.ReadDir(scratch)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(left).To(BeEmpty(), "every temporary directory of the run is removed")
+	})
+
+	It("commits a variant without the host's git configuration, so a host hook cannot fail the scan", func() {
+		hooks := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte("#!/bin/sh\nexit 1\n"), 0o755)).To(Succeed())
+		config := filepath.Join(GinkgoT().TempDir(), "gitconfig")
+		Expect(os.WriteFile(config, []byte("[core]\n\thooksPath = "+hooks+"\n"), 0o644)).To(Succeed())
+		writeFixture(fixtures, "layer", layerExpect, variantFiles(reportOf(layerSignal), nil), variantFiles(reportOf(), nil))
+
+		outcome := runAntipatternsWith([]string{"GIT_CONFIG_GLOBAL=" + config}, fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+	})
+
+	It("exits 2 when a coach report has no signals key, rather than reading it as no findings", func() {
+		writeFixture(fixtures, "layer", layerExpect, variantFiles(`{"diagnostics":[]}`, nil), variantFiles(reportOf(), nil))
 
 		outcome := runAntipatterns(fixtures, cannedCoach())
 
-		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
-		after, _ := filepath.Glob(filepath.Join(os.TempDir(), "coach-eval-antipattern*"))
-		Expect(after).To(HaveLen(len(before)))
+		Expect(outcome.exitCode).To(Equal(2), outcome.stderr)
+		Expect(outcome.stdout).To(BeEmpty())
+		Expect(outcome.stderr).To(ContainSubstring("layer"))
+		Expect(outcome.stderr).To(ContainSubstring("signals"))
 	})
 
 	DescribeTable("exits 2 and names the fixture when its input is unusable",
@@ -256,6 +280,8 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 		Entry("no expect.json", "", variantFiles(reportOf(layerSignal), nil), "expect.json"),
 		Entry("an expect.json that is not JSON", "{", variantFiles(reportOf(layerSignal), nil), "expect.json"),
 		Entry("an expect.json with an unknown status", `{"id":"layer","status":"maybe","expect":{"bad":"none","good":"none"}}`, variantFiles(reportOf(layerSignal), nil), "status"),
+		Entry("a covered fixture that expects nothing on its bad variant", `{"id":"layer","status":"covered","expect":{"bad":"none","good":"none"}}`, variantFiles(reportOf(), nil), "bad"),
+		Entry("an expect.json with a key it does not know", `{"id":"layer","status":"covered","expcet":{},"expect":{"bad":[{"rule_id":"r","path":"p","subject":"s"}],"good":"none"}}`, variantFiles(reportOf(layerSignal), nil), "expcet"),
 		Entry("an expect.json whose id is not the directory's", `{"id":"other","status":"covered","expect":{"bad":"none","good":"none"}}`, variantFiles(reportOf(layerSignal), nil), "id"),
 		Entry("a bad variant that fails go vet", layerExpect, variantFiles(reportOf(layerSignal), map[string]string{"main.go": "package main\n\nfunc main() { var unused int }\n"}), "go vet"),
 		Entry("a bad variant with no go.mod", layerExpect, map[string]string{"main.go": validMain, "report.json": reportOf(layerSignal)}, "bad"),

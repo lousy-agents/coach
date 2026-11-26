@@ -43,6 +43,7 @@ type antipattern struct {
 	Source string `json:"source"`
 	Seed   string `json:"seed"`
 	Status string `json:"status"`
+	Note   string `json:"note"`
 	// ExpectIncomplete says that the bad variant's scan is expected to be incomplete: the incomplete scan is the point.
 	ExpectIncomplete bool `json:"expect_incomplete"`
 	Expect           struct {
@@ -60,7 +61,9 @@ func loadAntipattern(dir string) (antipattern, error) {
 		return antipattern{}, fmt.Errorf("fixture %s: no expect.json: %v", name, err)
 	}
 	var fixture antipattern
-	if err := json.Unmarshal(content, &fixture); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&fixture); err != nil {
 		return antipattern{}, fmt.Errorf("fixture %s: expect.json is not valid: %v", name, err)
 	}
 	if fixture.ID != name {
@@ -68,6 +71,9 @@ func loadAntipattern(dir string) (antipattern, error) {
 	}
 	if fixture.Status != statusCovered && fixture.Status != statusNotCovered {
 		return antipattern{}, fmt.Errorf("fixture %s: status %q must be %s or %s", name, fixture.Status, statusCovered, statusNotCovered)
+	}
+	if fixture.Status == statusCovered && len(fixture.Expect.Bad) == 0 {
+		return antipattern{}, fmt.Errorf("fixture %s: a covered fixture must expect at least one finding on its bad variant", name)
 	}
 	fixture.dir = dir
 	return fixture, nil
