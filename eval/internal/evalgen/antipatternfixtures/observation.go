@@ -43,7 +43,7 @@ func (o observation) note(identity string) string {
 	}
 	basis := o.basis
 	if basis == "" {
-		basis = fmt.Sprintf("the most frequent value at or over Coach's threshold of %d in the profile", o.threshold)
+		basis = fmt.Sprintf("the most frequent value at or over Coach's threshold of %d, in the profile's units", o.threshold)
 	}
 	return fmt.Sprintf("Derived from pattern profile %s: %s %d, %s%s.", identity, o.measure, o.value, basis, capped)
 }
