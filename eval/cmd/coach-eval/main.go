@@ -11,6 +11,7 @@ import (
 	"github.com/lousy-agents/coach/eval/internal/evalcensus"
 	"github.com/lousy-agents/coach/eval/internal/evalharness"
 	"github.com/lousy-agents/coach/eval/internal/evalhistory"
+	"github.com/lousy-agents/coach/eval/internal/evalpatterns"
 )
 
 func main() {
@@ -37,6 +38,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) > 0 && args[0] == "antipatterns" {
 		return evalharness.Antipatterns(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "patterns" {
+		return evalpatterns.Patterns(args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "trend" {
 		return evalharness.Trend(args[1:], stdout, stderr)
