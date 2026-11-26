@@ -1,0 +1,17 @@
+{
+  "id": "hidden-input-mutation",
+  "name": "Hidden input mutation",
+  "source": "Command-query separation violated by a function that rewrites its argument (Meyer, Object-Oriented Software Construction, ch. 23); the fix returns a new value",
+  "seed": "state.hidden_input_mutation in widget.ResetName(cfg) and appendDistinctDiagnostics(seen) (a baseline scan of main at 6d98ea0)",
+  "status": "covered",
+  "expect": {
+    "bad": [
+      {
+        "rule_id": "state.hidden_input_mutation",
+        "path": "orders/normalize.go",
+        "subject": "Normalize:o"
+      }
+    ],
+    "good": "none"
+  }
+}

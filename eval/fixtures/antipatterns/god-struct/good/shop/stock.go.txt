@@ -1,0 +1,14 @@
+package shop
+
+// Stock keeps the shop's inventory.
+type Stock struct {
+	counts map[string]int
+}
+
+// Restock adds stock for an item.
+func (s *Stock) Restock(item string, n int) {
+	if s.counts == nil {
+		s.counts = map[string]int{}
+	}
+	s.counts[item] += n
+}

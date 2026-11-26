@@ -2,6 +2,7 @@ package evalharness
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -30,4 +31,16 @@ func runIn(dir string, env []string, stdin, name string, args ...string) (string
 	cmd.Stdout, cmd.Stderr = &output, &output
 	err := cmd.Run()
 	return output.String(), err
+}
+
+// antipatternExit is a command's exit status: 0 for no error, -1 for a failure to run it.
+func antipatternExit(err error) int {
+	var exitErr *exec.ExitError
+	switch {
+	case err == nil:
+		return 0
+	case errors.As(err, &exitErr):
+		return exitErr.ExitCode()
+	}
+	return -1
 }

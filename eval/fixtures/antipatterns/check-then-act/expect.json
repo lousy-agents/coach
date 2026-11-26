@@ -1,0 +1,17 @@
+{
+  "id": "check-then-act",
+  "name": "Check-then-act on the filesystem (TOCTOU)",
+  "source": "CWE-367, time-of-check to time-of-use race: a file is tested with os.Stat and then read, and can change in between; the fix acts and handles the error",
+  "seed": "none",
+  "status": "covered",
+  "expect": {
+    "bad": [
+      {
+        "rule_id": "security.toctou_check_then_act",
+        "path": "files/read.go",
+        "subject": "path"
+      }
+    ],
+    "good": "none"
+  }
+}
