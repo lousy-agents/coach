@@ -6,9 +6,14 @@ import (
 )
 
 // roundMetric rounds to six decimal places. Without it, a difference of two metric values prints as
-// float noise such as 0.19999999999999996.
+// float noise such as 0.19999999999999996. A tiny negative value rounds to -0, which is returned as 0 so
+// that no output reads as a sign error.
 func roundMetric(v float64) float64 {
-	return math.Round(v*1e6) / 1e6
+	rounded := math.Round(v*1e6) / 1e6
+	if rounded == 0 {
+		return 0
+	}
+	return rounded
 }
 
 // trendRun is one complete run of a cell, with its metric when the run carries it.
