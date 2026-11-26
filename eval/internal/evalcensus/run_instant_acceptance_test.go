@@ -47,7 +47,7 @@ var _ = Describe("the instant a census run is recorded at", func() {
 		repoPath, sha := oneCommitRepo()
 		corpus := writeJSON(map[string]any{
 			"corpus_id":    "pilot",
-			"repositories": []any{map[string]any{"id": "r", "path": repoPath, "sha": sha, "language": "go"}},
+			"repositories": []any{map[string]any{"id": "r", "path": repoPath, "sha": sha, "language": "go", "licence": "MIT", "sample": map[string]any{"seed": 7}}},
 			"rules":        []any{map[string]any{"rule_id": "complexity.cognitive_complexity", "languages": []any{"go"}}},
 		})
 		root := GinkgoT().TempDir()

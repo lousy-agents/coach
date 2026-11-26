@@ -81,6 +81,31 @@ var _ = Describe("coach-eval history", func() {
 		})
 	})
 
+	When("the corpus names a Go rule the placement table does not hold", func() {
+		It("refuses the repository before any rule is compared, names the rule, and writes no rule for it", func() {
+			corpus := writeHistoryCorpusRules([]string{"complexity.cognitive_complexity", "architecture.made_up"}, historyRepoEntry{ID: "r", Path: path, SHA: since, HistoryUntil: until, Language: "go"})
+
+			outcome, outputs := runHistory(nil, corpus, "--seed", "7")
+
+			Expect(outcome.exitCode).To(Equal(3), outcome.stderr)
+			repo := jsonLines(outputs.ledger)[0]["run"].(map[string]any)["repositories"].([]any)[0].(map[string]any)
+			Expect(repo["evidence"]).To(ContainSubstring("architecture.made_up"))
+			Expect(repo["rules"]).To(BeEmpty(), "the rule before it is not written either")
+		})
+	})
+
+	When("the corpus names Go rules in an order that is not alphabetical", func() {
+		It("writes the rules in the corpus's order, so the ledger line follows it", func() {
+			corpus := writeHistoryCorpusRules([]string{"complexity.cognitive_complexity", "complexity.branch_density"}, historyRepoEntry{ID: "r", Path: path, SHA: since, HistoryUntil: until, Language: "go"})
+
+			outcome, outputs := runHistory(nil, corpus, "--seed", "7")
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			rules := jsonLines(outputs.ledger)[0]["run"].(map[string]any)["repositories"].([]any)[0].(map[string]any)["rules"].([]any)
+			Expect([]any{rules[0].(map[string]any)["rule_id"], rules[1].(map[string]any)["rule_id"]}).To(Equal([]any{"complexity.cognitive_complexity", "complexity.branch_density"}))
+		})
+	})
+
 	When("Coach fails on the repository", func() {
 		It("exits 3 and records the run as failed", func() {
 			outcome, outputs := runHistory(nil, writeHistoryCorpus(historyRepoEntry{ID: "r", Path: path, SHA: since, HistoryUntil: until, Language: "go", ProjectConfig: ".lousy-agents/missing.json"}), "--seed", "7")
