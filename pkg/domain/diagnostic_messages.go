@@ -7,7 +7,7 @@ var defaultDiagnosticMessages = map[string]string{
 	DiagRootScopeIncomplete: "a TypeScript root's analysed files do not cover every candidate file, so findings for the files left out are missing; check the root's tsconfig include and exclude",
 
 	DiagLayerBypassAmbiguousLayer:         "the policy's required_layer could not be applied: it matches no function in the call graph, or a reached function lies outside every layer, so no layer-bypass witness is reported for this run; check the layer's prefixes in the policy",
-	DiagLayerBypassBudgetExceeded:         "the layer-bypass search stopped at its budget or deadline, so the absence of a witness does not mean there is no bypass; narrow the policy's roots, or re-run when the machine is less loaded",
+	DiagLayerBypassBudgetExceeded:         "the layer-bypass search did not run to completion, because its budget or deadline was reached or because the required layer could not be applied (see the other layer-bypass diagnostics), so the absence of a witness does not mean there is no bypass; narrow the policy's roots, or re-run when the machine is less loaded",
 	DiagLayerBypassRequiredLayerUnmatched: "the policy's required_layer matched no package in the analysed program: correct its prefixes in the policy, or add the layer",
 	DiagLayerBypassSourceLoadFailed:       "the Go sources of a root could not be loaded for the layer-bypass search; fix the build errors in that root and re-run",
 
