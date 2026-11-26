@@ -211,6 +211,66 @@ var _ = Describe("coach-eval hook-health (#789, design 7 and 10)", func() {
 		Entry("a program path that does not exist", func() string { return programLine("/nonexistent/program") }, nil, []string{"--coach", "/bin/true"}, "program"),
 	)
 
+	DescribeTable("exits 1 when the review process fails, even if it prints a report that reads clean",
+		func(status int) {
+			outcome := runHookHealth(programLine(firstTuningProgramCopy()), nil, "--coach", stubCoach(cleanReport, status))
+
+			Expect(outcome.exitCode).To(Equal(1), outcome.stderr)
+			Expect(outcome.stderr).To(ContainSubstring("health"))
+			Expect(outcome.stderr).To(ContainSubstring("did not run cleanly"))
+		},
+		Entry("it exits 1", 1),
+		Entry("it exits 3, as for incomplete coverage", 3),
+	)
+
+	Describe("the git it starts for the copy of a program", func() {
+		healthy := func(env []string) generateOutcome {
+			return runHookHealth(programLine(firstTuningProgramCopy()), env, "--coach", builtCoach())
+		}
+		failingHooks := func() string {
+			hooks := GinkgoT().TempDir()
+			Expect(os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte("#!/bin/sh\nexit 1\n"), 0o755)).To(Succeed())
+			return hooks
+		}
+		configFile := func(content string) string {
+			path := filepath.Join(GinkgoT().TempDir(), "gitconfig")
+			Expect(os.WriteFile(path, []byte(content), 0o644)).To(Succeed())
+			return path
+		}
+
+		It("does not commit onto a repository named by an inherited GIT_DIR, as in a pre-commit hook", func() {
+			scratch := GinkgoT().TempDir()
+			init := exec.Command("git", "init", "-q", scratch)
+			Expect(init.Run()).To(Succeed())
+
+			outcome := healthy([]string{"GIT_DIR=" + filepath.Join(scratch, ".git"), "GIT_INDEX_FILE=" + filepath.Join(scratch, ".git", "index")})
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			log := exec.Command("git", "-C", scratch, "rev-list", "--all", "--count")
+			count, err := log.Output()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strings.TrimSpace(string(count))).To(Equal("0"), "the scratch repository gained no commit")
+		})
+
+		DescribeTable("ignores the host's global git configuration",
+			func(config func() string) {
+				outcome := healthy([]string{"GIT_CONFIG_GLOBAL=" + configFile(config())})
+
+				Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			},
+			Entry("a hooks path whose pre-commit hook fails", func() string { return "[core]\n\thooksPath = " + failingHooks() + "\n" }),
+			Entry("signing every commit with a program that fails", func() string { return "[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = /bin/false\n" }),
+		)
+
+		It("ignores the host's system git configuration", func() {
+			system := configFile("[core]\n\thooksPath = " + failingHooks() + "\n")
+
+			outcome := healthy([]string{"GIT_CONFIG_SYSTEM=" + system})
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		})
+	})
+
 	DescribeTable("exits 2 and names a required tool that PATH does not hold, whichever of the three it is",
 		func(missing string) {
 			outcome := runHookHealth(tuningLines(""), pathHolding(allExcept(missing)...), "--coach", "/bin/true")
