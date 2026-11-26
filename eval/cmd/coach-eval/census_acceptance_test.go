@@ -154,6 +154,20 @@ var _ = Describe("coach-eval census", func() {
 		})
 	})
 
+	When("coach exits 0 but its report cannot be read", func() {
+		It("records analysis_failed and exits 3, because the census is not clean", func() {
+			path, sha := censusRepo(goRepoFiles(complexFunctions(1)))
+			corpus := writeCorpus(corpusRepo{ID: "busy", Path: path, SHA: sha, Language: "go"})
+			garbled := filepath.Join(GinkgoT().TempDir(), "coach")
+			Expect(os.WriteFile(garbled, []byte("#!/bin/sh\necho 'not a report'\n"), 0o755)).To(Succeed())
+
+			outcome, summary := runCensus(corpus, garbled)
+
+			Expect(outcome.exitCode).To(Equal(3), outcome.stderr)
+			Expect(summary.status("busy").Status).To(Equal("analysis_failed"))
+		})
+	})
+
 	When("a census finishes", func() {
 		It("leaves no clone behind in the temporary directory", func() {
 			path, sha := censusRepo(goRepoFiles(complexFunctions(1)))
