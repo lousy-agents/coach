@@ -1,6 +1,7 @@
 package evalharness_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,27 +94,19 @@ func firstAndLastLayerDirectories(root string) (first, last string) {
 }
 
 func layerDirectories(root string) []string {
-	entries, err := os.ReadDir(filepath.Join(root, "internal"))
-	Expect(err).NotTo(HaveOccurred())
 	policy, err := os.ReadFile(filepath.Join(root, ".lousy-agents", "coach.json"))
 	Expect(err).NotTo(HaveOccurred())
-	var directories []string
-	for _, name := range orderedLayerNames(string(policy)) {
-		for _, entry := range entries {
-			if entry.Name() == name {
-				packages, err := os.ReadDir(filepath.Join(root, "internal", name))
-				Expect(err).NotTo(HaveOccurred())
-				directories = append(directories, filepath.Join("internal", name, packages[0].Name()))
-			}
-		}
+	var parsed struct {
+		Layers []struct {
+			Prefixes []string `json:"prefixes"`
+		} `json:"layers"`
+	}
+	Expect(json.Unmarshal(policy, &parsed)).To(Succeed())
+	directories := make([]string, 0, len(parsed.Layers))
+	for _, layer := range parsed.Layers {
+		packages, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(layer.Prefixes[0])))
+		Expect(err).NotTo(HaveOccurred())
+		directories = append(directories, layer.Prefixes[0]+"/"+packages[0].Name())
 	}
 	return directories
-}
-
-func orderedLayerNames(policy string) []string {
-	var names []string
-	for _, part := range strings.Split(policy, `"prefixes":["internal/`)[1:] {
-		names = append(names, part[:strings.Index(part, `"`)])
-	}
-	return names
 }

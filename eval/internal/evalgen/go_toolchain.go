@@ -8,10 +8,13 @@ import (
 	"strings"
 )
 
-func requireOnlyFailures(dir string, want []string) error {
-	output, err := goIn(dir, "test", "./...")
+func requireOnlyFailures(dir, target string, want []string) error {
+	if target == "" {
+		target = "./..."
+	}
+	output, err := goIn(dir, "test", target)
 	if err == nil {
-		return fmt.Errorf("go test passed, but the hidden tests must fail on the stub")
+		return fmt.Errorf("go test passed, but the hidden tests must fail")
 	}
 	failed := []string{}
 	for _, line := range strings.Split(output, "\n") {
