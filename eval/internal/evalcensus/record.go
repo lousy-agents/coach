@@ -5,11 +5,10 @@ import (
 	"errors"
 )
 
-var errNotImplemented = errors.New("evalcensus: not implemented")
-
 // ErrInvalidRecord marks a census record the ledger refuses.
 var ErrInvalidRecord = errors.New("evalcensus: invalid record")
 
+// Record is one census record (docs/evaluation/agentic-eval-design.md §11).
 type Record struct {
 	RecordID       string          `json:"record_id"`
 	Target         Target          `json:"target"`
@@ -24,6 +23,7 @@ type Record struct {
 	Supersedes     *string         `json:"supersedes"`
 }
 
+// Target names the finding a record is about.
 type Target struct {
 	CorpusID    string  `json:"corpus_id"`
 	SHA         string  `json:"sha"`
@@ -34,55 +34,32 @@ type Target struct {
 	Fingerprint *string `json:"fingerprint"`
 }
 
+// Source is where a record's value came from.
 type Source struct {
 	Kind string `json:"kind"`
 	Ref  string `json:"ref"`
 }
 
+// Rater is who or what assigned the value.
 type Rater struct {
 	ID   *string `json:"id"`
 	Kind string  `json:"kind"`
 }
 
-func AppendRecords(path string, records []Record) error { return errNotImplemented }
-
-func LoadRecords(path string) ([]Record, error) { return nil, errNotImplemented }
-
-type Corpus struct {
-	ID           string
-	Repositories []Repository
-	Rules        []Rule
-}
-
-type Repository struct {
-	ID, Path, SHA, Language, ProjectConfig string
-}
-
-type Rule struct {
-	RuleID    string
-	Languages []string
-}
-
-func LoadCorpus(path string) (Corpus, error) { return Corpus{}, errNotImplemented }
-
-type Status string
-
-const (
-	Measured           Status = "measured"
-	NotExercised       Status = "not_exercised"
-	NotAdjudicableOnly Status = "not_adjudicable_only"
-	AnalysisFailed     Status = "analysis_failed"
-	OutOfScope         Status = "out_of_scope"
+var (
+	measures        = setOf("detector_agreement", "flagged_vs_unflagged_association", "human_verdict")
+	sourceKinds     = setOf("detector", "szz", "review_comment", "follow_up_fix", "human")
+	raterKinds      = setOf("automated", "human")
+	dispositions    = setOf("retune", "rescope", "default_off", "accept_with_caveat")
+	engineerActions = setOf("acted", "deferred", "abandoned", "no_usage_observed")
+	automatedValues = setOf("agree", "disagree")
+	verdictValues   = setOf("true_positive", "false_positive", "unactionable_true_positive", "not_adjudicable")
 )
 
-type RuleStatus struct {
-	RuleID      string
-	Status      Status
-	Findings    int
-	Adjudicable int
-	Evidence    string
+func setOf(values ...string) map[string]bool {
+	set := make(map[string]bool, len(values))
+	for _, value := range values {
+		set[value] = true
+	}
+	return set
 }
-
-func StatusesFromReport(corpus Corpus, repo Repository, report []byte) []RuleStatus { return nil }
-
-func StatusesFromFailure(corpus Corpus, repo Repository, evidence string) []RuleStatus { return nil }
