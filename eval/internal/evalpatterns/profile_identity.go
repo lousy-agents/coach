@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strconv"
 )
 
@@ -39,4 +40,25 @@ func sealed(p profile) ([]byte, error) {
 		return nil, err
 	}
 	return append(raw, '\n'), nil
+}
+
+// VerifyProfileIdentity checks that raw's identity is the one its contents
+// seal to, so a profile edited after it was written cannot carry the
+// identity of the profile it was.
+func VerifyProfileIdentity(raw []byte) error {
+	var document map[string]any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return fmt.Errorf("profile is not JSON: %w", err)
+	}
+	carried, _ := document["identity"].(string)
+	delete(document, "identity")
+	unsealed, err := canonicalJSON(document)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(unsealed)
+	if content := hex.EncodeToString(sum[:]); carried != content {
+		return fmt.Errorf("its identity is %s, but its contents hash to %s", carried, content)
+	}
+	return nil
 }
