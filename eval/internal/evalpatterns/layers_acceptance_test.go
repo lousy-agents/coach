@@ -71,6 +71,7 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 		Entry("a pair listed twice", `{"from":"db","to":"logic"},`),
 		Entry("a pair into a layer that holds no package", `{"from":"db","to":"empty"},`),
 		Entry("a pair from a layer to itself", `{"from":"db","to":"db"},`),
+		Entry("a pair forbidden both ways with a layer that holds no package", `{"from":"db","to":"empty"},{"from":"empty","to":"db"},`),
 	)
 
 	When("a package directory shares a layer prefix's leading characters but not its path", func() {
@@ -257,6 +258,13 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 	When("the checkout holds no production Go file", func() {
 		It("records no layer, and lists neither layers nor packages as not covered", func() {
 			profile := profileOfFiles(map[string]string{"p/p_test.go": "package p\n"})
+
+			Expect(measure(profile, "dimensions", "layers")).To(Equal(map[string]any{}))
+			Expect(profile["not_covered"]).To(Equal([]any{}))
+		})
+
+		It("lists nothing as not covered even when the checkout has a policy, since there is no package to place", func() {
+			profile := profileOfFiles(map[string]string{".lousy-agents/coach.json": layeredPolicy, "p/p_test.go": "package p\n"})
 
 			Expect(measure(profile, "dimensions", "layers")).To(Equal(map[string]any{}))
 			Expect(profile["not_covered"]).To(Equal([]any{}))
