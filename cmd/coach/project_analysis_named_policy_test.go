@@ -27,7 +27,7 @@ var _ = Describe("loading the project for a TypeScript scan whose policy cannot 
 			ports := defaultScanPorts()
 			ports.loadExplicit = failingLoad
 
-			_, loadErr := loadPreparedProject(repo, revision, source, "typescript", nil, projectconfig.DiskSelection{}, ports)
+			_, loadErr := loadPreparedProject(repo, revision, source, projectLanguageFlag{value: "typescript", given: true}, nil, projectconfig.DiskSelection{}, ports)
 
 			var withReadiness *tssetup.ProjectConfigErrorWithReadiness
 			Expect(errors.As(loadErr, &withReadiness)).To(BeTrue(), "the failure carries the readiness snapshot: %v", loadErr)
@@ -52,7 +52,7 @@ var _ = Describe("loading the project when no backend can run the policy", func(
 		content := json.RawMessage(`{}`)
 		onDisk := projectconfig.DiskSelection{Path: "project.json", Digest: projectconfig.Digest(content), Content: content}
 
-		prepared, err := loadPreparedProject(GinkgoT().TempDir(), "rev", policyref.Discovered("project.json"), "go", []codesignal.Diagnostic{earlier}, onDisk, ports)
+		prepared, err := loadPreparedProject(GinkgoT().TempDir(), "rev", policyref.Discovered("project.json"), projectLanguageFlag{value: "go"}, []codesignal.Diagnostic{earlier}, onDisk, ports)
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prepared.analysis).To(BeNil())

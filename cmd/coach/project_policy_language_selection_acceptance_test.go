@@ -73,7 +73,7 @@ var _ = Describe("coach codesignal: the project policy selects the project-analy
 			Expect(exitCode).To(Equal(0), "stdout=%.600s stderr=%s", stdout, stderr)
 			violations := layerViolations(decodeCoachReport(stdout))
 			Expect(violations).To(HaveLen(1), "stdout=%.1500s", stdout)
-			Expect(violations[0].Lifecycle).To(Equal("introduced"))
+			Expect(string(violations[0].Lifecycle)).To(Equal("introduced"))
 			Expect(violations[0].Path).To(Equal("pkg/handlers/h.ts"))
 			Expect(projectLanguageDisclosure(stdout)).To(Equal(map[string]any{"language": "typescript", "source": "policy"}))
 		})

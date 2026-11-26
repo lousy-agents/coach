@@ -97,12 +97,3 @@ func ClassifyDiskPolicyError(path string, err error) *DiskPolicyRefusal {
 	}
 	return nil
 }
-
-func invalidPolicyRefusal(path string, invalid *invalidDiskPolicyError) *DiskPolicyRefusal {
-	refusal := &DiskPolicyRefusal{Path: path, Reason: refusalInvalid}
-	var language *InvalidLanguageError
-	if errors.As(invalid, &language) {
-		refusal.Detail = language.Error()
-	}
-	return refusal
-}

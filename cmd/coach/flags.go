@@ -16,6 +16,7 @@ type codesignalFlags struct {
 	buildTarget              string
 	namedPolicy              policyref.Ref
 	projectLanguage          string
+	projectLanguageSet       bool
 	minSeverity              string
 	minSeveritySet           bool
 	top                      string
@@ -86,6 +87,7 @@ func codesignalFlagsFromHolders(h codesignalFlagHolders, setFlags map[string]boo
 		buildTarget:              *h.buildTarget,
 		namedPolicy:              namedPolicyFlag(*h.projectConfig, setFlags["project-config"]),
 		projectLanguage:          *h.projectLanguage,
+		projectLanguageSet:       setFlags["project-language"],
 		minSeverity:              *h.minSeverity,
 		minSeveritySet:           setFlags["min-severity"],
 		top:                      *h.top,
@@ -109,4 +111,8 @@ func namedPolicyFlag(value string, set bool) policyref.Ref {
 		return policyref.Ref{}
 	}
 	return policyref.Named(value)
+}
+
+func (f codesignalFlags) languageFlag() projectLanguageFlag {
+	return projectLanguageFlag{value: f.projectLanguage, given: f.projectLanguageSet}
 }

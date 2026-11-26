@@ -21,7 +21,7 @@ func prepareScanProjectAnalysis(dir, revision string, f codesignalFlags, status 
 		return nil, nil, err
 	}
 	migrationDiags := offerDeprecatedProjectConfigMigration(dir, revision, f, status, stdin, stderr, ports)
-	prepared, err := prepareProjectAnalysis(dir, revision, f.namedPolicy, f.projectLanguage, ports)
+	prepared, err := prepareProjectAnalysis(dir, revision, f.namedPolicy, f.languageFlag(), ports)
 	if err != nil {
 		return nil, nil, err
 	}

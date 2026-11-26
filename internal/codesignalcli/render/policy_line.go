@@ -17,6 +17,7 @@ func renderPolicyDisclosure(b *strings.Builder, report *codesignal.Report) {
 	if policy != nil {
 		cause := effectivePolicyCause(policy)
 		fmt.Fprintf(b, "policy: %s (%s), %s\n", terminalText(policy.Path), shortPolicyDigest(policy.Digest), policyHeadRelation(cause))
+		renderLanguageLine(b, report.Scope.ProjectLanguage)
 		if warning := policyWarning(policy, cause); warning != "" && !(hasAbsent && cause == codesignal.PolicyCauseDiffersFromHead) {
 			b.WriteString(warning + "\n")
 		}
