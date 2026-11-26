@@ -36,30 +36,45 @@ type searchStep struct {
 }
 
 func (graph callGraph) bypassesFrom(source *funcNode, policy Policy, downstream map[string]bool, layerOf func(*funcNode) string) []Bypass {
-	seen := map[string]bool{source.name: true}
+	search := bypassSearch{graph: graph, policy: policy, downstream: downstream, layerOf: layerOf, seen: map[string]bool{source.name: true}}
 	queue := []searchStep{{node: source, path: []*funcNode{source}}}
-	var bypasses []Bypass
 	for len(queue) > 0 {
 		step := queue[0]
 		queue = queue[1:]
 		for _, call := range step.node.calls {
-			next := graph.nodes[call.callee]
-			if seen[call.callee] || layerOf(next) == policy.requiredLayer {
-				continue
-			}
-			seen[call.callee] = true
-			advanced := searchStep{node: next, path: append(append([]*funcNode{}, step.path...), next), first: step.first}
-			if len(step.path) == 1 {
-				advanced.first = call
-			}
-			if downstream[layerOf(next)] {
-				bypasses = append(bypasses, newBypass(advanced, policy))
-				continue
-			}
-			queue = append(queue, advanced)
+			queue = append(queue, search.follow(step, call)...)
 		}
 	}
-	return bypasses
+	return search.found
+}
+
+// bypassSearch is one source's breadth-first walk.
+type bypassSearch struct {
+	graph      callGraph
+	policy     Policy
+	downstream map[string]bool
+	layerOf    func(*funcNode) string
+	seen       map[string]bool
+	found      []Bypass
+}
+
+// follow takes one call from step. It records a bypass when the call enters
+// the downstream layer, and otherwise returns the step to explore next.
+func (search *bypassSearch) follow(step searchStep, call callSite) []searchStep {
+	next := search.graph.nodes[call.callee]
+	if search.seen[call.callee] || search.layerOf(next) == search.policy.requiredLayer {
+		return nil
+	}
+	search.seen[call.callee] = true
+	advanced := searchStep{node: next, path: append(append([]*funcNode{}, step.path...), next), first: step.first}
+	if len(step.path) == 1 {
+		advanced.first = call
+	}
+	if search.downstream[search.layerOf(next)] {
+		search.found = append(search.found, newBypass(advanced, search.policy))
+		return nil
+	}
+	return []searchStep{advanced}
 }
 
 func newBypass(step searchStep, policy Policy) Bypass {

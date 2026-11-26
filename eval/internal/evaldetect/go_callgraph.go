@@ -31,7 +31,7 @@ type callGraph struct {
 	unresolved int
 }
 
-func buildCallGraph(program *goProgram) (callGraph, error) {
+func buildCallGraph(program goProgram) (callGraph, error) {
 	graph := callGraph{nodes: map[string]*funcNode{}}
 	for _, importPath := range program.importPaths() {
 		pkg := program.packages[importPath]
@@ -58,45 +58,33 @@ func (site callSite) before(other callSite) bool {
 	return site.column < other.column
 }
 
-func (graph *callGraph) addFile(program *goProgram, pkg *goPackage, rel string, file *ast.File) {
+func (graph *callGraph) addFile(program goProgram, pkg *goPackage, rel string, file *ast.File) {
 	for _, decl := range file.Decls {
-		function, ok := decl.(*ast.FuncDecl)
-		if !ok || function.Body == nil {
-			continue
+		if function, ok := decl.(*ast.FuncDecl); ok && function.Body != nil {
+			graph.addFunction(program, pkg, rel, function)
 		}
-		object, ok := pkg.info.Defs[function.Name].(*types.Func)
+	}
+}
+
+func (graph *callGraph) addFunction(program goProgram, pkg *goPackage, rel string, function *ast.FuncDecl) {
+	object, ok := pkg.info.Defs[function.Name].(*types.Func)
+	if !ok {
+		return
+	}
+	node := &funcNode{name: object.FullName(), dir: pkg.dir, source: isSourceShaped(object)}
+	graph.nodes[node.name] = node
+	ast.Inspect(function.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
 		if !ok {
-			continue
-		}
-		node := &funcNode{name: object.FullName(), dir: pkg.dir, source: isSourceShaped(object)}
-		graph.nodes[node.name] = node
-		ast.Inspect(function.Body, func(n ast.Node) bool {
-			if call, ok := n.(*ast.CallExpr); ok {
-				graph.addCall(program, pkg, rel, node, call)
-			}
 			return true
-		})
-	}
-}
-
-// isSourceShaped reports whether a function can start a bypass: exported,
-// and for a method, on an exported type.
-func isSourceShaped(function *types.Func) bool {
-	if !function.Exported() {
-		return false
-	}
-	receiver := function.Type().(*types.Signature).Recv()
-	if receiver == nil {
+		}
+		site, outcome := resolveCall(program, pkg, rel, call)
+		switch outcome {
+		case callResolved:
+			node.calls = append(node.calls, site)
+		case callUnresolved:
+			graph.unresolved++
+		}
 		return true
-	}
-	named, ok := derefNamed(receiver.Type())
-	return ok && named.Obj().Exported()
-}
-
-func derefNamed(t types.Type) (*types.Named, bool) {
-	if pointer, ok := t.(*types.Pointer); ok {
-		t = pointer.Elem()
-	}
-	named, ok := t.(*types.Named)
-	return named, ok
+	})
 }

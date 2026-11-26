@@ -6,29 +6,35 @@ import (
 	"path"
 )
 
-// addCall records call as an edge when it resolves statically to a local
-// function or concrete method, counts it unresolved when it goes through an
-// interface or a function value, and ignores builtins, conversions and calls
-// into other modules.
-func (graph *callGraph) addCall(program *goProgram, pkg *goPackage, rel string, caller *funcNode, call *ast.CallExpr) {
+// callOutcome is what a call resolves to.
+type callOutcome int
+
+const (
+	callIgnored callOutcome = iota
+	callResolved
+	callUnresolved
+)
+
+// resolveCall resolves call statically to a local function or concrete
+// method. A call through an interface or a function value is unresolved; a
+// builtin, a conversion or a call into another module is ignored.
+func resolveCall(program goProgram, pkg *goPackage, rel string, call *ast.CallExpr) (callSite, callOutcome) {
 	callee, resolved := calledObject(pkg.info, call.Fun)
 	if !resolved {
-		graph.unresolved++
-		return
+		return callSite{}, callUnresolved
 	}
 	function, ok := callee.(*types.Func)
 	if !ok {
-		return
+		return callSite{}, callIgnored
 	}
 	if receiver := function.Type().(*types.Signature).Recv(); receiver != nil && types.IsInterface(receiver.Type()) {
-		graph.unresolved++
-		return
+		return callSite{}, callUnresolved
 	}
 	if function.Pkg() == nil || program.packages[function.Pkg().Path()] == nil {
-		return
+		return callSite{}, callIgnored
 	}
 	position := program.fset.Position(call.Pos())
-	caller.calls = append(caller.calls, callSite{callee: function.FullName(), file: path.Clean(rel), line: position.Line, column: position.Column})
+	return callSite{callee: function.FullName(), file: path.Clean(rel), line: position.Line, column: position.Column}, callResolved
 }
 
 // calledObject names what a call's function expression refers to. It
