@@ -64,7 +64,7 @@ func hasComparablePair(segments []trendSegment) bool {
 
 func segmentHasComparablePair(segment trendSegment) bool {
 	for i := 1; i < len(segment.runs); i++ {
-		if segment.runs[i-1].hasValue && segment.runs[i].hasValue {
+		if segment.runs[i-1].hasValue {
 			return true
 		}
 	}
