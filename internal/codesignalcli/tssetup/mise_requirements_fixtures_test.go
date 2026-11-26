@@ -30,10 +30,9 @@ func outcomeWhenRequirementMissing(requirement string, cause error, required boo
 	return fmt.Sprintf("%s is not available (%s)", requirement, cause), ""
 }
 
-const (
-	registryProbeTimeout      = 3 * time.Second
-	publicNpmRegistryProbeURL = "https://registry.npmjs.org/typescript"
-)
+const registryProbeTimeout = 3 * time.Second
+
+var publicNpmRegistryProbeURL = "https://registry.npmjs.org/typescript"
 
 func requireToolOnPath(name string) {
 	_, err := exec.LookPath(name)

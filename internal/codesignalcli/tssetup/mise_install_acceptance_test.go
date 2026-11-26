@@ -86,19 +86,7 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 		})
 
 		When("the trusted scope's private working directory cannot be created (coach#328 Task 5 integration repair, Finding 5)", func() {
-			It("reports package_manager_config_unverifiable rather than a bare, codeless could-not-start failure", func() {
-
-				repo := GinkgoT().TempDir()
-				Expect(os.WriteFile(filepath.Join(repo, "mise.toml"), []byte("[tools]\n\"npm:typescript\" = \"7.0.2\"\n"), 0o644)).To(Succeed())
-				nonexistentTemp := filepath.Join(GinkgoT().TempDir(), "does-not-exist")
-				GinkgoT().Setenv("TMPDIR", nonexistentTemp)
-
-				result := installMiseTypescriptProject(tstoolchain.LocateMiseTypescriptInstall, context.Background(), repo, "7.0.2")
-				Expect(result.Trusted).To(BeTrue(), "the trust gate itself never touches the working directory: %+v", result)
-				Expect(result.Attempted).To(BeFalse(), "the install subprocess must never start when insulation could not be established: %+v", result)
-				Expect(result.Observed).To(BeFalse(), "%+v", result)
-				Expect(result.Code).To(Equal(projectreadiness.GapPackageManagerConfigUnverifiable), "insulation failing before any subprocess starts must be distinguishable from mise simply being absent from PATH: %+v", result)
-			})
+			It("reports package_manager_config_unverifiable rather than a bare, codeless could-not-start failure", reportsInsulationFailureNotCodelessFailure)
 		})
 	})
 
@@ -274,4 +262,17 @@ func classifiesFreshlyInstalledCompilerEligibleNotMerely() {
 	Expect(result.Succeeded).To(BeTrue(), "a real `mise install npm:typescript@7.0.2` must classify as compilerClassEligible, not merely exit zero -- coach#328 Finding 1: mise's own default npm backend does not hoist the platform-native optionalDependency package to the top-level location classifyCompilerCandidate expects unless something completes that hoisting: %+v", result)
 	Expect(result.Class).To(Equal(tstoolchain.ClassEligible), "%+v", result)
 	Expect(result.NativePath).NotTo(BeEmpty(), "%+v", result)
+}
+
+func reportsInsulationFailureNotCodelessFailure() {
+	repo := GinkgoT().TempDir()
+	Expect(os.WriteFile(filepath.Join(repo, "mise.toml"), []byte("[tools]\n\"npm:typescript\" = \"7.0.2\"\n"), 0o644)).To(Succeed())
+	nonexistentTemp := filepath.Join(GinkgoT().TempDir(), "does-not-exist")
+	GinkgoT().Setenv("TMPDIR", nonexistentTemp)
+
+	result := installMiseTypescriptProject(tstoolchain.LocateMiseTypescriptInstall, context.Background(), repo, "7.0.2")
+	Expect(result.Trusted).To(BeTrue(), "the trust gate itself never touches the working directory: %+v", result)
+	Expect(result.Attempted).To(BeFalse(), "the install subprocess must never start when insulation could not be established: %+v", result)
+	Expect(result.Observed).To(BeFalse(), "%+v", result)
+	Expect(result.Code).To(Equal(projectreadiness.GapPackageManagerConfigUnverifiable), "insulation failing before any subprocess starts must be distinguishable from mise simply being absent from PATH: %+v", result)
 }

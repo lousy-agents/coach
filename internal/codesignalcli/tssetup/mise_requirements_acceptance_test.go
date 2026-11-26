@@ -170,3 +170,26 @@ var _ = Describe("a real-mise spec that cannot run says why, and cannot silently
 		)
 	})
 })
+
+var _ = Describe("each real-mise spec names what it needs and refuses to run without it (#891)", func() {
+	failuresOf := func(spec func()) string { return strings.Join(InterceptGomegaFailures(spec), "\n") }
+
+	It("fails the insulation-failure spec naming mise when mise is missing and the toolchain is promised", func() {
+		GinkgoT().Setenv("PATH", GinkgoT().TempDir())
+		GinkgoT().Setenv(realToolchainRequiredVariable, "1")
+
+		Expect(failuresOf(reportsInsulationFailureNotCodelessFailure)).To(ContainSubstring("mise is required here"))
+	})
+
+	It("fails the real-registry spec naming the registry when the registry is unavailable and the toolchain is promised", func() {
+		server := serveStatus(http.StatusServiceUnavailable)
+		original := publicNpmRegistryProbeURL
+		publicNpmRegistryProbeURL = server.URL
+		DeferCleanup(func() { publicNpmRegistryProbeURL = original })
+		GinkgoT().Setenv(realToolchainRequiredVariable, "1")
+
+		failures := failuresOf(classifiesFreshlyInstalledCompilerEligibleNotMerely)
+
+		Expect(failures).To(And(ContainSubstring("the public npm registry"), ContainSubstring(server.URL), ContainSubstring("503")))
+	})
+})
