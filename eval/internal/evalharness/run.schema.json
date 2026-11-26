@@ -76,6 +76,12 @@
         "hours": {"type": "number", "minimum": 0}
       }
     },
-    "results": {"type": "object"}
+    "results": {
+      "type": "object",
+      "properties": {
+        "clean_success": {"type": "number", "minimum": 0, "maximum": 1},
+        "trials": {"type": "integer", "minimum": 0}
+      }
+    }
   }
 }

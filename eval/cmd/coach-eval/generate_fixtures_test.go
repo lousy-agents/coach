@@ -51,10 +51,10 @@ func runGenerate(cacheHome string, extraEnv []string, args ...string) generateOu
 	cmd := exec.Command(coachEvalBinary, append([]string{"generate"}, args...)...)
 	cmd.Env = append(os.Environ(), "XDG_CACHE_HOME="+cacheHome)
 	cmd.Env = append(cmd.Env, extraEnv...)
-	return runCommand(cmd)
+	return runGenerateCommand(cmd)
 }
 
-func runCommand(cmd *exec.Cmd) generateOutcome {
+func runGenerateCommand(cmd *exec.Cmd) generateOutcome {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -128,5 +128,5 @@ func goIn(dir string, args ...string) generateOutcome {
 	cmd := exec.Command("go", args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOTOOLCHAIN=local", "GOPROXY=off", "GOWORK=off")
-	return runCommand(cmd)
+	return runGenerateCommand(cmd)
 }

@@ -3,7 +3,8 @@
   "scope": {
     "revision": "abc123",
     "baseline": true,
-    "policy": null
+    "policy": null,
+    "project_language": null
   },
   "summary": {
     "files_analyzed": 1,

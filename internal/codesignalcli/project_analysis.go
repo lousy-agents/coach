@@ -25,10 +25,12 @@ type ProjectAnalysis struct {
 	// Policy is the policy the analysis used, however it was selected, and whether
 	// the user named it with --project-config, which is what decides how later
 	// checks judge it: a named policy must be on disk.
-	Policy       policyref.Ref
-	Language     string
-	Config       json.RawMessage
-	ConfigDigest string
+	Policy   policyref.Ref
+	Language string
+	// LanguageScope is what the report discloses about Language: the language and what chose it.
+	LanguageScope codesignal.ProjectLanguageScope
+	Config        json.RawMessage
+	ConfigDigest  string
 	// PolicyScope is what the report discloses about the policy used: where it came
 	// from and whether it is the one committed at HEAD.
 	PolicyScope codesignal.PolicyScope

@@ -24,6 +24,7 @@ func renderPolicyDisclosure(b *strings.Builder, report *codesignal.Report) {
 	if hasAbsent {
 		b.WriteString(absentPolicyWarning(absent, policy) + "\n")
 	}
+	renderLanguageLine(b, report.Scope.ProjectLanguage)
 }
 
 // effectivePolicyCause lets MatchesHead decide the cases it can: a report decoded from JSON carries the zero

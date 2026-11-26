@@ -9,7 +9,7 @@ import (
 // ExplicitError is the refusal of a policy the user named with --project-config: that path is the policy or the scan
 // stops, never a different policy or none.
 func (refusal *DiskPolicyRefusal) ExplicitError() error {
-	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: refusal.Cause(), Message: fmt.Sprintf("coach codesignal: --project-config %q cannot be used on disk (project_config_invalid): %s", refusal.Path, refusal.Reason)}
+	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: refusal.Cause(), Message: fmt.Sprintf("coach codesignal: --project-config %q cannot be used on disk (project_config_invalid): %s", refusal.Path, refusal.Words())}
 }
 
 // RefusalForError is ClassifyDiskPolicyError for a caller that has no operational failure to separate: an error that is

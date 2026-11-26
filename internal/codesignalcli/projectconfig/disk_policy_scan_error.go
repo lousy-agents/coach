@@ -28,7 +28,7 @@ func (refusal *DiskPolicyRefusal) ScanError(explicit, unmerged bool, committed e
 	if explicit {
 		subject = "--project-config " + subject
 	}
-	message := fmt.Sprintf("coach codesignal: %s cannot be used on disk (project_config_invalid): %s", subject, refusal.Reason)
+	message := fmt.Sprintf("coach codesignal: %s cannot be used on disk (project_config_invalid): %s", subject, refusal.Words())
 	if refusal.Reason == refusalOversize {
 		message += fmt.Sprintf(" (the budget is %d bytes)", MaxBytes)
 	}
