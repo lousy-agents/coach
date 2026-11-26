@@ -9,14 +9,19 @@ import (
 // segment is a path.Match pattern, in which * stays within one segment and ? matches one character.
 func validGlob(pattern string) error {
 	for _, segment := range strings.Split(pattern, "/") {
-		if segment == "**" {
-			continue
-		}
-		if _, err := path.Match(segment, ""); err != nil {
+		if err := validSegment(segment); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func validSegment(segment string) error {
+	if segment == "**" {
+		return nil
+	}
+	_, err := path.Match(segment, "")
+	return err
 }
 
 // globMatch reports whether pattern matches the repository-relative, slash-separated name.
@@ -25,20 +30,24 @@ func globMatch(pattern, name string) bool {
 }
 
 func matchSegments(pattern, name []string) bool {
-	if len(pattern) == 0 {
+	switch {
+	case len(pattern) == 0:
 		return len(name) == 0
-	}
-	if pattern[0] == "**" {
-		for skip := 0; skip <= len(name); skip++ {
-			if matchSegments(pattern[1:], name[skip:]) {
-				return true
-			}
-		}
-		return false
-	}
-	if len(name) == 0 {
+	case pattern[0] == "**":
+		return matchAfterSkip(pattern[1:], name)
+	case len(name) == 0:
 		return false
 	}
 	matched, err := path.Match(pattern[0], name[0])
 	return err == nil && matched && matchSegments(pattern[1:], name[1:])
+}
+
+// matchAfterSkip matches rest against name after skipping zero or more of name's leading segments.
+func matchAfterSkip(rest, name []string) bool {
+	for skip := range len(name) + 1 {
+		if matchSegments(rest, name[skip:]) {
+			return true
+		}
+	}
+	return false
 }
