@@ -10,6 +10,10 @@ const (
 	DiagRootDuplicate       = "project_root_duplicate"
 	DiagRootAmbiguous       = "project_root_ambiguous"
 	DiagRootIncomplete      = "project_root_incomplete"
+
+	// DiagRootsEmpty marks a project analysis that analysed no source file
+	// under the roots a policy names, so a clean result says nothing.
+	DiagRootsEmpty = "project_roots_empty"
 )
 
 // RootDiscoveryResult is the public, candidate-only-consumer discovery
