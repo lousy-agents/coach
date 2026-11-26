@@ -148,7 +148,7 @@ var _ = Describe("eval-compare trend --format json", func() {
 	})
 
 	When("the cell has no comparable adjacent pair", func() {
-		It("exits 4 and prints nothing to stdout, as the text form does", func() {
+		It("exits 4 and prints the JSON trend, its segments and breaks, with no change", func() {
 			writeLedger(ledger,
 				ledgerLine("pre_run", "2026-11-01", "cell-a", trendRecord("run-1", 0.5)),
 			)
@@ -156,7 +156,12 @@ var _ = Describe("eval-compare trend --format json", func() {
 			outcome := runTrend(root, root, "--cell", "cell-a", "--ledger", ledger, "--format", "json")
 
 			Expect(outcome.exitCode).To(Equal(4), outcome.stderr)
-			Expect(outcome.stdout).To(BeEmpty())
+			expectMatchesSchema(trendOutputSchemaPath, []byte(outcome.stdout))
+			document := decodeJSONObject(outcome.stdout)
+			segments := document["segments"].([]any)
+			Expect(segments).To(HaveLen(1))
+			Expect(segments[0].(map[string]any)).To(HaveKeyWithValue("change", BeNil()))
+			Expect(outcome.stderr).To(ContainSubstring("no comparable adjacent pair"))
 		})
 	})
 
