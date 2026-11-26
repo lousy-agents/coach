@@ -58,7 +58,7 @@ func BuildTypeScriptLayerBypassFromModel(budgetCtx context.Context, model Model,
 
 	search := tsLayerBypassRunSearch(budgetCtx, sources, sinks, bypassAdjacency, nodePositions, requiredLayer, ambiguousLayer)
 
-	diagnostics := tsLayerBypassDiagnostics(model.Coverage.Diagnostics, ambiguousLayer, search.unclassifiedNodeSeen, search.truncatedSearch)
+	diagnostics := tsLayerBypassDiagnostics(model.Coverage.Diagnostics, requiredLayer, ambiguousLayer, search.unclassifiedNodeSeen, search.truncatedSearch)
 
 	complete := model.Coverage.Complete && !tsReachabilityHasGap(model.Coverage.Diagnostics) && !ambiguousLayer && !search.truncatedSearch
 
@@ -99,10 +99,10 @@ func tsLayerBypassSinks(facts []ReachabilityFact) []string {
 	return mapKeysSorted(seen)
 }
 
-func tsLayerBypassDiagnostics(base []Diagnostic, ambiguousLayer, unclassifiedNodeSeen, truncatedSearch bool) []Diagnostic {
+func tsLayerBypassDiagnostics(base []Diagnostic, requiredLayer BypassLayer, ambiguousLayer, unclassifiedNodeSeen, truncatedSearch bool) []Diagnostic {
 	diagnostics := append([]Diagnostic{}, base...)
 	if ambiguousLayer {
-		diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassAmbiguousLayer})
+		diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassAmbiguousLayer}, requiredLayerUnmatchedDiagnostic(requiredLayer))
 	} else if unclassifiedNodeSeen && !containsDiagnosticCode(diagnostics, DiagLayerBypassAmbiguousLayer) {
 		diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassAmbiguousLayer})
 	}

@@ -16,6 +16,18 @@ const diagLayerBypassCoverageIncomplete = "project_layer_bypass_coverage_incompl
 // ProjectChange.RuleID.
 const ruleLayerBypassID = "architecture.layer_bypass"
 
+// requiredLayerUnmatchedDiagnostics carries the cause behind an ambiguous
+// required layer to the report, next to the incomplete-coverage diagnostic.
+func requiredLayerUnmatchedDiagnostics(coverage domain.Coverage) []Diagnostic {
+	var diagnostics []Diagnostic
+	for _, diagnostic := range coverage.Diagnostics {
+		if diagnostic.Code == domain.DiagLayerBypassRequiredLayerUnmatched {
+			diagnostics = append(diagnostics, Diagnostic{Kind: diagnostic.Code, Message: diagnostic.Message})
+		}
+	}
+	return diagnostics
+}
+
 const layerBypassWhyItMatters = "A statically resolved call path from a handler-shaped source to a pinned sink that structurally never passes through a required intermediate layer means that layer's invariants (validation, authorization, caching, ...) can be silently skipped by this route, even if a separate compliant path also exists."
 
 const layerBypassRecommendation = "Route the call through the required layer, or add an explicit exception/allowlist entry if the bypass is intentional so it stops surfacing as drift."
@@ -69,6 +81,7 @@ func EvaluateGoLayerBypass(result domain.LayerBypassResult, ruleVersion, backend
 			Message: "go layer-bypass search coverage is incomplete; absence of a witness for a source/sink pair in this run does not mean no bypass exists",
 		})
 	}
+	diagnostics = append(diagnostics, requiredLayerUnmatchedDiagnostics(result.Coverage)...)
 
 	witnesses := highConfidenceWitnessesBySourceSink(result.Witnesses)
 	if len(witnesses) == 0 {
@@ -100,6 +113,7 @@ func EvaluateTypeScriptLayerBypass(result domain.LayerBypassResult, ruleVersion,
 			Message: "typescript layer-bypass search coverage is incomplete; absence of a witness for a source/sink pair in this run does not mean no bypass exists",
 		})
 	}
+	diagnostics = append(diagnostics, requiredLayerUnmatchedDiagnostics(result.Coverage)...)
 
 	witnesses := highConfidenceWitnessesBySourceSink(result.Witnesses)
 	if len(witnesses) == 0 {

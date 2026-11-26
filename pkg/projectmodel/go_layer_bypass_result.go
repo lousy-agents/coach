@@ -10,7 +10,7 @@ func assembleLayerBypassResult(loaded *loadedGoSnapshot, callGraph CallGraphResu
 	diagnostics = append(diagnostics, sourceDiagnostics...)
 	diagnostics = append(diagnostics, dirDiagnostics...)
 	if ambiguousLayer {
-		diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassAmbiguousLayer})
+		diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassAmbiguousLayer}, requiredLayerUnmatchedDiagnostic(opts.RequiredLayer))
 	} else if search.unclassifiedNodeSeen && !containsDiagnosticCode(diagnostics, DiagLayerBypassAmbiguousLayer) {
 		diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassAmbiguousLayer})
 	}
