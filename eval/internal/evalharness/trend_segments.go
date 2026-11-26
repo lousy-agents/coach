@@ -71,10 +71,17 @@ func breakReason(open bool, previous, run map[string]any, metric string) string 
 // hasComparablePair reports whether some segment holds two adjacent runs that both carry the metric.
 func hasComparablePair(segments []trendSegment) bool {
 	for _, segment := range segments {
-		for i := 1; i < len(segment.runs); i++ {
-			if segment.runs[i-1].hasValue && segment.runs[i].hasValue {
-				return true
-			}
+		if segmentHasComparablePair(segment) {
+			return true
+		}
+	}
+	return false
+}
+
+func segmentHasComparablePair(segment trendSegment) bool {
+	for i := 1; i < len(segment.runs); i++ {
+		if segment.runs[i-1].hasValue && segment.runs[i].hasValue {
+			return true
 		}
 	}
 	return false
