@@ -71,6 +71,18 @@ var _ = Describe("coach-eval history", func() {
 		})
 	})
 
+	When("history_until is the census SHA itself", func() {
+		It("exits 0 and records the empty window with no match rate and the reason", func() {
+			outcome, outputs := runHistory(nil, writeHistoryCorpus(historyRepoEntry{ID: "r", Path: path, SHA: since, HistoryUntil: since, Language: "go"}), "--seed", "7")
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			repo := jsonLines(outputs.ledger)[0]["run"].(map[string]any)["repositories"].([]any)[0].(map[string]any)
+			Expect(repo["commits"]).To(BeEquivalentTo(0))
+			Expect(repo).To(HaveKeyWithValue("match_rate", BeNil()))
+			Expect(repo["match_rate_null_reason"]).To(Equal("no commits between since and until"))
+		})
+	})
+
 	When("Coach fails on the repository", func() {
 		It("exits 3 and records the run as failed", func() {
 			outcome, outputs := runHistory(nil, writeHistoryCorpus(historyRepoEntry{ID: "r", Path: path, SHA: since, HistoryUntil: until, Language: "go", ProjectConfig: ".lousy-agents/missing.json"}), "--seed", "7")
