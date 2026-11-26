@@ -123,6 +123,25 @@ var _ = Describe("coach-eval patterns fixtures (#872 Task 5)", func() {
 		Entry("a god file's branch points", "god-file", "branch_density", "branch points"),
 	)
 
+	DescribeTable("refuses a profile whose file name is not its label with exit 2, before anything is removed",
+		func(name string) {
+			profiles := standInProfiles()
+			Expect(os.Rename(filepath.Join(profiles, "stand-in.profile.json"), filepath.Join(profiles, name))).To(Succeed())
+			sibling := filepath.Join(filepath.Dir(out), "sibling.txt")
+			Expect(os.WriteFile(sibling, []byte("kept\n"), 0o644)).To(Succeed())
+
+			outcome := runPatternsFixtures("--profiles", profiles, "--out", out)
+
+			Expect(outcome.exitCode).To(Equal(2))
+			Expect(outcome.stderr).To(ContainSubstring(name))
+			Expect(outcome.stderr).To(ContainSubstring(`label "stand-in"`))
+			Expect(sibling).To(BeAnExistingFile())
+			Expect(out).NotTo(BeADirectory())
+		},
+		Entry("a name that climbs out of --out", "...profile.json"),
+		Entry("another label's name", "other.profile.json"),
+	)
+
 	DescribeTable("refuses with exit 2, writing nothing",
 		func(arrange func(profiles string), args func(profiles string) []string, message string) {
 			profiles := standInProfiles()
