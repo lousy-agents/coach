@@ -38,7 +38,8 @@ func readModulePath(goMod string) (string, error) {
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		if fields := strings.Fields(scanner.Text()); len(fields) == 2 && fields[0] == "module" {
+		line, _, _ := strings.Cut(scanner.Text(), "//")
+		if fields := strings.Fields(line); len(fields) == 2 && fields[0] == "module" {
 			return strings.Trim(fields[1], `"`), nil
 		}
 	}

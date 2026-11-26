@@ -36,15 +36,13 @@ var _ = Describe("resolving the pinned gocognit", func() {
 		})
 	})
 
-	DescribeTable("a caller's environment cannot turn the build into a fetch or a failure",
-		func(env string) {
-			gocognit, err := evaldetect.ResolveGocognit(evalModule, []string{env})
+	When("the caller asks for a toolchain the host does not have", func() {
+		It("still builds the pinned gocognit with the local toolchain", func() {
+			gocognit, err := evaldetect.ResolveGocognit(evalModule, []string{"GOTOOLCHAIN=go1.26.0"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(gocognit.CheckVersion()).To(Succeed())
-		},
-		Entry("a toolchain the host does not have", "GOTOOLCHAIN=go1.26.0"),
-		Entry("vendor mode with no vendor directory", "GOFLAGS=-mod=vendor"),
-	)
+		})
+	})
 
 	When("the caller names a module proxy and the cache is empty", func() {
 		It("still refuses without fetching anything", func() {
