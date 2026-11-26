@@ -1,0 +1,11 @@
+{
+  "schema_version": "1",
+  "references": [
+    {
+      "label": "coach-self",
+      "sha": "d21678d6a41b9b7d81e7b9e1ce568d086a644c20",
+      "language": "go",
+      "licence": "BSD-2-Clause"
+    }
+  ]
+}

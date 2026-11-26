@@ -447,6 +447,19 @@ go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 "$bin_dir/coach-eval" history --coach "$bin_dir/coach" --census-root eval/census --ledger eval/ledger/runs.jsonl "$@"
 """
 
+# Extracts a pattern profile (derived statistics only) for each reference in eval/patterns/references.json, reading
+# each from the local clone named on the command line, and writes eval/patterns/profiles/<label>.profile.json.
+# Syntax only and offline: nothing is built from or run in the reference. Arguments after `--` reach the command.
+[tasks.eval-patterns]
+description = "Extract pattern profiles from the reference manifest; pass -- --clone LABEL=PATH for each entry; exit 0 every profile written, 2 an input unusable or a SHA unreachable, 3 a file does not parse"
+run = """
+set -eu
+bin_dir=$(mktemp -d)
+trap 'rm -rf "$bin_dir"' EXIT
+go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
+"$bin_dir/coach-eval" patterns --manifest eval/patterns/references.json --out eval/patterns/profiles "$@"
+"""
+
 # The single authoritative "everything CI proves" task. No longer the ship gate
 # -- GHA runs these as parallel required jobs -- but still the way to prove the
 # whole thing locally when you want to.
