@@ -21,6 +21,8 @@ func writeTree(root string, files map[string]string) string {
 
 const goLayerPolicy = `{"schema_version":"1","roots":["."],"layers":[{"name":"domain","prefixes":["pkg/domain"]},{"name":"app","prefixes":["pkg/app"]}],"forbidden_imports":[{"from":"domain","to":"app"}]}`
 
+const tsLayerPolicy = `{"schema_version":"1","roots":["."],"layers":[{"name":"domain","prefixes":["src/domain"]},{"name":"app","prefixes":["src/app"]}],"forbidden_imports":[{"from":"domain","to":"app"}]}`
+
 // gocognitBinary is the gocognit the eval module pins with its tool directive.
 func gocognitBinary() string {
 	command := exec.Command("go", "tool", "-n", "gocognit")
