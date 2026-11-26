@@ -228,6 +228,29 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 	})
 
+	It("reads a policy stored as coach.json.txt as the variant's policy", func() {
+		bad := map[string]string{"go.mod.txt": validMod, "main.go.txt": validMain, "report.json": reportOf(layerSignal),
+			".lousy-agents/coach.json.txt": `{"schema_version":"1","roots":["."]}`}
+		good := map[string]string{"go.mod.txt": validMod, "main.go.txt": validMain, "report.json": reportOf()}
+		writeFixture(fixtures, "layer", layerExpect, bad, good)
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		Expect(decodeTable(outcome.stdout).Fixtures[0].Bad.Scan).To(ContainSubstring("--project-config .lousy-agents/coach.json"))
+	})
+
+	It("leaves nothing of a scanned variant behind", func() {
+		before, _ := filepath.Glob(filepath.Join(os.TempDir(), "coach-eval-antipattern*"))
+		writeFixture(fixtures, "layer", layerExpect, variantFiles(reportOf(layerSignal), nil), variantFiles(reportOf(), nil))
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		after, _ := filepath.Glob(filepath.Join(os.TempDir(), "coach-eval-antipattern*"))
+		Expect(after).To(HaveLen(len(before)))
+	})
+
 	DescribeTable("exits 2 and names the fixture when its input is unusable",
 		func(expect string, bad map[string]string, mentions string) {
 			writeFixture(fixtures, "layer", expect, bad, variantFiles(reportOf(), nil))
@@ -269,6 +292,25 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 		Expect(covered).To(HaveKey("spaghetti-conditional"))
 	})
 
+	It("carries no finding of its own: Coach, scanning the committed fixture tree as a repository, reports nothing", func() {
+		repo := GinkgoT().TempDir()
+		copyDirectory(filepath.Join(repositoryRoot(), "eval", "fixtures", "antipatterns"), repo)
+		for _, step := range [][]string{{"init", "-q"}, {"add", "-A"}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x"}} {
+			cmd := exec.Command("git", step...)
+			cmd.Dir = repo
+			Expect(cmd.Run()).To(Succeed())
+		}
+		scan := exec.Command(antipatternCoach(), "codesignal", "--baseline", "--no-interactive", "--format", "json")
+		scan.Dir = repo
+
+		outcome := runGenerateCommand(scan)
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		var report struct{ Signals []map[string]any }
+		Expect(json.Unmarshal([]byte(outcome.stdout), &report)).To(Succeed(), outcome.stdout)
+		Expect(report.Signals).To(BeEmpty(), "the fixtures are stored as .txt, so the repository's own scan sees none of them")
+	})
+
 	DescribeTable("exits 2 for a missing tool or fixture directory",
 		func(args func() (string, string), mentions string) {
 			dir, coach := args()
@@ -285,3 +327,21 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 		Entry("a fixtures directory with no fixture", func() (string, string) { return GinkgoT().TempDir(), cannedCoach() }, "no fixture"),
 	)
 })
+
+func copyDirectory(from, to string) {
+	ExpectWithOffset(1, filepath.WalkDir(from, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(from, path)
+		target := filepath.Join(to, rel)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		return os.WriteFile(target, content, 0o644)
+	})).To(Succeed())
+}
