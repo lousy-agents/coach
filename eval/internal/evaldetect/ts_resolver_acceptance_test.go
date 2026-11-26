@@ -36,6 +36,7 @@ var _ = Describe("the TypeScript import lexer", func() {
 		},
 		Entry("in a line comment", "// import { A } from \"../app/a\";\nexport const D = 1;\n"),
 		Entry("in a block comment", "/* require(\"../app/a\") */\nexport const D = 1;\n"),
+		Entry("in a block comment after an operand", "export const D = 1 /* import \"../app/a\" */;\n"),
 		Entry("in a string literal", "export const D = \"import('../app/a')\";\n"),
 		Entry("in a template literal", "export const D = `import { A } from \"../app/a\"`;\n"),
 		Entry("after a regular expression literal that holds a quote", "export const re = /\"/; const s = \"import('../app/a')\";\n"),
@@ -51,6 +52,8 @@ var _ = Describe("the TypeScript import lexer", func() {
 		Entry("as a side-effect import", "import \"../app/a\";\n", 1),
 		Entry("as an export-from re-export", "export const D = 1;\nexport { A } from \"../app/a\";\n", 2),
 		Entry("after a division that is not a regular expression", "export const D = 4 / 2; import { A } from \"../app/a\";\n", 1),
+		Entry("after a division of an identifier", "const n = 4;\nexport const D = n / 2; import { A } from \"../app/a\";\n", 2),
+		Entry("after a template whose substitution has closed", "export const D = `${1}`; import { A } from \"../app/a\";\n", 1),
 	)
 })
 
@@ -72,6 +75,10 @@ var _ = Describe("the TypeScript import resolver", func() {
 			"tsconfig.base.json": `{"compilerOptions":{"baseUrl":".","paths":{"@base/*":["src/app/*"]}}}`,
 			"tsconfig.json":      `{"extends":"./tsconfig.base.json","include":["src"]}`,
 			"src/domain/d.ts":    "import { A } from \"@base/a\";\n",
+		}),
+		Entry("the paths pattern with the longest prefix", map[string]string{
+			"tsconfig.json":   `{"compilerOptions":{"baseUrl":".","paths":{"@*":["src/domain/*"],"@x/*":["src/domain/*"],"@x/a*":["src/domain/*"],"@x/app/*":["src/app/*"]}}}`,
+			"src/domain/d.ts": "import { A } from \"@x/app/a\";\n",
 		}),
 		Entry("a baseUrl-relative specifier", map[string]string{
 			"src/domain/d.ts": "import { A } from \"src/app/a\";\n",
@@ -98,6 +105,9 @@ var _ = Describe("the TypeScript import resolver", func() {
 		Entry("a paths pattern with more than one wildcard", map[string]string{
 			"tsconfig.json": `{"compilerOptions":{"baseUrl":".","paths":{"@x/*/y/*":["src/*/z/*"]}}}`,
 		}, "more than one wildcard"),
+		Entry("a tsconfig.json below the root", map[string]string{
+			"src/app/tsconfig.json": `{"compilerOptions":{"baseUrl":"."}}`,
+		}, "nested tsconfig.json"),
 		Entry("a non-literal import()", map[string]string{
 			"src/domain/d.ts": "const name = \"../app/a\";\nexport const lazy = () => import(name);\n",
 		}, "non-literal import()"),

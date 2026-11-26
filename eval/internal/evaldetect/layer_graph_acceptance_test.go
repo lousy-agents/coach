@@ -59,6 +59,21 @@ var _ = Describe("the Go layer graph", func() {
 		})
 	})
 
+	When("one layer's prefix sits inside another's", func() {
+		It("places each directory in the layer with the longest matching prefix", func() {
+			root := writeTree(GinkgoT().TempDir(), map[string]string{
+				"go.mod":                   "module example.com/fx\n\ngo 1.26.0\n",
+				".lousy-agents/coach.json": `{"schema_version":"1","roots":["."],"layers":[{"name":"app","prefixes":["pkg/app"]},{"name":"core","prefixes":["pkg"]}],"forbidden_imports":[{"from":"core","to":"app"}]}`,
+				"pkg/app/app.go":           "package app\n\nfunc A() {}\n",
+				"pkg/domain/domain.go":     "package domain\n\nimport \"example.com/fx/pkg/app\"\n\nfunc D() { app.A() }\n",
+			})
+
+			findings, err := evaldetect.GoLayerViolations(root, loadPolicy(root))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(findings).To(ConsistOf(HaveField("Subject", layerViolation+":pkg/domain->pkg/app")))
+		})
+	})
+
 	When("the forbidden import is in a nested module", func() {
 		It("resolves the nested module's path and reports the edge", func() {
 			root := writeTree(GinkgoT().TempDir(), map[string]string{
