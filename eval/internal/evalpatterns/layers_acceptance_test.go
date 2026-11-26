@@ -68,6 +68,7 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 		},
 		Entry("a pair listed twice", `{"from":"db","to":"logic"},`),
 		Entry("a pair into a layer that holds no package", `{"from":"db","to":"empty"},`),
+		Entry("a pair from a layer to itself", `{"from":"db","to":"db"},`),
 	)
 
 	When("a package directory shares a layer prefix's leading characters but not its path", func() {

@@ -47,20 +47,10 @@ func countOutside(values []int, low, high int) int {
 	return count
 }
 
-// notCoveredOrder fixes the list's order, so the profile is reproducible.
-var notCoveredOrder = map[string]int{"depth": 0, "layers": 1, "packages": 2}
-
+// addNotCovered appends a not-covered item. ExtractProfile records depth,
+// then layers, then packages, which fixes the list's order.
 func (p *profile) addNotCovered(shape string, count int) {
-	if count == 0 {
-		return
+	if count > 0 {
+		p.NotCovered = append(p.NotCovered, notCovered{Shape: shape, Count: count})
 	}
-	item := notCovered{Shape: shape, Count: count}
-	at := len(p.NotCovered)
-	for i, existing := range p.NotCovered {
-		if notCoveredOrder[existing.Shape] > notCoveredOrder[shape] {
-			at = i
-			break
-		}
-	}
-	p.NotCovered = append(p.NotCovered[:at], append([]notCovered{item}, p.NotCovered[at:]...)...)
 }
