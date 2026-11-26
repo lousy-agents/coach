@@ -337,7 +337,7 @@ run = [
 # that is not the session's.
 #
 # Do not add `test`, `ci-go`, `ci-fast`, `ci-all`, or `vulncheck` here -- `test` is
-# `go test -race ./...`, which with the sidecar built includes pkg/projectmodel,
+# `go test -race -timeout 25m ./...`, which with the sidecar built includes pkg/projectmodel,
 # the exact cost this split removes. `vulncheck` calls the vulnerability
 # database and loads the whole module; it is not a seconds-long check.
 # Do not add `tidy-check` either: it rewrites
@@ -469,7 +469,7 @@ go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 # (no second invocation). Excludes test-acceptance-fast: its ambient-credential
 # preflight refuses to run whenever GITHUB_TOKEN/GH_TOKEN or ~/.aws/config are
 # present -- always true in Claude Code remote environments -- and it adds no
-# coverage, since `test` is `go test -race ./...` unfiltered, a superset of
+# coverage, since `test` is `go test -race -timeout 25m ./...` unfiltered, a superset of
 # -run Acceptance. Excludes platform-smoke: needs Docker and live services.
 # Includes vulncheck because that leaf is required in CI and is not part of
 # ci-go (ci-go stays the verify job's step list).
