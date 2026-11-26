@@ -164,7 +164,7 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 	)
 
 	DescribeTable("refuses a checkout whose policy exists but cannot be read, with exit 2, naming the policy but not the host path, rather than falling back to the package tree",
-		func(arrange func(root string)) {
+		func(arrange func(root string), cause string) {
 			root := standInTree()
 			arrange(root)
 
@@ -174,14 +174,15 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 			Expect(errors.As(err, &refusal)).To(BeTrue(), "ExtractProfile returned %v", err)
 			Expect(refusal.Exit).To(Equal(2))
 			Expect(err.Error()).To(ContainSubstring(".lousy-agents/coach.json"))
+			Expect(err.Error()).To(ContainSubstring(cause))
 			Expect(err.Error()).NotTo(ContainSubstring(root))
 		},
 		Entry("the policy is a directory", func(root string) {
 			Expect(os.MkdirAll(filepath.Join(root, ".lousy-agents", "coach.json"), 0o755)).To(Succeed())
-		}),
+		}, "is not a regular file"),
 		Entry("the policy's directory is a regular file", func(root string) {
-			writeFile(filepath.Join(root, ".lousy-agents"), "not a directory\n")
-		}),
+			writeFile(filepath.Join(root, ".lousy-agents"), "policy\n")
+		}, ".lousy-agents is not a directory"),
 	)
 
 	When("a layer's prefix is \".\", the module root", func() {
@@ -198,6 +199,26 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 			})
 
 			Expect(measure(profile, "dimensions", "layers")).To(Equal(map[string]any{"3": 1.0}))
+			Expect(profile["roles"]).To(Equal(map[string]any{
+				"api":     map[string]any{"packages": map[string]any{"2": 1.0}},
+				"service": map[string]any{"packages": map[string]any{"3": 1.0}},
+				"store":   map[string]any{"packages": map[string]any{"4": 1.0}},
+			}))
+		})
+	})
+
+	When("a layer's prefix is \".\" and another layer's prefix is one character long", func() {
+		It("puts a package under the one-character prefix in that layer, since \".\" is shorter than every prefix", func() {
+			policy := `{"schema_version":"1","roots":["."],"layers":[` +
+				`{"name":"rest","prefixes":["."]},{"name":"mid","prefixes":["m"]},{"name":"low","prefixes":["l"]}],` +
+				`"forbidden_imports":[{"from":"mid","to":"rest"},{"from":"low","to":"rest"},{"from":"low","to":"mid"}]}`
+			profile := profileOfFiles(map[string]string{
+				".lousy-agents/coach.json": policy,
+				"root.go":                  pkgFile("one"), "cmd/c/c.go": pkgFile("c"),
+				"m/m1/m.go": pkgFile("m1"), "m/m2/m.go": pkgFile("m2"), "m/m3/m.go": pkgFile("m3"),
+				"l/l1/l.go": pkgFile("l1"), "l/l2/l.go": pkgFile("l2"), "l/l3/l.go": pkgFile("l3"), "l/l4/l.go": pkgFile("l4"),
+			})
+
 			Expect(profile["roles"]).To(Equal(map[string]any{
 				"api":     map[string]any{"packages": map[string]any{"2": 1.0}},
 				"service": map[string]any{"packages": map[string]any{"3": 1.0}},
