@@ -1,6 +1,6 @@
 # Coach evaluation design: seeded fixtures, ground truth, and agentic evals
 
-Status: draft for review, revision 4. This document is research and design only. It authorizes no fixture or harness code.
+Status: draft for review, revision 5. This document is research and design only. It authorizes no fixture or harness code.
 
 Conventions:
 - Decisions marked **our choice** have no source behind them and need owner ratification.
@@ -19,7 +19,7 @@ Terms:
 
 ## 1. Source ledger index
 
-Four research tracks, each read from primary sources on 25 Nov 2026. Rows are cited as `a.N`, `b.N`, `c.N` and `d.N`. Tracks b and d number their sections `1.`, `2.` and so on, so `b.1` means section 1 of the track b ledger. "d, proposed grader" means the closing section of the track d ledger. "a.6 finding N" means key finding N in row a.6.
+Five research tracks, read from primary sources on 25–26 Nov 2026. Rows are cited as `a.N`, `b.N`, `c.N` and `d.N`. Tracks b and d number their sections `1.`, `2.` and so on, so `b.1` means section 1 of the track b ledger. "d, proposed grader" means the closing section of the track d ledger. "a.6 finding N" means key finding N in row a.6.
 
 | Track | File | What it covers | Rows |
 | --- | --- | --- | --- |
@@ -27,6 +27,7 @@ Four research tracks, each read from primary sources on 25 Nov 2026. Rows are ci
 | b | [`sources/b-experimental-rigour.md`](sources/b-experimental-rigour.md) | Statistics, pass@k and pass^k estimators, preregistration, validity, contamination, sizing | b.1 Miller; b.2 Codex/HumanEval; b.3 τ-bench; b.4 Anthropic agent-eval post; b.5 AI Agents That Matter; b.6 preregistration and registered reports; b.7 validity threats; b.8 SWE-Bench+ and contamination |
 | c | [`sources/c-ground-truth.md`](sources/c-ground-truth.md) | How ground truth is built for smell, static-analysis and architecture tools | c.1 MLCQ; c.2 Landfill; c.3 Qualitas; c.4 Fontana and Di Nucci; c.5 OWASP Benchmark; c.6 NIST SATE VI and Juliet; c.7 mutants vs real faults; c.8 ArchLint; c.9 gaps |
 | d | [`sources/d-refactoring-outcome.md`](sources/d-refactoring-outcome.md) | Measuring a refactoring's outcome | d.1 Cognitive Complexity; d.2 its validation; d.3 reflexion models; d.4 RefactorBench; d.5 LLM refactoring study; d.6 ImpossibleBench; d.7 specification gaming; d.8 RefactoringMiner |
+| e | [`sources/e-agent-credentials.md`](sources/e-agent-credentials.md) | Running the agent on a subscription login, without an API key | e.1 authentication; e.2 CLI reference and env vars; e.3 headless; e.4 dev containers; e.5 native sandbox; e.6 Docker Sandboxes; e.7 Consumer Terms and plan limits |
 
 Gaps the ledgers record, which this design fills with **our choice**:
 
@@ -59,7 +60,7 @@ Held fixed across arms (b.7):
 - the base prompt;
 - the solver, the model and the CLI version;
 - tool permissions and git-state rules;
-- the per-trial budget and timeout;
+- the per-trial token, turn and wall-clock caps;
 - the image and the container runtime.
 
 The comparators:
@@ -74,7 +75,7 @@ The comparators:
 | `completed` = G1 ∧ G2 | 0/1 | both | co-condition (H2) in feature; secondary in refactor |
 | `introduced_defect`: at least one adjudicated `true_positive` introduced by non-Coach detectors (section 4) | 0/1 | feature | secondary |
 | `introduced_defect_count` | count | feature | secondary; reported beside `completed` |
-| `exit_budget_or_timeout` | 0/1 | both | reported per arm |
+| `exit_cap_or_timeout`: the trial ended at a token, turn or wall-clock cap | 0/1 | both | reported per arm |
 | `success` = G1 ∧ G2 ∧ every target predicate | 0/1 | refactor | secondary (H1) |
 | `predicate_score` | 0–1 | refactor | secondary |
 | `hook_findings_shown`, `resolved`, `ignored`; `in_loop_advice_precision`; `fp_fix_share` | lists, 0–1 | feature (`coach`) | secondary |
@@ -82,7 +83,7 @@ The comparators:
 | `gaming` on impossible variants | 0/1 | both | secondary |
 | `followon_g1`, `followon_cost` (section 13a) | 0/1, number | feature | exploratory |
 | `coach_findings_after`; metric deltas; `divergences_after`, `absences_after` | numbers | both | descriptive (d.1–d.3) |
-| tokens, cost, wall-clock | numbers | both | reported with every effect (b.5) |
+| tokens, turns, wall-clock; the CLI's reported cost as **notional** only | numbers | both | reported with every effect (b.5) |
 
 `unactionable_true_positive` is tracked per rule, from the adjudication record.
 
@@ -186,7 +187,7 @@ None is used on a confirmatory or secondary path. An exploratory judge must:
   - a.3 provides both as reducers.
   - No claim rests on pass@k. The product makes one run per change, and pass@k rewards retrying (b.5, d.5).
 - **Sampling settings** stay at their defaults (a.7).
-- **Cost** is reported with every effect (b.5).
+- **Tokens and turns** are reported with every effect (b.5); the CLI's dollar figure is notional on a subscription.
 - **Within-template draws** shrink only the within-template variance (a.7, b.1).
 
 ### Sizing (feature task family, confirmatory)
@@ -217,7 +218,7 @@ MDE = (t_{crit, T−1} + t_{power, T−1}) · √(ω²/T)
 
 **Pilot.** The tuning panel is run once with the full arm set. The pilot:
 - validates the pipeline;
-- measures ω², ω²_completed and the cost per trial;
+- measures ω², ω²_completed and the tokens and minutes per trial;
 - is never reported as evidence (b.6).
 
 **Go/no-go after the pilot** (decision 15.12) is one of three outcomes:
@@ -332,19 +333,42 @@ Rules:
 
 ### Solver seam
 
-The agent is a **solver** behind an interface. It takes an instance directory, a prompt, settings, a budget and a timeout, and returns an exit reason, a transcript and usage. `claude-code` is the first implementation. The trial record's `solver` block is solver-neutral, so the model path through the gateway in `docs/architecture/system-overview.md` can be added later without a schema change. The shape follows Inspect's task = dataset + solver + scorer (a.3).
+The agent is a **solver** behind an interface. It takes an instance directory, a prompt, settings, and token, turn and wall-clock caps, and returns an exit reason, a transcript and usage. `claude-code` is the first implementation. The trial record's `solver` block is solver-neutral, so the model path through the gateway in `docs/architecture/system-overview.md` can be added later without a schema change. The shape follows Inspect's task = dataset + solver + scorer (a.3).
 
-### Agent sandbox
+### Agent sandbox and credentials
 
-The agent sandbox is an OCI container under Docker, with `runsc` (gVisor) when it is registered and `runc` otherwise (**our choice**). The runtime is recorded.
+The agent uses the owner's **subscription login**, not an API key (owner decision). Three isolation options were considered:
 
-- **Contents.** A fresh copy of the instance, with one neutral initial commit and no other history (a.1, a.3). Nothing else is mounted from the host: not the repository, the oracle clone, `HOME` or the Docker socket.
-- **No real credential.** A **host-side auth proxy** injects the API key and meters spend per trial (**our choice**).
-  - The container gets `ANTHROPIC_BASE_URL` pointing at the proxy and a dummy `ANTHROPIC_API_KEY`.
-  - It also gets the CLI's settings that turn off non-essential traffic and auto-update: `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, and the auto-updater off. The exact variable names are to be confirmed against the pinned CLI's documentation.
-  - The proxy refuses requests once the trial's budget is spent. That makes it the enforcing cap, with `--max-budget-usd` as a second one.
-  - All other egress is blocked (**our choice**; a.3 shows only that `network_mode: none` limits a container).
+| Option | Where the credential is | Where the oracle is | Verdict |
+| --- | --- | --- | --- |
+| (a) The host `claude`, with the instance copy as its working directory, under the native Bash sandbox, with deny rules and a fresh `CLAUDE_CONFIG_DIR` | On the host (Keychain or `~/.claude/.credentials.json`, e.1) | On the same host | **Rejected.** The sandbox "covers shell commands only", and the file tools "follow permission rules instead". By default it can read "Most of the machine, including credential files" (e.5). Only rules separate the agent from the oracle and the credential |
+| (b) A plain Docker container, given a token from `claude setup-token` as `CLAUDE_CODE_OAUTH_TOKEN` (e.1, e.2) | **Inside** the agent's container | Outside the container | **Fallback.** The owner's subscription credential sits inside the agent's boundary, and its tools can read it: dev containers "do not prevent a malicious project from exfiltrating anything accessible inside the container" (e.4). The token lasts a year (e.1), and no revocation step is documented (e.1, decision 15.15) |
+| (c) **Docker Sandboxes** (`sbx`): a microVM per trial, logged in to the subscription with `/login`, with the credential held on the host by proxy management (e.6) | **On the host.** "the sandbox sees only a sentinel value" (e.6) | Outside the microVM | **Recommended (our choice)**, subject to the pilot proving the mechanisms that e.6 does not document |
+
+**Why a sandboxed boundary at all.** Under (b) and (c), the oracle is structurally absent from the agent's boundary, rather than present on the same filesystem and denied by rules (owner steer). Under (c), the credential is absent too.
+
+**Recommended setup, option (c).**
+- **One microVM per trial, with nothing from the host but the instance copy.** The agent cannot see the host filesystem outside the workspace (e.6). The workspace is the instance copy. Using `--clone` (read-only source plus a private clone, e.6) is preferred.
+- **Authentication.** The owner runs `/login` inside a sandbox once. The credential then stays on the host and never enters a sandbox (e.6). Host-level `~/.claude` configuration (hooks, MCP servers, memory, `CLAUDE.md`) is not inherited (e.6).
+- **Network.** A locked-down policy allows only the model API hosts that Claude Code needs (e.6: deny by default, with rules added by `sbx policy allow`). The default wildcard allowances are removed (e.6 caveat).
+- **The agent environment** has `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `apiKeyHelper` all unset, because in `-p` a key "is always used when present" (e.1). It sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, `DISABLE_AUTOUPDATER=1` and a fresh `CLAUDE_CONFIG_DIR` (e.2).
 - **Never present:** the manifest, the hidden suite, the predicates, the oracle and the graders (a.6 T.5, d.6).
+
+**Not documented in e.6, so the pilot must prove each item before any run depends on it** (decision 15.14):
+1. running `claude -p` with this design's flags, instead of the default `claude --dangerously-skip-permissions` (e.6);
+2. a custom image or template carrying the pinned toolchain, `coach` and `jq`;
+3. one `/login` serving many short-lived sandboxes;
+4. removing the default wildcard allowances.
+
+If any of them fails, the harness falls back to (b) only with the owner's explicit agreement.
+
+**If option (b) is used**, these mitigations apply. They narrow the risk but do not remove it:
+- **The token is dedicated.** It is a `setup-token` token used only for evaluation, never the developer's main login file. It is injected at run time as an environment variable and is never written to an image layer.
+- **Egress is restricted.** Only the model API is reachable, through the dev-container firewall pattern (e.4).
+- **Artefacts are scanned.** After every trial, the harness scans transcripts, final trees and results for the token, and for any string with its prefix and length. A hit fails the run and quarantines the artefacts.
+- **Revoke and rotate.** e.1 documents no revocation step, so a token that leaks has to stay valid until the owner finds a documented way to revoke it (decision 15.15).
+
+**Refusal.** If the sandbox credential is absent or expired, the task refuses and names the one command that fixes it: under (c), an `sbx` session running `/login`; under (b), `claude setup-token`. The check reports only "present" or "absent" and never prints the credential.
 
 ### Grading sandbox and the nonce channel
 
@@ -359,7 +383,7 @@ The agent sandbox is an OCI container under Docker, with `runsc` (gVisor) when i
 
 ### Images
 
-- There is one pinned base image per language, recorded by digest.
+- There is one pinned base image (or, under option (c), sandbox template) per language, recorded by digest.
 - Dependencies are installed at build time, with TS `node_modules` at the instance root (**our choice**). `jq` is pinned in every image.
 - The `coach` binary differs by run:
   - **`eval-agent`** builds `coach`, `scripts/coach-self-review.sh` and the rule paragraph from the **working tree**. It builds with `GOOS=linux` and the image's `GOARCH`, and injects the results through a **derived image** (the base digest plus a `COPY`). Their SHA-256s and the derived digest are recorded.
@@ -391,13 +415,12 @@ The agent sandbox is an OCI container under Docker, with `runsc` (gVisor) when i
 - `--model <pinned id>`
 - `--output-format stream-json`
 - `--no-session-persistence`
-- `--max-budget-usd <B>`
-- `--setting-sources user`, with a fresh `HOME`
+- `--setting-sources user`, with a fresh `HOME` and `CLAUDE_CONFIG_DIR` (e.2)
 - `--strict-mcp-config`, with an empty MCP configuration
 - the same `--allowedTools` in every arm
 - `--disallowedTools "Bash(git commit:*)"`
 
-`--bare` is not used, because it skips "hooks (those defined in settings ...)". The per-trial wall-clock timeout comes from `EVAL_TRIAL_TIMEOUT` and is recorded.
+`--bare` is not used, for two reasons. It skips "hooks (those defined in settings ...)", and in bare mode "Claude Code never reads OAuth credentials" (e.3). `--max-budget-usd` is not used, because on a subscription dollars are notional. The harness enforces the per-trial token, turn and wall-clock caps instead. It reads them from the `stream-json` events, stops the trial when one is reached, and records which cap it was.
 
 ### Exact prompt text
 
@@ -455,14 +478,15 @@ This repository has maintainability problems. Improve its internal structure wit
   "coach_build": "worktree | merge_base | release",
   "epoch": 1,
   "solver": { "name": "claude-code", "version": "string", "model": "string", "config_sha256": "string", "prompt_sha256": "string", "settings_sha256": "string", "hook_script_sha256": "string" },
-  "environment": { "image_digest": "string", "runtime": "runsc | runc", "host_arch": "string", "trial_timeout_s": 0 },
+  "environment": { "image_digest": "string", "isolation": "docker_sandbox | docker", "runtime": "microvm | runsc | runc", "host_arch": "string", "trial_timeout_s": 0 },
   "coach": { "version": "string", "binary_sha256": "string" },
   "hooks": [{ "event": "Stop", "exit": 0, "block_cause": "none | findings | not_clean | both", "message_sha256": "string", "findings_shown": [{ "rule_id": "string", "path": "string", "subject": "string", "lines": [1, 2] }] }],
   "hook_findings": { "shown": ["key"], "resolved": ["key"], "ignored": ["key"] },
   "integrity": { "hook_health": true, "git_state": true, "leakage": ["string"] },
-  "budget_usd": 0,
-  "usage": { "input_tokens": 0, "output_tokens": 0, "cost_usd": 0, "wall_seconds": 0, "tokens_on_fp": 0 },
-  "exit": { "status": 0, "reason": "completed | budget | timeout | harness_error" },
+  "caps": { "tokens": 0, "turns": 0, "wall_seconds": 0 },
+  "usage": { "input_tokens": 0, "output_tokens": 0, "turns": 0, "notional_cost_usd": 0, "wall_seconds": 0, "tokens_on_fp": 0 },
+  "credential": { "mode": "sbx_host_held | setup_token_in_container", "artefact_scan": "clean | hit" },
+  "exit": { "status": 0, "reason": "completed | token_cap | turn_cap | timeout | usage_limit | harness_error" },
   "grades": {
     "g1_behaviour": { "pass": true, "hidden_not_passed": ["test id"], "visible_hash_mismatch": ["string"], "failed_at_fp_sites": ["row_id or key"] },
     "g2_not_degenerate": { "pass": true, "violations": [{ "check": "string", "detail": "string" }] },
@@ -483,8 +507,10 @@ Adjudication-dependent variables are computed after adjudication, by joining on 
 ### Exclusions and transcripts
 
 - A `harness_error` trial is re-run once, then excluded and counted.
-- A `budget` or `timeout` exit is graded as left, and counted in `exit_budget_or_timeout`.
+- A `token_cap`, `turn_cap` or `timeout` exit is graded as left, and counted in `exit_cap_or_timeout`.
+- A `usage_limit` exit (the subscription's five-hour or weekly limit, e.7) is **not graded**. The trial is re-queued under the resume rules (section 10).
 - Leakage is reported, not excluded.
+- **A `not_clean` hook block in the study.** The treatment was broken for that trial, so the trial becomes `harness_error`, is excluded, and is re-run with the same instance, arm and epoch. If more than the preregistered rate (proposed: 5% of trials in any arm, **our choice**) are affected, the study is invalid: it is recorded, it fails, and it cannot fill the claim row.
 - Every exclusion is listed (b.6).
 - Before publication, a human reads at least 5 transcripts per arm, plus every `gaming`, G2-failure and leakage trial (a.1, b.4).
 
@@ -497,8 +523,10 @@ The tests:
 - A weakened hidden suite lets the delete baseline pass.
 - An added `TestMain` that exits 0 fails G1.
 - A tree whose code prints a forged `PASS` line (for example `go test -json`) to stdout still fails G1.
-- A grade attempt that reaches the network fails.
-- A trial that prints its environment leaves no real API key in any artefact.
+- A grade attempt that reaches the network fails. Grading uses no credential.
+- A trial whose agent tries to read `~/.claude`, the macOS Keychain (`security find-generic-password`) and its own environment leaves no credential in any transcript, final tree or result file. The artefact scan must pass, and it must fail on a planted copy of the token.
+- In a trial, the developer's user-level hooks, MCP servers and `CLAUDE.md` are not loaded. Each is planted with a marker, and the test asserts that no marker appears in the transcript.
+- With `ANTHROPIC_API_KEY` set on the host, a trial still authenticates by the subscription credential, or refuses. It never bills the key.
 - A `git commit --no-verify` (or `commit-tree`/`update-ref`) inside a trial is an integrity failure.
 - `eval-detection` fails if any finding's path falls outside the fixture.
 
@@ -571,8 +599,8 @@ Everything runs as local `mise` tasks a developer starts before committing. Each
 | --- | --- | --- | --- |
 | `eval-detection` | H3 over every detection fixture, each isolated (section 8), against `coach` built from the working tree. No model, no network | Seconds to low minutes; $0 | **Gating.** Every row outcome holds. This is the pre-commit default |
 | `eval-detection-selftest` | The mutation red tests (section 8) | Under a few minutes; $0 | `eval-detection` turns red under each mutation |
-| `eval-agent` | **Regression smoke test.** On the tuning panel (12 feature templates, 1 instance, K = 1), `coach` built from the working tree is paired against `coach` built from the merge-base, per template | About 20 min and about $24 on a cold cache, at an assumed $1 per trial for small tuning templates and 4 in parallel. About 10 min and $12 when the merge-base side is cached | **Not gating on results.** It prints the per-template flips in `unadjudicated_clean` and the integrity results. It prints any aggregate effect only with its MDE (about ±45 points at T = 12) beside it. The output is stamped **"development panel — not evidence"** |
-| `eval-agent-study` | The preregistered confirmatory run with a pinned released `coach` | Estimated at preregistration from the pilot's measured cost per trial × the trial count (on revision-4 placeholders, about 200 templates × 2 × 3 × 4 arms = 4,800 trials). Wall time = trials × mean minutes ÷ parallelism | Not gating. The only source of claims. Integrity failures exit 1 |
+| `eval-agent` | **Regression smoke test.** On the tuning panel (12 feature templates, 1 instance, K = 1), `coach` built from the working tree is paired against `coach` built from the merge-base, per template | 24 trials on a cold cache (12 worktree and 12 merge-base), and 12 when the merge-base side is cached. At an assumed 5 min a trial and 4 in parallel, that is about 30 min cold and 15 min cached. Tokens: about 24 × the pilot's mean tokens per trial, which is a placeholder until measured. It fits inside one five-hour usage window (e.7) if the pilot's mean confirms the estimate | **Not gating on results.** It prints the per-template flips in `unadjudicated_clean` and the integrity results. It prints any aggregate effect only with its MDE (about ±45 points at T = 12) beside it. The output is stamped **"development panel — not evidence"** |
+| `eval-agent-study` | The preregistered confirmatory run with a pinned released `coach` | About 200 templates × 2 × 3 × 4 arms = 4,800 trials, plus about 800 impossible-variant trials, on placeholder values. At 5 min a trial and 4 in parallel, that is about 117 h of running time. It **will span many five-hour windows and weekly limits** (e.7), probably weeks on one subscription, so the resume semantics are mandatory. Tokens are estimated at preregistration from the pilot | Not gating. The only source of claims. Integrity failures exit 1 |
 | `eval-census` | #260's census in the pinned census image (section 11) | Minutes for 6 repositories; $0 | It writes the report. It exits 1 on `analysis_failed` without a disposition, or on an unreachable SHA |
 | `eval-harness-acceptance` | The harness acceptance tests (section 7) | Minutes; $0 | Ginkgo pass with `-ginkgo.fail-on-empty` |
 | `eval-compare` | Compares two runs, or shows a trend (below) | Seconds; $0 | Informational |
@@ -594,11 +622,12 @@ Everything runs as local `mise` tasks a developer starts before committing. Each
 
 **`eval-agent-study` rules.**
 - It refuses on a dirty worktree.
-- It refuses unless `EVAL_BUDGET_USD` covers trials × the cap. `EVAL_BUDGET_MODE` is ignored.
+- It refuses unless the caps cover the protocol's full trial count: `EVAL_MAX_TRIALS` ≥ trials, and `EVAL_MAX_TOKENS` ≥ trials × the per-trial token cap.
 - It resumes idempotently, keyed by `(instance_id, arm, epoch)`.
 - It randomises trial order within template blocks from the protocol seed.
 - Every arm runs the identical instance set.
-- An incomplete study (`incomplete_budget`, or missing cells) cannot fill the claim row.
+- **Usage limits.** When the subscription's limit is reached mid-run, the run pauses: state `paused_usage_limit` in `run.json`, with the limit message and the time. In-flight trials are re-queued, never graded as partial. `mise run eval-agent-study -- --resume <run_id>` continues from there. A paused run never prints results as if complete.
+- An incomplete study (`paused_usage_limit`, a cap reached, missing cells, or an over-threshold `not_clean` rate) cannot fill the claim row.
 
 ### Exit codes (all tasks)
 
@@ -616,14 +645,15 @@ Every task refuses (exit 2) with a message naming what is missing. None silently
 
 | Input | Used by |
 | --- | --- |
-| Docker (`docker info` succeeds) | `eval-agent*`, `eval-census`, `eval-harness-acceptance` |
+| Docker (`docker info` succeeds) for grading; under option (c), also `sbx` on a supported platform (e.6) | `eval-agent*`, `eval-census`, `eval-harness-acceptance` |
 | Node and Coach's TypeScript backend at the versions `mise.toml` pins, for TS fixtures | `eval-detection`, `eval-census` (inside its image) |
 | The pinned images, at their recorded digests | `eval-agent*`, `eval-census` |
-| `ANTHROPIC_API_KEY` on the **host only**, read by the auth proxy | `eval-agent*` |
-| `EVAL_BUDGET_USD`. The estimate is printed before any trial: trials × the cap, and trials × the running mean cost if one exists | `eval-agent*` |
+| `claude` installed, at the recorded version, and logged in to a subscription. The login check reports only present or absent and never prints the credential. The refusal names the fixing command (section 7) | `eval-agent*` |
+| The sandbox credential for the chosen isolation option, present and unexpired (section 7) | `eval-agent*` |
+| No API-key variables in the agent environment (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `apiKeyHelper`), because in `-p` a key always wins (e.1) | `eval-agent*` |
+| Caps: `EVAL_MAX_TRIALS`, `EVAL_MAX_TOKENS`, `EVAL_TRIAL_MAX_TOKENS`, `EVAL_TRIAL_MAX_TURNS` and `EVAL_RUN_MAX_HOURS`. The estimate is printed before any trial, as trials × the per-trial token cap, and trials × the running mean if one exists | `eval-agent*` |
 | `EVAL_MODEL` (no default) | `eval-agent*` |
 | `EVAL_TRIAL_TIMEOUT` | `eval-agent*` |
-| The pinned `claude` CLI version | `eval-agent*` |
 | `EVAL_ORACLE_DIR`: a clean local clone at the protocol's pinned SHA, never fetched | `eval-agent-study`. `eval-agent` too when the tuning panel's suites are private |
 | The protocol file | `eval-agent-study` |
 
@@ -648,12 +678,12 @@ Every task refuses (exit 2) with a message naming what is missing. None silently
   - the private-repository and fixture SHAs;
   - the solver block, model and CLI version;
   - the parameters, every seed, and `trial_timeout_s`;
-  - `cost_usd` and wall time;
+  - tokens, turns, notional cost and wall time, plus the run state (`complete | paused_usage_limit | cap_reached | invalid`);
   - the results table.
 - **Committed ledger.** `eval/ledger/runs.jsonl` is append-only, one line per run: `run.json` without transcripts or trees. Only `eval-agent-study`, `eval-census` and `eval-detection --record-baseline` runs are appended, which gives #260 and the living evaluation a citable history. Appending changes a tracked file, so it happens only in the change that records the run.
 - **`mise run eval-compare -- <a> <b>`** reads either a ledger entry or a local run.
   - It shows detection row changes, and paired per-template differences for agent runs (a.7, b.1).
-  - Any difference in solver, model, CLI, image digest, **runtime**, **host architecture**, timeout, prompt hash, private SHA or parameters makes the runs not comparable (exit 4).
+  - Any difference in solver, model, CLI, image digest, **isolation option**, **runtime**, **host architecture**, timeout, prompt hash, private SHA or parameters makes the runs not comparable (exit 4).
   - `eval-compare -- --trend <task>` lists the ledger's runs for a task in order. That is how drift is tracked: by comparing saved results across commits.
 - **Verdicts** are reused across runs through `dedup_key`.
 
@@ -718,7 +748,7 @@ Every task refuses (exit 2) with a message naming what is missing. None silently
   "images": { "go": "digest", "ts": "digest" }, "runtime": "runsc | runc",
   "private_repo_sha": "string", "held_out_template_ids": ["string"],
   "seeds": { "instance": 0, "order": 0 },
-  "trial_timeout_s": 0, "budget_cap_per_trial_usd": 5,
+  "trial_timeout_s": 0, "trial_max_tokens": 0, "trial_max_turns": 0, "not_clean_max_rate": 0.05, "isolation": "docker_sandbox | docker",
   "fallback": { "T": 0, "printed_mde": 0 },
   "exclusions": ["harness_error_twice"],
   "deviations": []
@@ -801,11 +831,11 @@ Including `architecture.*` in #260 is an owner decision (15.9).
 - the model and the date;
 - T, and the MDE if the fallback was used;
 - the effect and its 95% CI per comparator;
-- the cost ratio against `control` and `generic_review`;
+- the token ratio against `control` and `generic_review`;
 - the HEAD.
 
 The gates on that row:
-- It is written only if the cost gate passes (decision 15.4).
+- It is written only if the token gate passes (decision 15.4).
 - Only a complete `eval-agent-study` fills it. **Claims come only from `eval-agent-study`**, and `eval-agent` output never appears.
 
 | Result | Can feed | Cannot feed |
@@ -840,12 +870,13 @@ Grouped under the four headings in b.7, plus contamination.
 
 **Internal**
 - The extra turn is isolated by a yoked `generic_review` that blocks on findings only.
-- Cost is reported with every effect (b.5).
+- Tokens and turns are reported with every effect (b.5).
 - Drift is controlled by pinning the solver, model, CLI, image, runtime, Coach hash, hook and settings.
 - Leakage is recorded.
 - Faked grading is countered by the nonce channel, the unprivileged runner and the G2 guard. Code running in-process could still target the channel; transcript reading covers that.
 - Git-state bypasses are checked at the end of every trial.
-- Key exfiltration and budget bypass are prevented by the host-side proxy.
+- **Credential exposure.** Under option (c), the credential never enters the agent's boundary (e.6). Under option (b), it does (e.4), and only the dedicated token, the egress allowlist and the artefact scan narrow the risk.
+- **Usage-limit pauses** stretch a study over days. The pinned CLI and model are re-checked on every resume, and a run whose model or CLI changed mid-run is invalid.
 
 **External**
 - Fixtures are simpler than real repositories (c.5). Claims stop at the templates' languages, sizes and trap kinds (b.7).
@@ -867,14 +898,17 @@ Grouped under the four headings in b.7, plus contamination.
 
 1. **Confirmatory task family.** *Recommend:* the self-review hook on feature tasks.
 2. **Model.** *Recommend:* pin the current flagship model, with one smaller model as an exploratory replication. Model IDs go in the protocol.
-3. **Adjudicator capacity**, likely the binding constraint. *Our estimate* at T ≈ 200:
+3. **Adjudicator capacity**, likely the binding constraint together with usage limits. *Our estimate* at T ≈ 200:
    - template validation ≈ 200 × 2 × 2 × 1.5 h ≈ 1,200 h;
    - candidate and hook-finding judgements ≈ 4,800 trials × 2 × 50% dedup × 1.2 × 2 min ≈ 190 h.
 
    *Recommend:* name the humans and their hours before preregistration. The answer feeds decision 12.
-4. **Cost gate (hard).** *Recommend:* the claim row is written only if `coach`'s cost **per G1 ∧ G2-passing trial** is at most 1.3× `control`'s (**our choice**). The raw per-trial cost ratio is printed beside it.
-5. **Permitted wording.** *Recommend:* "In a controlled evaluation on T seeded Go and TypeScript feature templates with [model] on [date], X pp fewer feature changes (95% CI a–b) introduced at least one adjudicated structural issue in the rule families Coach checks (layering, complexity, hidden input mutation, check-then-act, constructor coupling) when the agent ran Coach's self-review hook, compared with [comparator], with feature completion non-inferior." Never say "defects" without "structural". Never say "prevents" or "finds all". **This wording describes `introduced_defect`, but the primary measure is now `clean_success` (a conflict between review findings B1 and E1, raised with the supervisor). The owner must choose the wording that matches the primary.**
-6. **T and the budget.** *Recommend:* pilot, then decision 12. Approve a standing `eval-agent` budget per developer, and each `eval-agent-study` budget separately.
+4. **Token gate (hard).** *Recommend:* the claim row is written only if `coach`'s **tokens per G1 ∧ G2-passing trial** are at most 1.3× `control`'s (**our choice**). The raw tokens-per-trial ratio is printed beside it.
+5. **Permitted wording.** It must describe the primary measure. *Recommend:* "In a controlled evaluation on T seeded Go and TypeScript feature templates with [model] on [date], X pp more feature changes were completed cleanly (95% CI a–b) when the agent ran Coach's self-review hook than with [comparator]: hidden tests pass, no degenerate change, and no adjudicated structural issue in the rule families Coach checks (layering, complexity, hidden input mutation, check-then-act, constructor coupling)."
+   - The introduced-issue rate is always reported beside it, as a secondary result.
+   - Never say "defects" without "structural", and never say "prevents" or "finds all".
+   - The owner has the final say.
+6. **T and the caps.** *Recommend:* pilot, then decision 12. Set standing `eval-agent` caps per developer, and caps for each `eval-agent-study` separately, in trials, tokens and hours.
 7. **Thresholds marked our choice.** *Recommend:* ratify before preregistration:
    - H2: margin −0.05, at one-sided 0.025;
    - 15 points minimum effect;
@@ -883,17 +917,24 @@ Grouped under the four headings in b.7, plus contamination.
    - K = 3 with 2 instances per template, and K = 1 on impossible variants;
    - κ ≥ 0.6, with 20% double rating;
    - template size 300–1500 lines;
-   - B = $5;
+   - the per-trial token, turn and wall-clock caps;
+   - the 5% `not_clean` invalidation rate;
    - the 1.3× gate;
    - refactor T = 24.
 8. **`n/a` coverage cells.** *Recommend:* accept look-alike `must_not_fire` rows.
 9. **`architecture.*` in #260.** *Recommend:* include them, now that #253 is closed.
 10. **Where fixtures live. Resolve this before any fixture merges.** *Recommend:* first test an in-repository production-scope self-scan (`--build-target ./...` plus a root `tsconfig.json` excluding `eval/`), and check that the living evaluation's numbers are unchanged and contributors' hooks use the same scope. If that holds, keep fixtures in `eval/testdata/`. Only if it fails, use a separate public fixture repository with the re-pinning workflow in section 9.
 11. **CI.** *Recommend:* out of scope. `eval-detection` could later become a CI leaf.
-12. **Post-pilot go/no-go.** Choose (a), (b) or (c) from section 5, using the pilot's measured ω² and cost and the capacity from decision 3. *Recommend:* (b) over (c) if the fallback MDE is at most 25 points (**our choice**), because (c) leaves the PRD gate unjudged.
-13. **Oracle access and billing.** *Recommend:*
-    - an organisation evaluation key with a monthly cap, held by the auth proxy's operator;
-    - private-repository access only for people who run `eval-agent-study`;
+12. **Post-pilot go/no-go.** Choose (a), (b) or (c) from section 5, using the pilot's measured ω², tokens and hours, the usage limits (e.7) and the capacity from decision 3. *Recommend:* (b) over (c) if the fallback MDE is at most 25 points (**our choice**), because (c) leaves the PRD gate unjudged.
+13. **Oracle access and whose subscription.** *Recommend:*
+    - `eval-agent-study` runs on the owner's subscription;
+    - private-repository access only for people who run it;
     - **only `eval-detection` is expected of contributors.**
 
-    Because `eval-agent` is a smoke test on the tuning panel, which is never evidence, the tuning panel's hidden suites can be public. Contributors then need no private access.
+    The tuning panel's hidden suites can be public, because `eval-agent` is a smoke test on a panel that is never evidence. A contributor who chooses to run `eval-agent` does so on their own subscription and usage limits.
+14. **Isolation option.** *Recommend:* option (c), Docker Sandboxes (**our choice**), once the pilot proves the four mechanisms e.6 does not document (section 7). If they cannot be proven, the choice is (b) with its stated risk, or no agentic runs. The owner chooses; the harness does not fall back silently.
+15. **Terms of use and the credential lifecycle (blocking).**
+    - Consumer Terms §3.7 prohibits accessing the Services "through automated or non-human means, whether through a bot, script, or otherwise", "Except when you are accessing our Services via an Anthropic API Key or where we otherwise explicitly permit it" (e.7).
+    - On the other side, Anthropic documents `claude setup-token` as a subscription token "for CI and scripts" (e.2).
+    - Whether unattended evaluation runs on a subscription are permitted is **the owner's call to confirm with Anthropic**, and this design does not assume an answer. No `eval-agent*` run should happen until it is settled.
+    - Also undocumented: how to revoke a `setup-token` token (e.1). That decides whether option (b)'s revoke-and-rotate step exists at all.
