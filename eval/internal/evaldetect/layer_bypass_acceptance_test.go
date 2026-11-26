@@ -77,6 +77,47 @@ var _ = Describe("the Go layer-bypass detector", func() {
 		}, "example.com/nested.Edge", []string{"example.com/nested.Edge", storeSave}),
 	)
 
+	When("the sink itself calls further into the downstream layer", func() {
+		It("reports only the first downstream function reached", func() {
+			root := bypassTree(bypassPolicy("usecases", false), map[string]string{
+				"pkg/api/direct.go":  directBypass,
+				"pkg/store/store.go": "package store\n\ntype Record struct{ Name string }\n\nfunc Save(s string) { Write(s) }\n\nfunc Write(s string) {}\n",
+			})
+
+			report, err := evaldetect.GoLayerBypass(root, loadPolicy(root))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Bypasses).To(HaveLen(1))
+			Expect(report.Bypasses[0].Sink).To(Equal(storeSave))
+		})
+	})
+
+	When("a layer is neither upstream nor downstream of the required layer", func() {
+		It("passes through it, and never starts or ends a bypass in it", func() {
+			root := bypassTree(bypassPolicy("usecases", false), map[string]string{
+				"pkg/api/viashared.go": "package api\n\nimport \"example.com/fx/pkg/shared\"\n\nfunc Viashared(s string) { shared.Relay(s) }\n",
+				"pkg/shared/shared.go": "package shared\n\nimport \"example.com/fx/pkg/store\"\n\nfunc Relay(s string) { store.Save(s) }\n",
+			})
+
+			report, err := evaldetect.GoLayerBypass(root, loadPolicy(root))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Bypasses).To(HaveLen(1))
+			Expect(report.Bypasses[0].Source).To(Equal("example.com/fx/pkg/api.Viashared"))
+			Expect(report.Bypasses[0].Witness).To(Equal([]string{"example.com/fx/pkg/api.Viashared", "example.com/fx/pkg/shared.Relay", storeSave}))
+		})
+	})
+
+	When("a method on an unexported type in the upstream layer calls the store", func() {
+		It("is not a source, because nothing outside its package can call it by name", func() {
+			root := bypassTree(bypassPolicy("usecases", false), map[string]string{
+				"pkg/api/hidden.go": "package api\n\nimport \"example.com/fx/pkg/store\"\n\ntype hidden struct{}\n\nfunc (hidden) Serve(s string) { store.Save(s) }\n",
+			})
+
+			report, err := evaldetect.GoLayerBypass(root, loadPolicy(root))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Bypasses).To(BeEmpty())
+		})
+	})
+
 	DescribeTable("a look-alike that never calls past the required layer is not reported",
 		func(extra map[string]string) {
 			root := bypassTree(bypassPolicy("usecases", false), extra)

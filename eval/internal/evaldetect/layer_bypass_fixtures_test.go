@@ -7,7 +7,9 @@ import (
 const bypassRule = "architecture.layer_bypass"
 
 // bypassPolicy layers store under usecases under api, with usecases the
-// required layer. apiToStore adds a forbidden api→store pair when set.
+// required layer. shared has no forbidden pair with usecases either way, so
+// it is neither upstream nor downstream. apiToStore adds a forbidden
+// api→store pair when set.
 func bypassPolicy(requiredLayer string, apiToStore bool) string {
 	forbidden := `{"from":"store","to":"usecases"},{"from":"store","to":"api"},{"from":"usecases","to":"api"}`
 	if apiToStore {
@@ -20,7 +22,8 @@ func bypassPolicy(requiredLayer string, apiToStore bool) string {
 	return `{"schema_version":"1","roots":["."],"layers":[` +
 		`{"name":"store","prefixes":["pkg/store"]},` +
 		`{"name":"usecases","prefixes":["pkg/usecases"]},` +
-		`{"name":"api","prefixes":["pkg/api"]}],` +
+		`{"name":"api","prefixes":["pkg/api"]},` +
+		`{"name":"shared","prefixes":["pkg/shared"]}],` +
 		`"forbidden_imports":[` + forbidden + `]` + required + `}`
 }
 
@@ -33,7 +36,7 @@ func bypassTree(policy string, extra map[string]string) string {
 		"pkg/store/store.go":        "package store\n\ntype Record struct{ Name string }\n\nfunc Save(s string) {}\n",
 		"pkg/usecases/usecases.go":  "package usecases\n\nimport \"example.com/fx/pkg/store\"\n\nfunc Register(s string) { store.Save(s) }\n",
 		"pkg/api/api.go":            "package api\n\nimport \"example.com/fx/pkg/usecases\"\n\nfunc Handle(s string) { usecases.Register(s) }\n",
-		"pkg/api/api_test.go":       "package api\n\nimport \"example.com/fx/pkg/store\"\n\nfunc testOnly() { store.Save(\"t\") }\n",
+		"pkg/api/api_test.go":       "package api\n\nimport \"example.com/fx/pkg/store\"\n\nfunc TestOnlyHelper() { store.Save(\"t\") }\n",
 		"pkg/store/testdata/x/x.go": "package x\n\nfunc broken( {\n",
 	}
 	for path, content := range extra {
