@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("a generated TypeScript program", func() {
+var _ = Describe("a generated TypeScript program", Label(typeScriptLabel), func() {
 	for _, cell := range programCells {
 		It("type-checks with the stub, fails only its feature tests, and passes them with the oracle ("+strings.Join(cell.flags(), " ")+") (781 AC-2, done-when)", func() {
 			program := generateOne(GinkgoT().TempDir(), append(typeScriptCellFlags(cell), "--seed", "9")...)
@@ -50,7 +50,7 @@ var _ = Describe("a generated TypeScript program", func() {
 	})
 })
 
-var _ = Describe("a generated TypeScript program of the held_out panel", func() {
+var _ = Describe("a generated TypeScript program of the held_out panel", Label(typeScriptLabel), func() {
 	It("keeps its hidden tests and its oracle under EVAL_ORACLE_DIR, and out of the program's cache directory", func() {
 		cacheHome, oracleHome := GinkgoT().TempDir(), GinkgoT().TempDir()
 		outcome := runGenerate(cacheHome, []string{"EVAL_ORACLE_DIR=" + oracleHome},

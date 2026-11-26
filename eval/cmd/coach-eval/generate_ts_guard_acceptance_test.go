@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("coach-eval generate --language, and the toolchain a TypeScript program needs", func() {
+var _ = Describe("coach-eval generate --language, and the toolchain a TypeScript program needs", Label(typeScriptLabel), func() {
 	cell := typeScriptCellFlags(programCells[0])
 
 	It("refuses a language it does not know, naming the flag and the values (exit 2)", func() {

@@ -25,14 +25,9 @@ func repositoryRoot() string {
 	return root
 }
 
-// installedTSC is the compiler the generator resolves by default; a spec that needs it fails, rather than skips, when it
-// is missing, so that a run without the toolchain cannot look green.
-func installedTSC() string {
-	path := filepath.Join(repositoryRoot(), "js", "semantics", "node_modules", ".bin", "tsc")
-	_, err := os.Stat(path)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "run `mise run js-install` first: the TypeScript specs use the pinned compiler")
-	return path
-}
+// installedTSC is the pinned compiler the specs run, a snapshot taken once per run of the one the checkout has
+// installed; the run aborts with one message, rather than skipping or failing spec by spec, when there is none.
+func installedTSC() string { return suiteTypeScriptCompiler() }
 
 func tscIn(dir string, args ...string) generateOutcome {
 	cmd := exec.Command(installedTSC(), args...)
