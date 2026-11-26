@@ -84,7 +84,7 @@ func validProfile() map[string]any {
 			"branch_density": map[string]any{"3": 1},
 			"constructor":    map[string]any{"assigns_only": 1, "does_work": 0},
 		},
-		"not_covered": []any{map[string]any{"shape": "layers", "count": 1}},
+		"not_covered": []any{map[string]any{"shape": "layers", "reason": "no_total_order", "count": 1}},
 	}
 }
 

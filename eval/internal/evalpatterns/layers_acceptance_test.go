@@ -46,7 +46,7 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 				"service": map[string]any{"packages": map[string]any{"1": 1.0}},
 				"store":   map[string]any{"packages": map[string]any{"3": 1.0}},
 			}))
-			Expect(profile["not_covered"]).To(ContainElement(map[string]any{"shape": "packages", "count": 1.0}))
+			Expect(profile["not_covered"]).To(ContainElement(map[string]any{"shape": "packages", "reason": "out_of_range", "count": 1.0}))
 			Expect(profile["not_covered"]).NotTo(ContainElement(HaveKeyWithValue("shape", "layers")))
 			raw := profileJSON(profile)
 			for _, name := range []string{"handlers", "logic", "db", "empty", "outside"} {
@@ -123,7 +123,7 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 
 			Expect(measure(profile, "dimensions", "layers")).To(Equal(map[string]any{"3": 1.0}))
 			Expect(profile["roles"]).To(Equal(map[string]any{}))
-			Expect(profile["not_covered"]).To(ContainElement(map[string]any{"shape": "layers", "count": 1.0}))
+			Expect(profile["not_covered"]).To(ContainElement(map[string]any{"shape": "layers", "reason": "no_total_order", "count": 1.0}))
 		})
 	})
 
@@ -140,12 +140,12 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 			})
 
 			Expect(profile["roles"]).To(Equal(map[string]any{}))
-			Expect(profile["not_covered"]).To(ContainElement(map[string]any{"shape": "layers", "count": 1.0}))
+			Expect(profile["not_covered"]).To(ContainElement(map[string]any{"shape": "layers", "reason": "no_total_order", "count": 1.0}))
 		})
 	})
 
 	DescribeTable("a policy that places no package records no layer and lists the layers as not covered, never falling back to the package tree",
-		func(policy string) {
+		func(policy, reason string) {
 			profile := profileOfFiles(map[string]string{
 				".lousy-agents/coach.json": policy,
 				"a/x/x.go":                 pkgFile("x"), "a/y/y.go": pkgFile("y"),
@@ -155,12 +155,12 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 
 			Expect(measure(profile, "dimensions", "layers")).To(Equal(map[string]any{}))
 			Expect(profile["roles"]).To(Equal(map[string]any{}))
-			Expect(profile["not_covered"]).To(ContainElement(map[string]any{"shape": "layers", "count": 1.0}))
+			Expect(profile["not_covered"]).To(ContainElement(map[string]any{"shape": "layers", "reason": reason, "count": 1.0}))
 		},
-		Entry("the policy declares no layers", `{"something_else":true}`),
+		Entry("the policy declares no layers", `{"something_else":true}`, "policy_declares_no_layers"),
 		Entry("the policy's layers match no package", `{"schema_version":"1","roots":["."],"layers":[`+
 			`{"name":"m","prefixes":["pkg/m"]},{"name":"n","prefixes":["pkg/n"]},{"name":"o","prefixes":["pkg/o"]}],`+
-			`"forbidden_imports":[{"from":"n","to":"m"},{"from":"o","to":"m"},{"from":"o","to":"n"}]}`),
+			`"forbidden_imports":[{"from":"n","to":"m"},{"from":"o","to":"m"},{"from":"o","to":"n"}]}`, "policy_layers_match_no_package"),
 	)
 
 	DescribeTable("refuses a checkout whose policy exists but cannot be read, with exit 2, naming the policy but not the host path, rather than falling back to the package tree",
@@ -184,6 +184,47 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 		}),
 	)
 
+	When("a layer's prefix is \".\", the module root", func() {
+		It("holds every package that no longer prefix holds, as Coach's own layer matcher does", func() {
+			policy := `{"schema_version":"1","roots":["."],"layers":[` +
+				`{"name":"rest","prefixes":["."]},{"name":"mid","prefixes":["pkg/mid"]},{"name":"low","prefixes":["pkg/low"]}],` +
+				`"forbidden_imports":[{"from":"mid","to":"rest"},{"from":"low","to":"rest"},{"from":"low","to":"mid"}]}`
+			profile := profileOfFiles(map[string]string{
+				".lousy-agents/coach.json": policy,
+				"root.go":                  pkgFile("one"), "cmd/c/c.go": pkgFile("c"),
+				"pkg/mid/m1/m.go": pkgFile("m1"), "pkg/mid/m2/m.go": pkgFile("m2"), "pkg/mid/m3/m.go": pkgFile("m3"),
+				"pkg/low/l1/l.go": pkgFile("l1"), "pkg/low/l2/l.go": pkgFile("l2"),
+				"pkg/low/l3/l.go": pkgFile("l3"), "pkg/low/l4/l.go": pkgFile("l4"),
+			})
+
+			Expect(measure(profile, "dimensions", "layers")).To(Equal(map[string]any{"3": 1.0}))
+			Expect(profile["roles"]).To(Equal(map[string]any{
+				"api":     map[string]any{"packages": map[string]any{"2": 1.0}},
+				"service": map[string]any{"packages": map[string]any{"3": 1.0}},
+				"store":   map[string]any{"packages": map[string]any{"4": 1.0}},
+			}))
+		})
+	})
+
+	When("the policy's directory is a symlink to a directory outside the checkout", func() {
+		It("refuses the entry with exit 2, without reading the host's policy", func() {
+			root := standInTree()
+			outside := GinkgoT().TempDir()
+			writeFile(filepath.Join(outside, "coach.json"), "hunter2\n")
+			Expect(os.Symlink(outside, filepath.Join(root, ".lousy-agents"))).To(Succeed())
+
+			_, err := evalpatterns.ExtractProfile(standInReference(), root)
+
+			var refusal evalpatterns.Refusal
+			Expect(errors.As(err, &refusal)).To(BeTrue(), "ExtractProfile returned %v", err)
+			Expect(refusal.Exit).To(Equal(2))
+			Expect(err.Error()).To(ContainSubstring(".lousy-agents"))
+			Expect(err.Error()).To(ContainSubstring("not a regular file or directory"))
+			Expect(err.Error()).NotTo(ContainSubstring("hunter2"))
+			Expect(err.Error()).NotTo(ContainSubstring(root))
+		})
+	})
+
 	When("the policy orders six layers, more than the generator builds", func() {
 		It("records six layers, no roles, and the layers as not covered rather than clamped", func() {
 			files := chainedLayers("l1", "l2", "l3", "l4", "l5", "l6")
@@ -191,7 +232,7 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 
 			Expect(measure(profile, "dimensions", "layers")).To(Equal(map[string]any{"6": 1.0}))
 			Expect(profile["roles"]).To(Equal(map[string]any{}))
-			Expect(profile["not_covered"]).To(Equal([]any{map[string]any{"shape": "layers", "count": 1.0}}))
+			Expect(profile["not_covered"]).To(Equal([]any{map[string]any{"shape": "layers", "reason": "out_of_range", "count": 1.0}}))
 		})
 	})
 
@@ -303,7 +344,7 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 
 			Expect(measure(profile, "dimensions", "layers")).To(Equal(map[string]any{"3": 1.0}))
 			Expect(profile["roles"]).To(Equal(map[string]any{}))
-			Expect(profile["not_covered"]).To(Equal([]any{map[string]any{"shape": "packages", "count": 1.0}}))
+			Expect(profile["not_covered"]).To(Equal([]any{map[string]any{"shape": "packages", "reason": "out_of_range", "count": 1.0}}))
 		})
 	})
 })
@@ -317,7 +358,7 @@ var _ = Describe("the static call depth of a profile's entries (AC-2.4, AC-2.8)"
 		})
 
 		Expect(measure(profile, "dimensions", "depth")).To(Equal(map[string]any{"3": 1.0, "1": 1.0, "0": 1.0}))
-		Expect(profile["not_covered"]).To(ContainElement(map[string]any{"shape": "depth", "count": 2.0}))
+		Expect(profile["not_covered"]).To(ContainElement(map[string]any{"shape": "depth", "reason": "out_of_range", "count": 2.0}))
 	})
 
 	It("follows a call into the module's root package", func() {
@@ -343,7 +384,18 @@ var _ = Describe("the static call depth of a profile's entries (AC-2.4, AC-2.8)"
 		Entry("an indented module line", "  module example.invalid/one\n\ngo 1.26.0\n"),
 		Entry("a module line with a trailing comment", "module example.invalid/one // Deprecated: use example.invalid/two\n\ngo 1.26.0\n"),
 		Entry("a module line separated by a tab", "module\texample.invalid/one\n\ngo 1.26.0\n"),
+		Entry("a go line ahead of the module line", "go 1.26.0\n\nmodule example.invalid/one\n"),
 	)
+
+	It("takes no module path from a module line with more than one path, so no cross-package call resolves", func() {
+		profile := profileOfFiles(map[string]string{
+			"go.mod": "module example.invalid/one example.invalid/two\n\ngo 1.26.0\n",
+			"a/a.go": "package a\n\nimport \"example.invalid/one/b\"\n\nfunc Entry() { b.Call() }\n",
+			"b/b.go": "package b\n\nfunc Call() {}\n",
+		})
+
+		Expect(measure(profile, "dimensions", "depth")).To(Equal(map[string]any{"0": 2.0}))
+	})
 
 	It("extracts a checkout with no go.mod, following only same-package calls", func() {
 		root := filepath.Join(GinkgoT().TempDir(), "nomod")
@@ -358,9 +410,9 @@ var _ = Describe("the static call depth of a profile's entries (AC-2.4, AC-2.8)"
 		profile := profileOfFiles(map[string]string{"a/a.go": "package a\n\nfunc Entry() {}\n"})
 
 		Expect(profile["not_covered"]).To(Equal([]any{
-			map[string]any{"shape": "depth", "count": 1.0},
-			map[string]any{"shape": "layers", "count": 1.0},
-			map[string]any{"shape": "packages", "count": 1.0},
+			map[string]any{"shape": "depth", "reason": "out_of_range", "count": 1.0},
+			map[string]any{"shape": "layers", "reason": "out_of_range", "count": 1.0},
+			map[string]any{"shape": "packages", "reason": "out_of_range", "count": 1.0},
 		}))
 	})
 })

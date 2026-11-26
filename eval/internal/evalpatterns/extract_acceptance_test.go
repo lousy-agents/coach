@@ -52,9 +52,9 @@ var _ = Describe("extracting a profile from a checkout (#872 Task 2)", func() {
 			}))
 			Expect(profile["roles"]).To(Equal(map[string]any{}))
 			Expect(profile["not_covered"]).To(Equal([]any{
-				map[string]any{"shape": "depth", "count": 7.0},
-				map[string]any{"shape": "layers", "count": 1.0},
-				map[string]any{"shape": "packages", "count": 2.0},
+				map[string]any{"shape": "depth", "reason": "out_of_range", "count": 7.0},
+				map[string]any{"shape": "layers", "reason": "out_of_range", "count": 1.0},
+				map[string]any{"shape": "packages", "reason": "out_of_range", "count": 2.0},
 			}))
 		})
 
@@ -193,6 +193,7 @@ var _ = Describe("extracting a profile from a checkout (#872 Task 2)", func() {
 			Expect(err.Error()).To(ContainSubstring("pick/" + name))
 			Expect(err.Error()).To(ContainSubstring("not a regular file"))
 			Expect(err.Error()).NotTo(ContainSubstring("hunter2"))
+			Expect(err.Error()).NotTo(ContainSubstring(root))
 		},
 		Entry("a symlink to a Go file outside the checkout", func(dir string) string {
 			path := filepath.Join(dir, "host.go")
@@ -222,12 +223,14 @@ var _ = Describe("extracting a profile from a checkout (#872 Task 2)", func() {
 
 	When("the checkout directory does not exist", func() {
 		It("refuses the entry with exit 2, naming the label, rather than returning an empty profile", func() {
-			raw, err := evalpatterns.ExtractProfile(standInReference(), filepath.Join(GinkgoT().TempDir(), "missing"))
+			root := filepath.Join(GinkgoT().TempDir(), "missing")
+			raw, err := evalpatterns.ExtractProfile(standInReference(), root)
 
 			var refusal evalpatterns.Refusal
 			Expect(errors.As(err, &refusal)).To(BeTrue(), "ExtractProfile returned %v", err)
 			Expect(refusal.Exit).To(Equal(2))
 			Expect(err.Error()).To(ContainSubstring("cannot be read"))
+			Expect(err.Error()).NotTo(ContainSubstring(root))
 			Expect(raw).To(BeNil())
 		})
 	})
@@ -263,7 +266,7 @@ func treeListing(root string) []string {
 // goldenStandInProfile is the stand-in tree's profile, recorded from the
 // first green run after each measure was checked by hand in the rows above.
 const goldenStandInProfile = `{"dimensions":{"depth":{"0":6,"1":1},"direction":null,"entry":{"function":4,"http_handler":2,"method":1},"field":null,"layers":{"2":1},"trap":null},` +
-	`"extractor_version":"0.1.0","identity":"ba9f5091becfa57060b6cdf0454fdb0d1d0945c7355a246e1dcdda03cedc29e3",` +
-	`"label":"stand-in","licence":"MIT","not_covered":[{"count":7,"shape":"depth"},{"count":1,"shape":"layers"},{"count":2,"shape":"packages"}],` +
+	`"extractor_version":"0.1.0","identity":"c3d91aa940e2fcf8b37c6a0ed8ace79b3361cdf61bb2497725d3acc06933ea8f",` +
+	`"label":"stand-in","licence":"MIT","not_covered":[{"count":7,"reason":"out_of_range","shape":"depth"},{"count":1,"reason":"out_of_range","shape":"layers"},{"count":2,"reason":"out_of_range","shape":"packages"}],` +
 	`"roles":{},"schema_version":"1","sha":"0123456789abcdef0123456789abcdef01234567",` +
 	`"shapes":{"branch_density":{"3":1,"4":1},"cognitive":{"0":6,"11":1,"3":1},"constructor":{"assigns_only":1,"does_work":1},"nesting":{"0":6,"1":1,"4":1}}}` + "\n"
