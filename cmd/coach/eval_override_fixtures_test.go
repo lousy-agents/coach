@@ -42,7 +42,7 @@ const importThreeLevelsUp = `import { x } from "../../../x";
 export const y = x;
 `
 
-const workspaceWithThreeBranches = `"use client";
+const workspaceWithThreeStateDomains = `"use client";
 
 import { useEffect, useState } from "react";
 
@@ -98,6 +98,4 @@ function SettingsPanel(_props: { filterText: string; onFilter: (value: string) =
 }
 `
 
-var workspaceWithTwoBranches = strings.Replace(workspaceWithThreeBranches, `      ) : activeView === "settings" ? (
-        <SettingsPanel filterText={filterText} onFilter={setFilterText} />
-      ) : null}`, `      ) : null}`, 1)
+var workspaceWithTwoStateDomains = strings.NewReplacer("filterText", "activeTab", "setFilterText", "setActiveTab").Replace(workspaceWithThreeStateDomains)

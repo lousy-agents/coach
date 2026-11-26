@@ -56,10 +56,10 @@ var _ = Describe("The eval override build of coach codesignal", Ordered, Continu
 				override: `{"thresholds":{"coupling.deep_relative_import":2}}`,
 				files:    map[string]string{"src/a/b.ts": importTwoLevelsUp},
 			}),
-			Entry("structure.react_component_orchestration_density, through the branch minimum", loweredThreshold{
+			Entry("structure.react_component_orchestration_density, through the state-domain minimum", loweredThreshold{
 				ruleID:   "structure.react_component_orchestration_density",
-				override: `{"thresholds":{"structure.react_component_orchestration_density.branches":2}}`,
-				files:    map[string]string{"WorkspacePage.tsx": workspaceWithTwoBranches},
+				override: `{"thresholds":{"structure.react_component_orchestration_density.state_domains":2}}`,
+				files:    map[string]string{"WorkspacePage.tsx": workspaceWithTwoStateDomains},
 			}),
 		)
 	})
