@@ -76,4 +76,15 @@ var _ = Describe("the oracles' api_surface and required-edge checks (design §4,
 				g.FollowOnSolution[entryFileOf(d)] = declaredWithoutBody(d, n)
 			}),
 	)
+	It("rejects at the g2 step, instead of panicking, when the manifest names a symbol with no package qualifier (AC-30)", func() {
+		generated := cloned(program(0))
+		generated.Manifest.Template.APISurface = append([]evalgen.APISymbol(nil), generated.Manifest.Template.APISurface...)
+		generated.Manifest.Template.APISurface[0].Symbol = "nodot"
+
+		_, err := evalharness.GradeOracles(generated)
+
+		Expect(err).To(HaveOccurred())
+		Expect(rejectionStep(err)).To(Equal(evalgen.StepG2))
+		Expect(err.Error()).To(ContainSubstring("api_surface.symbol_absent"))
+	})
 })
