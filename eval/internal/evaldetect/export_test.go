@@ -7,3 +7,10 @@ func (g Gocognit) ScanWithoutVersionCheck(root string) ([]Finding, error) {
 }
 
 var ResolveGocognitPinnedTo = resolveGocognit
+
+// SetMaxCallGraphNodes lowers the call-graph limit until restore is called.
+func SetMaxCallGraphNodes(n int) (restore func()) {
+	saved := maxCallGraphNodes
+	maxCallGraphNodes = n
+	return func() { maxCallGraphNodes = saved }
+}
