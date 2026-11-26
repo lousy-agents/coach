@@ -152,7 +152,7 @@ var _ = Describe("deriving the layer fixtures from a profile's layers (#900, #87
 						}
 					}
 					note := readExpect(out, id).Note
-					Expect(note).To(ContainSubstring(itoa(want) + " packages per layer"))
+					Expect(note).To(ContainSubstring("packages per layer " + itoa(want)))
 					if from != want {
 						Expect(note).To(ContainSubstring("capped at " + itoa(want) + " from " + itoa(from)))
 					} else {
@@ -179,7 +179,7 @@ var _ = Describe("deriving the layer fixtures from a profile's layers (#900, #87
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(packageDirs(out, "dependency-rule-breach", "bad")["api"]).To(HaveLen(1))
-			Expect(readExpect(out, "dependency-rule-breach").Note).To(ContainSubstring("1 packages per layer"))
+			Expect(readExpect(out, "dependency-rule-breach").Note).To(ContainSubstring("packages per layer 1"))
 			Expect(readExpect(out, "dependency-rule-breach").Note).To(ContainSubstring("no packages were observed"))
 		})
 
