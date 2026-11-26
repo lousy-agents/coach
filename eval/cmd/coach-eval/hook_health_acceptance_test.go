@@ -35,13 +35,28 @@ func runHookHealth(stdin string, env []string, args ...string) generateOutcome {
 	return runGenerateCommand(cmd)
 }
 
+var (
+	tuningMemo   = map[string]string{}
+	tuningMemoMu sync.Mutex
+)
+
+// tuningLines is `coach-eval generate --tuning` output for a language, generated once per run: the twelve programs are
+// validated natively, and every spec that needs them reads the same cache.
 func tuningLines(language string) string {
+	tuningMemoMu.Lock()
+	defer tuningMemoMu.Unlock()
+	if lines, ok := tuningMemo[language]; ok {
+		return lines
+	}
 	args := []string{"--tuning"}
 	if language != "" {
 		args = append(args, "--language", language)
 	}
-	outcome := runGenerate(GinkgoT().TempDir(), nil, args...)
+	cache, err := os.MkdirTemp(buildDir, "tuning-cache")
+	Expect(err).NotTo(HaveOccurred())
+	outcome := runGenerate(cache, nil, args...)
 	Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+	tuningMemo[language] = outcome.stdout
 	return outcome.stdout
 }
 
@@ -121,6 +136,25 @@ var _ = Describe("coach-eval hook-health (#789, design 7 and 10)", func() {
 		Expect(outcome.stderr).NotTo(ContainSubstring("health"))
 	})
 
+	DescribeTable("exits 1 when the hook does not block the probe the way it must",
+		func(script string, mentions string) {
+			dir := firstTuningProgramCopy()
+			Expect(os.WriteFile(filepath.Join(dir, "scripts", "coach-self-review.sh"), []byte("#!/bin/sh\n"+script+"\n"), 0o755)).To(Succeed())
+
+			outcome := runHookHealth(programLine(dir), nil, "--coach", builtCoach())
+
+			Expect(outcome.exitCode).To(Equal(1), outcome.stderr)
+			Expect(outcome.stderr).To(ContainSubstring("probe"))
+			Expect(outcome.stderr).To(ContainSubstring(mentions))
+		},
+		Entry("it names the finding and the probe's path but exits 0",
+			"echo architecture.layer_violation\nfind . -name zz_probe.go\nexit 0", "should block"),
+		Entry("it blocks and names the path, but not the finding",
+			"if find . -name zz_probe.go | grep -q .; then find . -name zz_probe.go >&2; exit 2; fi\nexit 0", "without naming"),
+		Entry("it blocks and names the finding, but not the probe's path",
+			"if find . -name zz_probe.go | grep -q .; then echo architecture.layer_violation >&2; exit 2; fi\nexit 0", "without naming"),
+	)
+
 	DescribeTable("exits 1 when the review is not clean on the unmodified program",
 		func(report string, mentions string) {
 			outcome := runHookHealth(programLine(firstTuningProgramCopy()), nil, "--coach", stubCoach(report, 0))
@@ -130,6 +164,8 @@ var _ = Describe("coach-eval hook-health (#789, design 7 and 10)", func() {
 			Expect(outcome.stderr).To(ContainSubstring(mentions))
 		},
 		Entry("the policy on disk differs from HEAD", `{"scope":{"policy":{"matches_head":false}},"signals":[],"diagnostics":[]}`, "matches_head"),
+		Entry("the report does not say whether the policy matches HEAD", `{"scope":{"policy":{}},"signals":[],"diagnostics":[]}`, "matches_head"),
+		Entry("no policy was read", `{"scope":{"policy":null},"signals":[],"diagnostics":[]}`, "matches_head"),
 		Entry("the worktree scan was incomplete", `{"scope":{"policy":{"matches_head":true}},"signals":[],"diagnostics":[{"kind":"worktree_scan_incomplete"}]}`, "worktree_scan_incomplete"),
 	)
 
@@ -148,6 +184,17 @@ var _ = Describe("coach-eval hook-health (#789, design 7 and 10)", func() {
 		Entry("a program path that does not exist", func() string { return programLine("/nonexistent/program") }, nil, []string{"--coach", "/bin/true"}, "program"),
 		Entry("no git on PATH", func() string { return tuningLines("") }, []string{"PATH=" + os.TempDir() + "/no-such-bin"}, []string{"--coach", "/bin/true"}, "git"),
 	)
+
+	It("exits 2 for a program whose forbidden edge names a layer the policy does not define", func() {
+		dir := firstTuningProgramCopy()
+		Expect(os.WriteFile(filepath.Join(dir, ".lousy-agents", "coach.json"),
+			[]byte(`{"schema_version":"1","roots":["."],"layers":[{"name":"api","prefixes":["internal/api"]}],"forbidden_imports":[{"from":"api","to":"nowhere"}]}`), 0o644)).To(Succeed())
+
+		outcome := runHookHealth(programLine(dir), nil, "--coach", builtCoach())
+
+		Expect(outcome.exitCode).To(Equal(2), outcome.stderr)
+		Expect(outcome.stderr).To(ContainSubstring("does not define"))
+	})
 
 	It("exits 2 for a program whose policy names no forbidden edge to probe", func() {
 		dir := firstTuningProgramCopy()
