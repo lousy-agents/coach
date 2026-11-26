@@ -26,6 +26,7 @@ func AppendRun(ledgerPath string, line []byte, censusRoot, corpusID string, reco
 	if err != nil {
 		return err
 	}
+	afterRecordsSnapshot()
 	if err := AppendCorpusRecords(censusRoot, corpusID, records); err != nil {
 		return fmt.Errorf("write census records: %w", err)
 	}
@@ -34,6 +35,10 @@ func AppendRun(ledgerPath string, line []byte, censusRoot, corpusID string, reco
 	}
 	return nil
 }
+
+// afterRecordsSnapshot runs between noting the records' length and writing
+// them; specs replace it to race another writer there.
+var afterRecordsSnapshot = func() {}
 
 // snapshotLength returns a function that puts the file at path back to its
 // current length, or removes it when it does not exist yet.

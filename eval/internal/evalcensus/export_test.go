@@ -12,3 +12,11 @@ func FailLedgerWritesAfter(n int) (restore func()) {
 	}
 	return func() { writeLedger = saved }
 }
+
+// OnRecordsSnapshot runs hook in AppendRun right after it notes the records'
+// length, until restore is called, so a spec can race another writer there.
+func OnRecordsSnapshot(hook func()) (restore func()) {
+	saved := afterRecordsSnapshot
+	afterRecordsSnapshot = hook
+	return func() { afterRecordsSnapshot = saved }
+}

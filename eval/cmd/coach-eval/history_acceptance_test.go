@@ -114,6 +114,37 @@ var _ = Describe("coach-eval history", func() {
 		}, []string{"--seed", "7"}, "local"),
 	)
 
+	When("a census and a history run at once over one corpus, census root and ledger", func() {
+		It("lands both runs whole: two ledger lines, and every record of each", func() {
+			corpus := writeHistoryCorpus(historyRepoEntry{ID: "r", Path: path, SHA: since, HistoryUntil: until, Language: "go"})
+			dir := GinkgoT().TempDir()
+			censusRoot, ledger := filepath.Join(dir, "census"), filepath.Join(dir, "ledger", "runs.jsonl")
+			outcomes := make(chan compareOutcome, 2)
+			for _, task := range [][]string{{"census"}, {"history", "--seed", "7"}} {
+				go func(task []string) {
+					defer GinkgoRecover()
+					args := append(task, "--coach", coachBinary(), "--census-root", censusRoot, "--ledger", ledger, corpus)
+					outcomes <- runProgram("", os.Environ(), coachEvalBinary, args...)
+				}(task)
+			}
+			for range 2 {
+				outcome := <-outcomes
+				Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			}
+
+			kinds := []any{}
+			for _, line := range jsonLines(ledger) {
+				kinds = append(kinds, line["kind"])
+			}
+			Expect(kinds).To(ConsistOf("census", "history"))
+			measures := map[any]int{}
+			for _, record := range jsonLines(filepath.Join(censusRoot, "fixture", "records.jsonl")) {
+				measures[record["measure"]]++
+			}
+			Expect(measures).To(Equal(map[any]int{"analysis_status": 1, "flagged_vs_unflagged_association": 2}))
+		})
+	})
+
 	When("git is watched on PATH", func() {
 		It("never fetches, lists a remote, or clones anything but a local directory", func() {
 			isolatedGit(path, "remote", "add", "origin", "https://example.invalid/r.git")
