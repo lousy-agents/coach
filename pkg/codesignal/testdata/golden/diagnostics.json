@@ -4,7 +4,8 @@
     "repository": "example/repo",
     "revision": "ghi789",
     "base": "main",
-    "policy": null
+    "policy": null,
+    "project_language": null
   },
   "summary": {
     "files_analyzed": 4,

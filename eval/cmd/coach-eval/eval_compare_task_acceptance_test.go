@@ -42,8 +42,7 @@ var _ = Describe("the eval-compare mise task", func() {
 
 	When("two runs are not comparable", func() {
 		It("exits 4 through the task and names the differing field", func() {
-			changed := completeRecord("run-b")
-			setPath(changed, "solver.model", "claude-other-model")
+			changed := withPath(completeRecord("run-b"), "solver.model", "claude-other-model")
 			writeRunRecord(stateRoot, "run-a", completeRecord("run-a"))
 			writeRunRecord(stateRoot, "run-b", changed)
 

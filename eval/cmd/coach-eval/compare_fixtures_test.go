@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,13 +40,21 @@ func completeRecord(runID string) record {
 	}
 }
 
-// setPath sets the leaf at a dot-separated path, for example "caps.trials".
-func setPath(r record, path string, value any) {
-	keys := strings.Split(path, ".")
-	for _, key := range keys[:len(keys)-1] {
-		r = r[key].(record)
+// withPath returns a copy of r with the leaf at a dot-separated path, for example "caps.trials",
+// set to value. r is not modified, so a spec's base record stays intact.
+func withPath(r record, path string, value any) record {
+	return withKeys(r, strings.Split(path, "."), value)
+}
+
+func withKeys(r record, keys []string, value any) record {
+	copied := make(record, len(r)+1)
+	maps.Copy(copied, r)
+	if len(keys) == 1 {
+		copied[keys[0]] = value
+		return copied
 	}
-	r[keys[len(keys)-1]] = value
+	copied[keys[0]] = withKeys(r[keys[0]].(record), keys[1:], value)
+	return copied
 }
 
 func writeRunRecord(stateRoot, runID string, r record) {
@@ -64,17 +73,17 @@ type compareOutcome struct {
 
 // runCompare runs the built coach-eval binary, so exit codes are the contract under test.
 func runCompare(stateRoot string, runIDs ...string) compareOutcome {
-	return runWithStateRoot(stateRoot, exec.Command(coachEvalBinary, append([]string{"compare"}, runIDs...)...))
+	return runCommand(stateRoot, "", coachEvalBinary, append([]string{"compare"}, runIDs...)...)
 }
 
 // runCompareThroughMise runs the eval-compare mise task from the repository root.
 func runCompareThroughMise(stateRoot string, runIDs ...string) compareOutcome {
-	cmd := exec.Command("mise", append([]string{"run", "eval-compare", "--"}, runIDs...)...)
-	cmd.Dir = filepath.Join("..", "..", "..")
-	return runWithStateRoot(stateRoot, cmd)
+	return runCommand(stateRoot, filepath.Join("..", "..", ".."), "mise", append([]string{"run", "eval-compare", "--"}, runIDs...)...)
 }
 
-func runWithStateRoot(stateRoot string, cmd *exec.Cmd) compareOutcome {
+func runCommand(stateRoot, dir, name string, args ...string) compareOutcome {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "XDG_STATE_HOME="+stateRoot)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

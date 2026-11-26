@@ -84,6 +84,10 @@ const (
 // did not read it. Path is the policy HEAD selects; scope.policy names the policy the scan used instead, or is null.
 const DiagKindProjectPolicyAbsentOnDisk = "project_policy_absent_on_disk"
 
+// DiagKindProjectLanguageOverridesPolicy names a --project-language that differs from the language the project
+// policy names; the flag's language is the one the scan used.
+const DiagKindProjectLanguageOverridesPolicy = "project_language_overrides_policy"
+
 // AbsentPolicyFallbackIgnored is the clause a project_policy_absent_on_disk message carries when a root project.json was
 // found on disk and passed over because it is not a usable Coach policy. The text report reads it from the message so
 // that the JSON report gains no field.
