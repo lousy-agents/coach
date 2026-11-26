@@ -178,7 +178,7 @@ var _ = Describe("coach codesignal: which language a scan used, and why (#805)",
 		)))
 	})
 
-	DescribeTable("the text report states the language and its source when a policy was read",
+	DescribeTable("the text report states the language and its source when the policy or the flag chose it",
 		func(policy string, want string, args ...string) {
 			repo := commitScannableGoRepo()
 			commitFile(repo, coachConfigPath, policy)
@@ -189,9 +189,18 @@ var _ = Describe("coach codesignal: which language a scan used, and why (#805)",
 			Expect(string(stdout)).To(ContainSubstring(want))
 		},
 		Entry("from the policy", singleRootPolicyWithLanguage("go"), "language: go (from the policy)"),
-		Entry("by default", singleRootPolicyJSON, "language: go (the default)"),
 		Entry("from the flag", singleRootPolicyJSON, "language: go (from --project-language)", "--project-language", "go"),
 	)
+
+	It("leaves the text report as it was when the policy names no language and no flag is given", func() {
+		repo := commitScannableGoRepo()
+		commitFile(repo, coachConfigPath, singleRootPolicyJSON)
+
+		stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo)
+
+		Expect(exitCode).To(Equal(0), "stdout=%.600s stderr=%s", stdout, stderr)
+		Expect(string(stdout)).NotTo(ContainSubstring("language:"))
+	})
 
 	It("states no language in the text report when no policy was read", func() {
 		stdout, _, exitCode := runCoachCodesignalBaselineRaw(commitScannableGoRepo())

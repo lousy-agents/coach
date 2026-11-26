@@ -17,7 +17,6 @@ func renderPolicyDisclosure(b *strings.Builder, report *codesignal.Report) {
 	if policy != nil {
 		cause := effectivePolicyCause(policy)
 		fmt.Fprintf(b, "policy: %s (%s), %s\n", terminalText(policy.Path), shortPolicyDigest(policy.Digest), policyHeadRelation(cause))
-		renderLanguageLine(b, report.Scope.ProjectLanguage)
 		if warning := policyWarning(policy, cause); warning != "" && !(hasAbsent && cause == codesignal.PolicyCauseDiffersFromHead) {
 			b.WriteString(warning + "\n")
 		}
@@ -25,6 +24,7 @@ func renderPolicyDisclosure(b *strings.Builder, report *codesignal.Report) {
 	if hasAbsent {
 		b.WriteString(absentPolicyWarning(absent, policy) + "\n")
 	}
+	renderLanguageLine(b, report.Scope.ProjectLanguage)
 }
 
 // effectivePolicyCause lets MatchesHead decide the cases it can: a report decoded from JSON carries the zero

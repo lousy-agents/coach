@@ -791,7 +791,7 @@ A report from a version that predates `cause` has no `cause` key. A consumer rea
 A scan that read a project policy reports which language the project analysis ran in and what chose it:
 
 - JSON `scope.project_language` holds `language` (`go` or `typescript`) and `source`: `flag` (`--project-language` was given), `policy` (the policy's `language`) or `default` (neither, so `go`). It is `null` when no project policy was read, because no project analysis ran.
-- Text prints a `language:` line directly under the policy line: `language: typescript (from the policy)`, `language: go (from --project-language)` or `language: go (the default)`. A scan that read no project policy prints none.
+- Text prints a `language:` line after the policy line and its warnings when the flag or the policy chose the language: `language: typescript (from the policy)` or `language: go (from --project-language)`. It prints none when the language is the default, or when no project policy was read, so the text of a scan whose policy names no language is what it was before the key existed.
 - A `--project-language` that differs from the policy's `language` adds a `project_language_overrides_policy` diagnostic. Its `path` is the policy, and its message names the language used and the language the policy names. A flag that agrees with the policy, or a policy that names no language, adds none.
 - With a TypeScript analysis, `project_provenance.language` is the same language. A Go analysis has no `project_provenance`, so `scope.project_language` is the field that covers both.
 

@@ -66,11 +66,11 @@ func expectedCleanDiffText(filesAnalyzed int) string {
 }
 
 func expectedCleanBaselineJSON(revision string) string {
-	return fmt.Sprintf("{\"schema_version\":\"1\",\"scope\":{\"revision\":%q,\"applied_scope\":\"production\",\"baseline\":true,\"policy\":null},\"summary\":{\"files_analyzed\":1,\"files_with_diagnostics\":0,\"active_signals\":0,\"introduced_signals\":0,\"existing_signals\":0,\"resolved_signals\":0,\"baseline_signals\":0,\"unknown_signals\":0},\"signals\":[],\"diagnostics\":[],\"coverage\":{\"tracked_files_discovered\":1,\"files_analyzed\":1,\"files_unanalyzable\":0,\"unsupported\":[],\"excluded\":[]}}\n", revision)
+	return fmt.Sprintf("{\"schema_version\":\"1\",\"scope\":{\"revision\":%q,\"applied_scope\":\"production\",\"baseline\":true,\"policy\":null,\"project_language\":null},\"summary\":{\"files_analyzed\":1,\"files_with_diagnostics\":0,\"active_signals\":0,\"introduced_signals\":0,\"existing_signals\":0,\"resolved_signals\":0,\"baseline_signals\":0,\"unknown_signals\":0},\"signals\":[],\"diagnostics\":[],\"coverage\":{\"tracked_files_discovered\":1,\"files_analyzed\":1,\"files_unanalyzable\":0,\"unsupported\":[],\"excluded\":[]}}\n", revision)
 }
 
 func expectedCleanBaseJSON(revision, base string) string {
-	return fmt.Sprintf("{\"schema_version\":\"1\",\"scope\":{\"revision\":%q,\"base\":%q,\"applied_scope\":\"production\",\"policy\":null},\"summary\":{\"files_analyzed\":1,\"files_with_diagnostics\":0,\"active_signals\":0,\"introduced_signals\":0,\"existing_signals\":0,\"resolved_signals\":0,\"baseline_signals\":0,\"unknown_signals\":0},\"signals\":[],\"diagnostics\":[],\"coverage\":{\"tracked_files_discovered\":0,\"files_analyzed\":0,\"files_unanalyzable\":0,\"unsupported\":[],\"excluded\":[]}}\n", revision, base)
+	return fmt.Sprintf("{\"schema_version\":\"1\",\"scope\":{\"revision\":%q,\"base\":%q,\"applied_scope\":\"production\",\"policy\":null,\"project_language\":null},\"summary\":{\"files_analyzed\":1,\"files_with_diagnostics\":0,\"active_signals\":0,\"introduced_signals\":0,\"existing_signals\":0,\"resolved_signals\":0,\"baseline_signals\":0,\"unknown_signals\":0},\"signals\":[],\"diagnostics\":[],\"coverage\":{\"tracked_files_discovered\":0,\"files_analyzed\":0,\"files_unanalyzable\":0,\"unsupported\":[],\"excluded\":[]}}\n", revision, base)
 }
 
 func hasWord(text, word string) bool {
