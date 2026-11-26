@@ -47,13 +47,23 @@ func LoadPolicy(path string) (Policy, error) {
 func (p Policy) layerOf(dir string) (string, bool) {
 	name, longest := "", -1
 	for _, layer := range p.layers {
-		for _, prefix := range layer.Prefixes {
-			if prefixContains(prefix, dir) && len(prefix) > longest {
-				name, longest = layer.Name, len(prefix)
-			}
+		if length := longestPrefix(layer.Prefixes, dir); length > longest {
+			name, longest = layer.Name, length
 		}
 	}
 	return name, longest >= 0
+}
+
+// longestPrefix returns the length of the longest prefix containing dir, or
+// -1 when none does.
+func longestPrefix(prefixes []string, dir string) int {
+	longest := -1
+	for _, prefix := range prefixes {
+		if prefixContains(prefix, dir) {
+			longest = max(longest, len(prefix))
+		}
+	}
+	return longest
 }
 
 func prefixContains(prefix, dir string) bool {

@@ -1,8 +1,6 @@
 package evaldetect
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -73,40 +71,4 @@ func newTSResolver(root string) (tsResolver, error) {
 		return tsResolver{}, err
 	}
 	return tsResolver{root: root, config: config, packageNames: names}, nil
-}
-
-// tsProjectFiles collects every package name declared under root, and refuses
-// a tsconfig.json below the root, whose own options this resolver would not
-// apply to the files it governs.
-func tsProjectFiles(root string) ([]string, error) {
-	var names []string
-	keep := func(name string) bool { return name == "package.json" || name == "tsconfig.json" }
-	err := walkFiles(root, keep, func(rel string) error {
-		if path.Base(rel) == "tsconfig.json" {
-			if rel != "tsconfig.json" {
-				return fmt.Errorf("%w: %s: a nested tsconfig.json", ErrRefused, rel)
-			}
-			return nil
-		}
-		name, err := packageName(filepath.Join(root, filepath.FromSlash(rel)))
-		if name != "" {
-			names = append(names, name)
-		}
-		return err
-	})
-	return sortedUnique(names), err
-}
-
-func packageName(file string) (string, error) {
-	raw, err := os.ReadFile(file)
-	if err != nil {
-		return "", err
-	}
-	var manifest struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(raw, &manifest); err != nil {
-		return "", fmt.Errorf("parse %s: %w", file, err)
-	}
-	return manifest.Name, nil
 }

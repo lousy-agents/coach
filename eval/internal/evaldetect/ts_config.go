@@ -6,10 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 )
-
-const maxExtendsDepth = 16
 
 // tsCompilerPaths is the module-resolution part of a tsconfig after extends
 // is merged: root-relative directories, and paths patterns as written.
@@ -60,20 +57,6 @@ func readTSConfig(root, rel string, depth int) (tsCompilerPaths, error) {
 	return overrideTSConfig(merged, path.Dir(rel), file)
 }
 
-func inheritTSConfig(root, rel string, extends json.RawMessage, depth int) (tsCompilerPaths, error) {
-	if len(extends) == 0 {
-		return tsCompilerPaths{}, nil
-	}
-	var parent string
-	if err := json.Unmarshal(extends, &parent); err != nil || !isRelativeSpecifier(parent) {
-		return tsCompilerPaths{}, fmt.Errorf("%w: %s: an extends that is not one relative path", ErrRefused, rel)
-	}
-	if !strings.HasSuffix(parent, ".json") {
-		parent += ".json"
-	}
-	return readTSConfig(root, path.Join(path.Dir(rel), parent), depth+1)
-}
-
 func overrideTSConfig(merged tsCompilerPaths, dir string, file tsConfigFile) (tsCompilerPaths, error) {
 	options := file.CompilerOptions
 	if options.BaseURL != nil {
@@ -86,19 +69,4 @@ func overrideTSConfig(merged tsCompilerPaths, dir string, file tsConfigFile) (ts
 		merged.paths, merged.pathsDir = options.Paths, dir
 	}
 	return merged, nil
-}
-
-func checkPathsPatterns(dir string, paths map[string][]string) error {
-	for pattern, targets := range paths {
-		for _, text := range append([]string{pattern}, targets...) {
-			if strings.Count(text, "*") > 1 {
-				return fmt.Errorf("%w: %s/tsconfig paths %q: a pattern with more than one wildcard", ErrRefused, dir, text)
-			}
-		}
-	}
-	return nil
-}
-
-func isRelativeSpecifier(specifier string) bool {
-	return specifier == "." || specifier == ".." || strings.HasPrefix(specifier, "./") || strings.HasPrefix(specifier, "../")
 }
