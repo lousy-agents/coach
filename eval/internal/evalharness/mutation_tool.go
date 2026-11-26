@@ -51,14 +51,22 @@ func (g Gremlins) CheckVersion() error {
 	if err != nil {
 		return fmt.Errorf("read gremlins build info: %w", err)
 	}
-	for _, line := range strings.Split(string(output), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 3 && fields[0] == "mod" && fields[1] == gremlinsModule {
-			if fields[2] != g.Version {
-				return fmt.Errorf("gremlins is %s, but the pinned version is %s", fields[2], g.Version)
-			}
-			return nil
+	version, found := gremlinsModuleVersion(string(output))
+	if !found {
+		return fmt.Errorf("gremlins binary %s carries no %s module version; the pinned version is %s", g.Binary, gremlinsModule, g.Version)
+	}
+	if version != g.Version {
+		return fmt.Errorf("gremlins is %s, but the pinned version is %s", version, g.Version)
+	}
+	return nil
+}
+
+// gremlinsModuleVersion reads the Gremlins module's version from `go version -m` output.
+func gremlinsModuleVersion(buildInfo string) (string, bool) {
+	for _, line := range strings.Split(buildInfo, "\n") {
+		if fields := strings.Fields(line); len(fields) >= 3 && fields[0] == "mod" && fields[1] == gremlinsModule {
+			return fields[2], true
 		}
 	}
-	return fmt.Errorf("gremlins binary %s carries no %s module version; the pinned version is %s", g.Binary, gremlinsModule, g.Version)
+	return "", false
 }
