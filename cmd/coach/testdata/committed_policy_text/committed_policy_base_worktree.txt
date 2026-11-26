@@ -1,10 +1,14 @@
-scope: production, filtered: 0, files analyzed: 1, active signals: 0, diagnostics: 0
+scope: production, filtered: 0, files analyzed: 1, active signals: 0, diagnostics: 2
 policy: .lousy-agents/coach.json (pcfg_24ee6328b822), same as HEAD.
 worktree: no uncommitted changes on revision {head12}, compared with merge-base {base12}.
-No active CodeSignal findings.
+No active CodeSignal findings, but the analysis is incomplete: project analysis did not complete.
 Project summary: active=0, introduced=0, existing=0, resolved=0, baseline=0
 
-Project coverage: phase=go_model_build, complete=true
+Diagnostics:
+path: , kind: project_coverage_incomplete, message: project analysis coverage is incomplete; project observations may be partial
+path: , kind: project_lifecycle_indeterminate, message: project lifecycle is indeterminate: head coverage incomplete
+
+Project coverage: phase=go_model_build, complete=false
   count: excluded_edges=0
   count: files_seen=0
   count: files_skipped=0
@@ -18,3 +22,4 @@ Project coverage: phase=go_model_build, complete=true
   budget: stderr_bytes=0
   budget: wall_time_ms=60000
   budget: working_set_bytes=536870912
+  project diagnostic: project_roots_empty: the policy's roots [.] hold no Go source: roots_seen=0, files_seen=0; the Go project analysis saw nothing

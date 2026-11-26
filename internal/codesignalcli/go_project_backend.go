@@ -143,6 +143,8 @@ func (b *goProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 		return nil, err
 	}
 
+	head.coverage = withEmptyRootsJudged(head.coverage, config.Roots)
+
 	result := &ProjectBackendResult{
 		HeadChanges:     head.changes,
 		HeadDiagnostics: head.diagnostics,
