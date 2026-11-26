@@ -94,3 +94,20 @@ func gitShim() (pathEnv, log string) {
 	Expect(os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755)).To(Succeed())
 	return "PATH=" + dir + string(os.PathListSeparator) + os.Getenv("PATH"), log
 }
+
+// historyRunRecord is a valid history run, as a kind: history ledger line
+// carries it.
+func historyRunRecord(runID string) record {
+	return record{
+		"schema_version":       "1",
+		"run_id":               runID,
+		"corpus_id":            "fixture",
+		"coach":                record{"path": "coach", "sha256": strings.Repeat("ab", 32)},
+		"seed":                 7,
+		"controls_per_flagged": 3,
+		"fix_pattern":          "fix",
+		"statement":            "association, not causation",
+		"repositories":         []any{},
+		"exit":                 0,
+	}
+}
