@@ -73,10 +73,14 @@ func runCommand(cmd *exec.Cmd) generateOutcome {
 func generateOne(cacheHome string, args ...string) generatedProgram {
 	outcome := runGenerate(cacheHome, nil, args...)
 	Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
-	lines := strings.Split(strings.TrimSpace(outcome.stdout), "\n")
-	Expect(lines).To(HaveLen(1), outcome.stdout)
+	return decodeGenerated(outcome.stdout)
+}
+
+func decodeGenerated(stdout string) generatedProgram {
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	Expect(lines).To(HaveLen(1), stdout)
 	var program generatedProgram
-	Expect(json.Unmarshal([]byte(lines[0]), &program)).To(Succeed(), outcome.stdout)
+	Expect(json.Unmarshal([]byte(lines[0]), &program)).To(Succeed(), stdout)
 	return program
 }
 
