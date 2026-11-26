@@ -27,7 +27,12 @@ func Trend(args []string, stdout, stderr io.Writer) int {
 	cell := flags.String("cell", "", "structural cell to trend")
 	ledgerPath := flags.String("ledger", DefaultLedgerPath, "run ledger to read")
 	metric := flags.String("metric", DefaultTrendMetric, "dot path of the run record metric to trend")
+	format := flags.String("format", formatText, "output format: text or json")
 	if err := flags.Parse(args); err != nil {
+		return CompareInputInvalid
+	}
+	if !validOutputFormat(*format) {
+		fmt.Fprintf(stderr, "coach-eval trend: --format must be text or json, not %q\n", *format)
 		return CompareInputInvalid
 	}
 	if *cell == "" {
@@ -52,6 +57,9 @@ func Trend(args []string, stdout, stderr io.Writer) int {
 		return CompareNotComparable
 	}
 	warnDirtyTrendRuns(stderr, cellLines)
+	if *format == formatJSON {
+		return writeTrendJSON(stdout, trendDocumentFor(*cell, *metric, cellLines, segments, breaks))
+	}
 	printTrend(stdout, *cell, *metric, cellLines, segments, breaks)
 	return CompareComparable
 }

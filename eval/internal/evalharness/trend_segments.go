@@ -14,10 +14,12 @@ type trendSegment struct {
 	runs []trendRun
 }
 
-// trendBreak names the run that starts a new segment, and why.
+// trendBreak names the run that starts a new segment, and why. fields lists the comparable fields that
+// differ when the reason is a field mismatch, and is nil otherwise.
 type trendBreak struct {
 	before string
 	reason string
+	fields []string
 }
 
 // segmentTrend splits the recorded-ordered trend lines of one cell. A run that is not complete is
@@ -36,9 +38,9 @@ func segmentTrend(lines []LedgerLine, metric string) ([]trendSegment, []trendBre
 			continue
 		}
 
-		reason := breakReason(open, previous, line.Run, metric)
+		reason, fields := breakReason(open, previous, line.Run, metric)
 		if reason != "" {
-			breaks = append(breaks, trendBreak{before: id, reason: reason})
+			breaks = append(breaks, trendBreak{before: id, reason: reason, fields: fields})
 		}
 		if !open || reason != "" {
 			segments = append(segments, trendSegment{})
