@@ -1,7 +1,6 @@
 package evalharness
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -40,28 +39,33 @@ func segmentTrend(lines []LedgerLine, metric string) ([]trendSegment, []trendBre
 			continue
 		}
 
-		reason := ""
-		if open {
-			if fields := differingFields(previous, line.Run); len(fields) > 0 {
-				reason = differReason(fields)
-			}
-		}
-		value, hasValue := metricValue(line.Run, metric)
-		if reason == "" && !hasValue {
-			reason = "metric absent"
-		}
+		reason := breakReason(open, previous, line.Run, metric)
 		if reason != "" {
 			breaks = append(breaks, trendBreak{before: id, reason: reason})
 		}
 		if !open || reason != "" {
 			segments = append(segments, trendSegment{})
 		}
+		value, hasValue := metricValue(line.Run, metric)
 		last := &segments[len(segments)-1]
 		last.runs = append(last.runs, trendRun{id: id, value: value, hasValue: hasValue})
 		previous = line.Run
 		open = true
 	}
 	return segments, breaks
+}
+
+// breakReason names why a complete run cannot continue the open segment, or returns "" when it can.
+func breakReason(open bool, previous, run map[string]any, metric string) string {
+	if open {
+		if fields := differingFields(previous, run); len(fields) > 0 {
+			return differReason(fields)
+		}
+	}
+	if _, ok := metricValue(run, metric); !ok {
+		return "metric absent"
+	}
+	return ""
 }
 
 // hasComparablePair reports whether some segment holds two adjacent runs that both carry the metric.
@@ -81,27 +85,4 @@ func differReason(fields []string) string {
 		return fields[0] + " differs"
 	}
 	return strings.Join(fields, ", ") + " differ"
-}
-
-// metricValue reads the number at a dot-separated path of a run record.
-func metricValue(run map[string]any, path string) (float64, bool) {
-	var current any = run
-	for _, key := range strings.Split(path, ".") {
-		object, ok := current.(map[string]any)
-		if !ok {
-			return 0, false
-		}
-		if current, ok = object[key]; !ok {
-			return 0, false
-		}
-	}
-	switch number := current.(type) {
-	case float64:
-		return number, true
-	case json.Number:
-		value, err := number.Float64()
-		return value, err == nil
-	default:
-		return 0, false
-	}
 }
