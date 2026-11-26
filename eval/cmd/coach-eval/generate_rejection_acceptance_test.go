@@ -101,6 +101,13 @@ var _ = Describe("coach-eval generate rejection and replacement", Ordered, Conti
 		Expect(outcome.stderr).To(ContainSubstring("every attempt"))
 	})
 
+	It("applies a fault without a cell to every cell, not only the first (AC-14)", func() {
+		outcome := faulty("native:5", "--cell", "100", "--seed", "5")
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		Expect(decodeGenerated(outcome.stdout).Replacements).To(Equal(1))
+	})
+
 	It("is not reachable from the release build, which ignores the fault variable (AC-16)", func() {
 		outcome := runGenerate(GinkgoT().TempDir(), []string{faultVariable + "=native:5"}, "--cell", "0", "--seed", "5")
 		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)

@@ -2,8 +2,6 @@ package evalharness
 
 import (
 	"errors"
-	"fmt"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/lousy-agents/coach/eval/internal/evalgen"
@@ -29,12 +27,14 @@ type generateRun struct {
 	request GenerateRequest
 	store   evalgen.Store
 	faults  faults
+	tools   evalgen.TypeScriptTools
 	tally   rejectionTally
 }
 
 func newGenerateRun(request GenerateRequest) (*generateRun, error) {
-	if _, err := exec.LookPath("go"); err != nil {
-		return nil, fmt.Errorf("the go toolchain is not on PATH: generated programs are validated with go build, vet and test")
+	tools, err := toolsFor(request.Language)
+	if err != nil {
+		return nil, err
 	}
 	injected, err := faultsFromEnvironment()
 	if err != nil {
@@ -44,7 +44,7 @@ func newGenerateRun(request GenerateRequest) (*generateRun, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &generateRun{request: request, store: store, faults: injected}, nil
+	return &generateRun{request: request, store: store, faults: injected, tools: tools}, nil
 }
 
 func (r *generateRun) produceAll() ([]generateOutput, error) {
@@ -60,7 +60,7 @@ func (r *generateRun) produceAll() ([]generateOutput, error) {
 }
 
 func (r *generateRun) produce(cell evalgen.Cell) (generateOutput, error) {
-	key := evalgen.Key(cell, r.request.Seed, r.request.Panel)
+	key := evalgen.Key(r.request.Language, cell, r.request.Seed, r.request.Panel)
 	location, manifest, intact := r.store.Lookup(key)
 	cache := "hit"
 	if r.request.NoCache || !intact {

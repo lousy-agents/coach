@@ -2,6 +2,7 @@ package evalharness
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/lousy-agents/coach/eval/internal/evalgen"
@@ -9,9 +10,12 @@ import (
 
 // generateAndSave replaces a rejected program with the next seed in the same cell, up to maxAttempts.
 func (r *generateRun) generateAndSave(cell evalgen.Cell, key string) (evalgen.Location, evalgen.Manifest, error) {
+	if r.request.Language == evalgen.LanguageTypeScript {
+		return r.generateAndSaveOnce(cell, key)
+	}
 	for replacement := 0; replacement < maxAttempts; replacement++ {
 		seed := r.request.Seed + int64(replacement)
-		program, err := evalgen.Generate(cell, seed)
+		program, err := generateProgram(r.request.Language, cell, seed)
 		if err != nil {
 			return evalgen.Location{}, evalgen.Manifest{}, err
 		}
@@ -67,4 +71,20 @@ func rejectionStep(err error) (string, error) {
 		return stepError.Step, nil
 	}
 	return "", err
+}
+
+// generateAndSaveOnce is the TypeScript path: one attempt, and a failed validation is an error. Its graders,
+// and so its rejection and replacement, arrive with the TypeScript validation slice.
+func (r *generateRun) generateAndSaveOnce(cell evalgen.Cell, key string) (evalgen.Location, evalgen.Manifest, error) {
+	program, err := generateProgram(r.request.Language, cell, r.request.Seed)
+	if err != nil {
+		return evalgen.Location{}, evalgen.Manifest{}, err
+	}
+	program.Manifest.Program.Panel = r.request.Panel
+	if err := validateProgram(program, r.tools); err != nil {
+		return evalgen.Location{}, evalgen.Manifest{}, fmt.Errorf("the generated program failed validation: %w", err)
+	}
+	r.tally.accept()
+	location, err := r.store.Save(key, program)
+	return location, program.Manifest, err
 }

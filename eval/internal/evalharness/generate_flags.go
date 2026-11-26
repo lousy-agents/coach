@@ -13,11 +13,12 @@ const unset = -1
 
 // GenerateRequest is a parsed `coach-eval generate` command line.
 type GenerateRequest struct {
-	Cells   []evalgen.Cell
-	Seed    int64
-	Panel   string
-	Out     string
-	NoCache bool
+	Language evalgen.Language
+	Cells    []evalgen.Cell
+	Seed     int64
+	Panel    string
+	Out      string
+	NoCache  bool
 }
 
 // Panels name the two cell populations of design §5.
@@ -40,6 +41,7 @@ func parseGenerate(args []string, stderr io.Writer) (GenerateRequest, error) {
 	flags.StringVar(&cell.Direction, "direction", "", "direction: "+strings.Join(evalgen.Directions, ", "))
 	flags.StringVar(&cell.Trap, "trap", "", "trap: "+strings.Join(evalgen.TrapKinds, ", "))
 	request := GenerateRequest{}
+	language := flags.String("language", string(evalgen.LanguageGo), "go or typescript")
 	flags.Int64Var(&request.Seed, "seed", 0, "seed")
 	flags.StringVar(&request.Panel, "panel", PanelTuning, "tuning or held_out")
 	flags.StringVar(&request.Out, "out", "", "copy the program to <out>/<program_id>")
@@ -52,6 +54,9 @@ func parseGenerate(args []string, stderr io.Writer) (GenerateRequest, error) {
 		return request, fmt.Errorf("panel must be %s or %s, got %q", PanelTuning, PanelHeldOut, request.Panel)
 	}
 	var err error
-	request.Cells, err = chooseCells(*tuning, *index, cell, request.Panel)
+	if request.Language, err = evalgen.ParseLanguage(*language); err != nil {
+		return request, err
+	}
+	request.Cells, err = chooseCells(*tuning, *index, cell, request)
 	return request, err
 }
