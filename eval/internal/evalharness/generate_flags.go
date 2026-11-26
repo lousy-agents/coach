@@ -20,6 +20,9 @@ type GenerateRequest struct {
 	Out        string
 	NoCache    bool
 	NoMutation bool
+	// Profile is the identity of the profile the cells were drawn from, or
+	// "" when the command line named them.
+	Profile string
 }
 
 // Panels name the two cell populations of design §5.
@@ -49,6 +52,9 @@ func parseGenerate(args []string, stderr io.Writer) (GenerateRequest, error) {
 	flags.BoolVar(&request.NoCache, "no-cache", false, "regenerate instead of reading the cache")
 	flags.BoolVar(&request.NoMutation, "no-mutation", false, "skip the mutation gate (recorded in the manifest; refused for held_out)")
 	tuning := flags.Bool("tuning", false, "emit the twelve fixed tuning cells")
+	var asked profileRequest
+	flags.StringVar(&asked.path, "profile", "", "draw the cells from this pattern profile (tuning panel only)")
+	flags.IntVar(&asked.count, "count", unset, "with --profile, how many distinct cells to draw")
 	if err := flags.Parse(args); err != nil {
 		return request, err
 	}
@@ -62,6 +68,13 @@ func parseGenerate(args []string, stderr io.Writer) (GenerateRequest, error) {
 	if request.Language, err = evalgen.ParseLanguage(*language); err != nil {
 		return request, err
 	}
-	request.Cells, err = chooseCells(*tuning, *index, cell, request)
+	switch {
+	case asked.path != "":
+		request.Cells, request.Profile, err = profileCells(asked, *tuning, *index, cell, request)
+	case asked.count != unset:
+		err = fmt.Errorf("--count needs --profile: without one, name the cell")
+	default:
+		request.Cells, err = chooseCells(*tuning, *index, cell, request)
+	}
 	return request, err
 }

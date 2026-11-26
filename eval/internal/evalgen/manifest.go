@@ -30,6 +30,7 @@ type ProgramInfo struct {
 	SeedHash         string `json:"seed_hash"`
 	Panel            string `json:"panel"`
 	Replacements     int    `json:"replacements"`
+	Profile          string `json:"profile,omitempty"`
 }
 
 type TemplateInfo struct {
