@@ -20,8 +20,9 @@ func modulePath(root string) (string, error) {
 		return "", err
 	}
 	for _, line := range strings.Split(string(raw), "\n") {
-		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
-			return strings.Trim(strings.TrimSpace(rest), `"`), nil
+		code, _, _ := strings.Cut(line, "//")
+		if fields := strings.Fields(code); len(fields) == 2 && fields[0] == "module" {
+			return strings.Trim(fields[1], `"`), nil
 		}
 	}
 	return "", nil

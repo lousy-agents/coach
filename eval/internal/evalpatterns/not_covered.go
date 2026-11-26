@@ -11,9 +11,14 @@ const (
 func outside(value, low, high int) bool { return value < low || value > high }
 
 // recordLayers adds the layer count and, when the policy orders a layer
-// count the generator builds, each layer's packages under its role.
+// count the generator builds, each layer's packages under its role. A
+// policy that places no package, because it declares no layers or its
+// layers match no package, lists the layers as not covered.
 func (p *profile) recordLayers(shape layerShape) {
 	if len(shape.packages) == 0 {
+		if shape.fromPolicy {
+			p.addNotCovered("layers", 1)
+		}
 		return
 	}
 	p.Dimensions.Layers.add(len(shape.packages))

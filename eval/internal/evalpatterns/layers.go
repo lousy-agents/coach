@@ -22,7 +22,9 @@ var generatorRoles = map[int][]string{
 
 // layerShape is how many packages each layer holds, outermost first when
 // the policy orders the layers. A policy that names layers but leaves them
-// without a total order is unordered.
+// without a total order is unordered, and one that places no package has
+// no layers: the policy states intent, so the package tree never stands in
+// for it.
 type layerShape struct {
 	packages   []int
 	fromPolicy bool
@@ -60,6 +62,9 @@ func treeLayers(packageDirs []string) layerShape {
 }
 
 func (policy checkoutPolicy) layers(packageDirs []string) layerShape {
+	if len(packageDirs) == 0 {
+		return layerShape{}
+	}
 	counts := map[string]int{}
 	for _, dir := range packageDirs {
 		if name := policy.layerOf(dir); name != "" {
@@ -69,7 +74,7 @@ func (policy checkoutPolicy) layers(packageDirs []string) layerShape {
 	names := sortedKeys(counts)
 	ranks := policy.ranks(names)
 	sort.SliceStable(names, func(i, j int) bool { return ranks[names[i]] < ranks[names[j]] })
-	shape := layerShape{fromPolicy: true, ordered: isPermutation(ranks)}
+	shape := layerShape{fromPolicy: true, ordered: isPermutation(ranks) && !policy.forbidsBothWays(names)}
 	for _, name := range names {
 		shape.packages = append(shape.packages, counts[name])
 	}

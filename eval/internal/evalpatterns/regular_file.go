@@ -1,7 +1,9 @@
 package evalpatterns
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -13,10 +15,24 @@ func readRegularFile(root, rel string) ([]byte, error) {
 	path := filepath.Join(root, filepath.FromSlash(rel))
 	info, err := os.Lstat(path)
 	if err != nil {
-		return nil, err
+		return nil, withoutHostPath(rel, err)
 	}
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("file %s is not a regular file", rel)
 	}
-	return os.ReadFile(path)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, withoutHostPath(rel, err)
+	}
+	return raw, nil
+}
+
+// withoutHostPath names rel, not the host path the checkout sits under,
+// and keeps the cause so a missing file is still fs.ErrNotExist.
+func withoutHostPath(rel string, err error) error {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		err = pathErr.Err
+	}
+	return fmt.Errorf("file %s cannot be read: %w", rel, err)
 }

@@ -61,8 +61,28 @@ func (policy checkoutPolicy) ranks(names []string) map[string]int {
 	return ranks
 }
 
-// isPermutation reports whether the ranks are exactly 0 to n-1: every pair
-// of layers is forbidden one way, so the forbidden pairs order them.
+// forbidsBothWays reports whether two of the named layers each forbid the
+// other.
+func (policy checkoutPolicy) forbidsBothWays(names []string) bool {
+	present := map[string]bool{}
+	for _, name := range names {
+		present[name] = true
+	}
+	forbidden := map[[2]string]bool{}
+	for _, pair := range policy.ForbiddenImports {
+		forbidden[[2]string{pair.From, pair.To}] = present[pair.From] && present[pair.To] && pair.From != pair.To
+	}
+	for pair := range forbidden {
+		if forbidden[[2]string{pair[1], pair[0]}] {
+			return true
+		}
+	}
+	return false
+}
+
+// isPermutation reports whether the ranks are exactly 0 to n-1. With no
+// pair forbidden both ways, that means every pair of layers is forbidden
+// exactly one way, so the forbidden pairs order them.
 func isPermutation(ranks map[string]int) bool {
 	seen := make([]bool, len(ranks))
 	for _, rank := range ranks {
