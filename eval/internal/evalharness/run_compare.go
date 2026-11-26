@@ -29,12 +29,12 @@ func Compare(stateRoot string, args []string, stdout, stderr io.Writer) int {
 		return CompareInputInvalid
 	}
 	runIDs := flags.Args()
+	if slices.ContainsFunc(runIDs, namesFormatFlag) {
+		fmt.Fprintln(stderr, "coach-eval compare: --format must come before the run ids")
+		return CompareInputInvalid
+	}
 	if len(runIDs) != 2 {
-		if slices.ContainsFunc(runIDs, namesFormatFlag) {
-			fmt.Fprintln(stderr, "coach-eval compare: --format must come before the run ids")
-		} else {
-			fmt.Fprintln(stderr, "coach-eval compare: expected exactly two run ids")
-		}
+		fmt.Fprintln(stderr, "coach-eval compare: expected exactly two run ids")
 		return CompareInputInvalid
 	}
 
@@ -55,10 +55,12 @@ func Compare(stateRoot string, args []string, stdout, stderr io.Writer) int {
 	return reportCompareText(stdout, stderr, verdict)
 }
 
-// namesFormatFlag reports whether a positional argument is --format. The flag package stops at the first
-// positional argument, so a --format written after the run ids arrives here as one.
+// namesFormatFlag reports whether a positional argument is the format flag in any of its spellings. The
+// flag package stops at the first positional argument, so a --format written after the run ids arrives
+// here as one.
 func namesFormatFlag(arg string) bool {
-	return strings.HasPrefix(arg, "--format")
+	name, _, _ := strings.Cut(arg, "=")
+	return name == "--format" || name == "-format"
 }
 
 func reportCompareText(stdout, stderr io.Writer, verdict compareVerdict) int {
