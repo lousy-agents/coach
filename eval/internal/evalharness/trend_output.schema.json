@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "coach-eval trend output, schema version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "cell", "metric", "runs", "segments", "breaks"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "cell": {"type": "string", "minLength": 1},
+    "metric": {"type": "string", "minLength": 1},
+    "runs": {"type": "integer", "minimum": 0},
+    "segments": {"type": "array", "items": {"$ref": "#/$defs/segment"}},
+    "breaks": {"type": "array", "items": {"$ref": "#/$defs/break"}}
+  },
+  "$defs": {
+    "run_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "value"],
+      "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "value": {"type": ["number", "null"]}
+      }
+    },
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runs", "first", "last", "change"],
+      "properties": {
+        "runs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "first": {"$ref": "#/$defs/run_value"},
+        "last": {"$ref": "#/$defs/run_value"},
+        "change": {"type": ["number", "null"]}
+      }
+    },
+    "break": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["before", "reason", "fields"],
+      "properties": {
+        "before": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1},
+        "fields": {"type": ["array", "null"], "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  }
+}

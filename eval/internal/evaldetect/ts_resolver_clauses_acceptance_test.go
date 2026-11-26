@@ -21,7 +21,7 @@ func extendsChain(n int) map[string]string {
 		files[previous] = `{"extends":"./` + name + `"}`
 		previous = name
 	}
-	files[previous] = `{"compilerOptions":{"baseUrl":".",` + aliasPaths + `}}`
+	files[previous] = `{"compilerOptions":{` + aliasPaths + `}}`
 	return files
 }
 
@@ -54,59 +54,50 @@ var _ = Describe("the TypeScript resolver's clauses", func() {
 			"src/domain/d.ts": "import { A } from \"../app/a.ts\";\n",
 		}),
 		Entry("an exact paths key", map[string]string{
-			"tsconfig.json":   `{"compilerOptions":{"baseUrl":".","paths":{"@app":["src/app/a"]}}}`,
+			"tsconfig.json":   `{"compilerOptions":{"paths":{"@app":["src/app/a"]}}}`,
 			"src/domain/d.ts": "import { A } from \"@app\";\n",
 		}),
 		Entry("a paths pattern with a suffix after its wildcard", map[string]string{
-			"tsconfig.json":   `{"compilerOptions":{"baseUrl":".","paths":{"@app/*.js":["src/app/*.ts"]}}}`,
+			"tsconfig.json":   `{"compilerOptions":{"paths":{"@app/*.js":["src/app/*.ts"]}}}`,
 			"src/domain/d.ts": "import { A } from \"@app/a.js\";\n",
 		}),
 		Entry("alongside a specifier shorter than a pattern's prefix and suffix", map[string]string{
-			"tsconfig.json":   `{"compilerOptions":{"baseUrl":".","paths":{"@a*a":["src/app/a"]}}}`,
+			"tsconfig.json":   `{"compilerOptions":{"paths":{"@a*a":["src/app/a"]}}}`,
 			"src/domain/d.ts": "import \"@a\";\nimport { A } from \"../app/a\";\n",
 		}),
-		Entry("paths targets taken relative to baseUrl", map[string]string{
-			"tsconfig.json":   `{"compilerOptions":{"baseUrl":"src","paths":{"@app/*":["app/*"]}}}`,
-			"src/domain/d.ts": "import { A } from \"@app/a\";\n",
-		}),
 		Entry("a paths pattern whose first target is missing", map[string]string{
-			"tsconfig.json":   `{"compilerOptions":{"baseUrl":".","paths":{"@app/*":["missing/*","src/app/*"]}}}`,
+			"tsconfig.json":   `{"compilerOptions":{"paths":{"@app/*":["missing/*","src/app/*"]}}}`,
 			"src/domain/d.ts": "import { A } from \"@app/a\";\n",
 		}),
-		Entry("a baseUrl relative to the config that declares it", map[string]string{
-			"config/base.json": `{"compilerOptions":{"baseUrl":".."}}`,
-			"tsconfig.json":    `{"extends":"./config/base.json"}`,
-			"src/domain/d.ts":  "import { A } from \"src/app/a\";\n",
-		}),
-		Entry("paths without baseUrl, relative to the config that declares them", map[string]string{
+		Entry("paths relative to the config that declares them", map[string]string{
 			"config/base.json": `{"compilerOptions":{"paths":{"@app/*":["../src/app/*"]}}}`,
 			"tsconfig.json":    `{"extends":"./config/base.json"}`,
 			"src/domain/d.ts":  "import { A } from \"@app/a\";\n",
 		}),
 		Entry("an extends without its .json suffix", map[string]string{
-			"tsconfig.base.json": `{"compilerOptions":{"baseUrl":".",` + aliasPaths + `}}`,
+			"tsconfig.base.json": `{"compilerOptions":{` + aliasPaths + `}}`,
 			"tsconfig.json":      `{"extends":"./tsconfig.base"}`,
 			"src/domain/d.ts":    "import { A } from \"@app/a\";\n",
 		}),
 		Entry("an extends chain at the depth cap", extendsChain(16)),
 		Entry("a tsconfig with a line comment", map[string]string{
-			"tsconfig.json":   "{\n// the fixture\n\"compilerOptions\":{\"baseUrl\":\".\"," + aliasPaths + "}}",
+			"tsconfig.json":   "{\n// the fixture\n\"compilerOptions\":{" + aliasPaths + "}}",
 			"src/domain/d.ts": "import { A } from \"@app/a\";\n",
 		}),
 		Entry("a tsconfig with a block comment", map[string]string{
-			"tsconfig.json":   "{/* the fixture */\"compilerOptions\":{\"baseUrl\":\".\"," + aliasPaths + "}}",
+			"tsconfig.json":   "{/* the fixture */\"compilerOptions\":{" + aliasPaths + "}}",
 			"src/domain/d.ts": "import { A } from \"@app/a\";\n",
 		}),
 		Entry("a tsconfig with a trailing comma in an object", map[string]string{
-			"tsconfig.json":   "{\"compilerOptions\":{\"baseUrl\":\".\"," + aliasPaths + ",},}",
+			"tsconfig.json":   "{\"compilerOptions\":{" + aliasPaths + ",},}",
 			"src/domain/d.ts": "import { A } from \"@app/a\";\n",
 		}),
 		Entry("a tsconfig with a trailing comma in an array", map[string]string{
-			"tsconfig.json":   "{\"compilerOptions\":{\"baseUrl\":\".\",\"paths\":{\"@app/*\":[\"src/app/*\",]}}}",
+			"tsconfig.json":   "{\"compilerOptions\":{\"paths\":{\"@app/*\":[\"src/app/*\",]}}}",
 			"src/domain/d.ts": "import { A } from \"@app/a\";\n",
 		}),
 		Entry("a tsconfig with a comment between a trailing comma and its closer", map[string]string{
-			"tsconfig.json":   "{\"compilerOptions\":{\"baseUrl\":\".\"," + aliasPaths + ", // the alias\n}}",
+			"tsconfig.json":   "{\"compilerOptions\":{" + aliasPaths + ", // the alias\n}}",
 			"src/domain/d.ts": "import { A } from \"@app/a\";\n",
 		}),
 	)
@@ -142,7 +133,7 @@ var _ = Describe("the TypeScript resolver's clauses", func() {
 	When("a specifier matches a paths pattern's prefix but not its suffix", func() {
 		It("is not resolved through that pattern", func() {
 			findings, err := tsViolations(tsTree(map[string]string{
-				"tsconfig.json":   `{"compilerOptions":{"baseUrl":".","paths":{"@app/*.js":["src/app/*.ts"]}}}`,
+				"tsconfig.json":   `{"compilerOptions":{"paths":{"@app/*.js":["src/app/*.ts"]}}}`,
 				"src/domain/d.ts": "import { A } from \"@app/a.ts\";\n",
 			}))
 			Expect(err).NotTo(HaveOccurred())
@@ -164,24 +155,7 @@ var _ = Describe("the TypeScript resolver's clauses", func() {
 		Entry(".", map[string]string{"src/core/inner/d.ts": "import { I } from \".\";\n"}),
 		Entry("..", map[string]string{"src/core/inner/sub/d.ts": "import { I } from \"..\";\n"}),
 		Entry("a path with a trailing slash", map[string]string{"src/core/inner/d.ts": "import { I } from \"../inner/\";\n"}),
-		Entry("a baseUrl path with a trailing slash", map[string]string{
-			"tsconfig.json":       `{"compilerOptions":{"baseUrl":"."}}`,
-			"src/core/inner/d.ts": "import { I } from \"src/core/inner/\";\n",
-		}),
 	)
-
-	When("a file imports its own directory as . and baseUrl names another layer", func() {
-		It("resolves . relative to the file, not through baseUrl", func() {
-			findings, err := tsViolations(tsTree(map[string]string{
-				"tsconfig.json":       `{"compilerOptions":{"baseUrl":"src/app"}}`,
-				"src/app/index.ts":    "export const A = 1;\n",
-				"src/domain/index.ts": "export const D = 1;\n",
-				"src/domain/d.ts":     "import { D } from \".\";\n",
-			}))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(findings).To(BeEmpty())
-		})
-	})
 
 	When("a bare specifier only starts with the package's own name", func() {
 		It("is not refused as a self-reference", func() {

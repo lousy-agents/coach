@@ -9,12 +9,11 @@ import (
 )
 
 // tsCompilerPaths is the module-resolution part of a tsconfig after extends
-// is merged: root-relative directories, and paths patterns as written.
+// is merged: the root-relative directory of the config that declares paths,
+// and the patterns as written.
 type tsCompilerPaths struct {
-	baseURL    string
-	hasBaseURL bool
-	pathsDir   string
-	paths      map[string][]string
+	pathsDir string
+	paths    map[string][]string
 }
 
 type tsConfigFile struct {
@@ -60,7 +59,7 @@ func readTSConfig(root, rel string, depth int) (tsCompilerPaths, error) {
 func overrideTSConfig(merged tsCompilerPaths, dir string, file tsConfigFile) (tsCompilerPaths, error) {
 	options := file.CompilerOptions
 	if options.BaseURL != nil {
-		merged.baseURL, merged.hasBaseURL = path.Join(dir, *options.BaseURL), true
+		return tsCompilerPaths{}, fmt.Errorf("%w: %s/tsconfig: baseUrl, which TypeScript 7 removed; write paths relative to the config instead", ErrRefused, dir)
 	}
 	if options.Paths != nil {
 		if err := checkPathsPatterns(dir, options.Paths); err != nil {

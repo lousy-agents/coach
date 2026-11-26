@@ -7,7 +7,7 @@ import (
 )
 
 // tsResolver maps a specifier to the root-relative TS file it names. It
-// supports relative specifiers, tsconfig baseUrl and single-wildcard paths,
+// supports relative specifiers and single-wildcard tsconfig paths,
 // and refuses the package.json forms it does not model.
 type tsResolver struct {
 	root         string
@@ -27,10 +27,6 @@ func (r tsResolver) resolve(fromFile, specifier string, line int) (string, bool,
 		if target, ok := r.file(candidate, false); ok {
 			return target, true, nil
 		}
-	}
-	if r.config.hasBaseURL {
-		target, ok := r.file(path.Join(r.config.baseURL, specifier), namesDirectory(specifier))
-		return target, ok, nil
 	}
 	return "", false, nil
 }
