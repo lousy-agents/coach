@@ -47,7 +47,7 @@ var (
 var metricRules = []metricRule{cognitiveComplexityRule, branchDensityRule, maxNestingDepthRule}
 
 func (r metricRule) reaches(metric int) bool {
-	return metric >= r.threshold
+	return metric >= ruleThreshold(r.ruleID, r.threshold)
 }
 
 func (r metricRule) severity(metric int) Severity {

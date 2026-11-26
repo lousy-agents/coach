@@ -32,8 +32,11 @@ fi
 """
 
 [tasks.go-vet]
-description = "Run go vet on all packages"
-run = "go vet ./..."
+description = "Run go vet on all packages, and on the packages that hold the coach_eval_override files a default vet skips"
+run = [
+  "go vet ./...",
+  "go vet -tags coach_eval_override ./pkg/codesignal/... ./cmd/coach/...",
+]
 
 [tasks.test]
 description = "Run all unit tests with race detection"
