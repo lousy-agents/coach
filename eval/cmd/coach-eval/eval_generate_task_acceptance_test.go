@@ -11,7 +11,7 @@ import (
 func runGenerateThroughMise(cacheHome string, args ...string) generateOutcome {
 	cmd := exec.Command("mise", append([]string{"run", "eval-generate", "--"}, args...)...)
 	cmd.Dir = filepath.Join("..", "..", "..")
-	cmd.Env = append(cmd.Environ(), "XDG_CACHE_HOME="+cacheHome)
+	cmd.Env = fixtureEnvironment(cacheHome)
 	return runGenerateCommand(cmd)
 }
 

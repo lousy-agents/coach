@@ -98,7 +98,7 @@ var _ = Describe("coach-eval generate keeps the oracle and the cache honest", fu
 		It("writes the oracle under that directory and nothing of it beside the program (AC-10)", func() {
 			oracleHome := GinkgoT().TempDir()
 
-			outcome := runGenerate(cacheHome, []string{"EVAL_ORACLE_DIR=" + oracleHome}, "--cell", "0", "--seed", "4", "--panel", "held_out")
+			outcome := runGenerate(cacheHome, []string{"EVAL_ORACLE_DIR=" + oracleHome}, "--cell", "1", "--seed", "4", "--panel", "held_out")
 			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 			program := decodeGenerated(outcome.stdout)
 

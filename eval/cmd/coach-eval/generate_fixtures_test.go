@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	. "github.com/onsi/gomega"
 )
@@ -66,9 +67,25 @@ func runGenerate(cacheHome string, extraEnv []string, args ...string) generateOu
 
 func runGenerateBinary(binary, cacheHome string, extraEnv []string, args ...string) generateOutcome {
 	cmd := exec.Command(binary, append([]string{"generate"}, args...)...)
-	cmd.Env = append(os.Environ(), "XDG_CACHE_HOME="+cacheHome)
-	cmd.Env = append(cmd.Env, extraEnv...)
+	cmd.Env = append(fixtureEnvironment(cacheHome), extraEnv...)
 	return runGenerateCommand(cmd)
+}
+
+var (
+	hostGoCache     string
+	hostGoCacheOnce sync.Once
+)
+
+// fixtureEnvironment gives a run its own fixture cache and keeps the host's Go build cache. Go derives its
+// build cache from XDG_CACHE_HOME, so without GOCACHE every run would compile the standard library and the
+// pinned gocognit again.
+func fixtureEnvironment(cacheHome string) []string {
+	hostGoCacheOnce.Do(func() {
+		output, err := exec.Command("go", "env", "GOCACHE").Output()
+		Expect(err).NotTo(HaveOccurred())
+		hostGoCache = strings.TrimSpace(string(output))
+	})
+	return append(os.Environ(), "XDG_CACHE_HOME="+cacheHome, "GOCACHE="+hostGoCache)
 }
 
 func runGenerateCommand(cmd *exec.Cmd) generateOutcome {
