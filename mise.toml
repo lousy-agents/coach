@@ -352,6 +352,11 @@ run = [
   { task = "source-layout-check" },
 ]
 
+# Runs the eval module's compare command. Arguments after `--` reach the command.
+[tasks.eval-compare]
+description = "Compare two coach-eval runs by run id; exit 0 comparable, 2 a run missing or invalid, 4 not comparable"
+run = 'go -C eval run ./cmd/coach-eval compare "$@"'
+
 # The single authoritative "everything CI proves" task. No longer the ship gate
 # -- GHA runs these as parallel required jobs -- but still the way to prove the
 # whole thing locally when you want to.
