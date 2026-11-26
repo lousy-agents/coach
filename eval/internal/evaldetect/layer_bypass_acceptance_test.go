@@ -258,6 +258,25 @@ var _ = Describe("the Go layer-bypass detector", func() {
 		})
 	})
 
+	DescribeTable("reports nothing and says why when the forbidden pairs leave no layer above or below the required layer",
+		func(forbidden string) {
+			policy := `{"schema_version":"1","roots":["."],"layers":[` +
+				`{"name":"store","prefixes":["pkg/store"]},` +
+				`{"name":"usecases","prefixes":["pkg/usecases"]},` +
+				`{"name":"api","prefixes":["pkg/api"]}],` +
+				`"forbidden_imports":[` + forbidden + `],"required_layer":"usecases"}`
+			root := bypassTree(policy, map[string]string{"pkg/api/direct.go": directBypass})
+
+			report, err := evaldetect.GoLayerBypass(root, loadPolicy(root))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Bypasses).To(BeEmpty())
+			Expect(report.Reason).To(Equal("the policy's forbidden_imports give no layer above or below the required layer"))
+		},
+		Entry("no forbidden pairs at all, as in the anti-pattern pack's skipped-layer policy", ``),
+		Entry("pairs that give a layer above the required layer but none below it", `{"from":"usecases","to":"api"}`),
+		Entry("pairs that give a layer below the required layer but none above it", `{"from":"store","to":"usecases"}`),
+	)
+
 	When("a package does not type-check", func() {
 		It("refuses the program, naming the package, rather than grading it in part", func() {
 			root := bypassTree(bypassPolicy("usecases", false), map[string]string{
