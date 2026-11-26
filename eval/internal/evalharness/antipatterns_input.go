@@ -14,12 +14,15 @@ func antipatternSetup(args []string, stderr io.Writer) (coach, root string, err 
 	flags := flag.NewFlagSet("coach-eval antipatterns", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.StringVar(&coach, "coach", "", "the coach binary that scans the fixtures")
-	flags.StringVar(&root, "fixtures", filepath.Join("eval", "fixtures", "antipatterns"), "the directory of fixtures")
+	flags.StringVar(&root, "fixtures", filepath.Join("eval", "fixtures", "antipatterns"), "the directory of fixtures; it shall be trusted, because go vet builds each variant")
 	if err = flags.Parse(args); err != nil {
 		return "", "", err
 	}
 	if coach == "" {
 		return "", "", fmt.Errorf("--coach names the coach binary that scans the fixtures")
+	}
+	if coach, err = filepath.Abs(coach); err != nil {
+		return "", "", err
 	}
 	if _, err = os.Stat(coach); err != nil {
 		return "", "", fmt.Errorf("the coach binary %s is not usable: %v", coach, err)
