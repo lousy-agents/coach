@@ -67,13 +67,21 @@ func structFieldNames(file *ast.File, entity string) []string {
 		if !isType || spec.Name.Name != entity {
 			return true
 		}
-		if structure, isStruct := spec.Type.(*ast.StructType); isStruct {
-			for _, field := range structure.Fields.List {
-				names = append(names, field.Names[0].Name)
-			}
-		}
+		names = fieldNamesOf(spec.Type)
 		return false
 	})
+	return names
+}
+
+func fieldNamesOf(expression ast.Expr) []string {
+	structure, isStruct := expression.(*ast.StructType)
+	if !isStruct {
+		return nil
+	}
+	names := make([]string, 0, len(structure.Fields.List))
+	for _, field := range structure.Fields.List {
+		names = append(names, field.Names[0].Name)
+	}
 	return names
 }
 
