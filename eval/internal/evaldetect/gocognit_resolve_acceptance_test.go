@@ -44,15 +44,18 @@ var _ = Describe("resolving the pinned gocognit", func() {
 		})
 	})
 
-	When("the caller names a module proxy and the cache is empty", func() {
-		It("still refuses without fetching anything", func() {
+	DescribeTable("a caller's environment cannot reopen module lookup when the cache is empty",
+		func(callerEnv ...string) {
 			emptyCache := GinkgoT().TempDir()
 
-			_, err := evaldetect.ResolveGocognit(evalModule, []string{"GOMODCACHE=" + emptyCache, "GOPROXY=https://proxy.golang.org,direct"})
+			_, err := evaldetect.ResolveGocognit(evalModule, append([]string{"GOMODCACHE=" + emptyCache}, callerEnv...))
 			Expect(err).To(MatchError(evaldetect.ErrGocognitUnavailable))
-			Expect(downloadedFiles(emptyCache)).To(BeEmpty(), "a caller's GOPROXY must not reopen module lookup")
-		})
-	})
+			Expect(downloadedFiles(emptyCache)).To(BeEmpty(), "a caller's environment must not cause a fetch")
+		},
+		Entry("a named module proxy", "GOPROXY=https://proxy.golang.org,direct"),
+		Entry("direct module lookup", "GOPROXY=direct"),
+		Entry("-mod=mod with direct lookup", "GOFLAGS=-mod=mod", "GOPROXY=direct"),
+	)
 
 	When("the module cache does not hold the pinned version", func() {
 		It("refuses without fetching anything", func() {
