@@ -14,23 +14,28 @@ func Records(summary Summary, date string) []evalcensus.Record {
 	var records []evalcensus.Record
 	for _, repo := range summary.Repositories {
 		for _, placed := range repo.findings {
-			record := evalcensus.Record{
-				Target:  findingTarget(summary.CorpusID, repo.Since, placed),
-				Measure: "flagged_vs_unflagged_association",
-				Source:  evalcensus.Source{Kind: "szz", Ref: "none"},
-				Rater:   evalcensus.Rater{Kind: "automated"},
-				Date:    date,
-			}
-			record.Value, record.Rationale = json.RawMessage("0"), fmt.Sprintf("%s. No fix up to %s touched this unit.", Statement, repo.Until)
-			if placed.fix != "" {
-				record.Value, record.Source.Ref = json.RawMessage("1"), placed.fix
-				record.Rationale = fmt.Sprintf("%s. Fix %s, up to %s, touched this unit.", Statement, placed.fix, repo.Until)
-			}
-			record.RecordID = evalcensus.NewRecordID(record)
-			records = append(records, record)
+			records = append(records, findingRecord(summary.CorpusID, repo, placed, date))
 		}
 	}
 	return records
+}
+
+func findingRecord(corpusID string, repo RepositoryHistory, placed placedFinding, date string) evalcensus.Record {
+	record := evalcensus.Record{
+		Target:    findingTarget(corpusID, repo.Since, placed),
+		Measure:   "flagged_vs_unflagged_association",
+		Value:     json.RawMessage("0"),
+		Source:    evalcensus.Source{Kind: "szz", Ref: "none"},
+		Rater:     evalcensus.Rater{Kind: "automated"},
+		Date:      date,
+		Rationale: fmt.Sprintf("%s. No fix up to %s touched this unit.", Statement, repo.Until),
+	}
+	if placed.fix != "" {
+		record.Value, record.Source.Ref = json.RawMessage("1"), placed.fix
+		record.Rationale = fmt.Sprintf("%s. Fix %s, up to %s, touched this unit.", Statement, placed.fix, repo.Until)
+	}
+	record.RecordID = evalcensus.NewRecordID(record)
+	return record
 }
 
 // findingTarget names the finding at the census SHA. A file-level finding
