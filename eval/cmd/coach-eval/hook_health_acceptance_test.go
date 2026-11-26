@@ -238,6 +238,26 @@ var _ = Describe("coach-eval hook-health (#789, design 7 and 10)", func() {
 			return home
 		}
 
+		It("starts every process with exactly two GIT_ settings, whatever the caller exports", func() {
+			dump := filepath.Join(GinkgoT().TempDir(), "environment")
+			coach := filepath.Join(GinkgoT().TempDir(), "coach")
+			script := "#!/bin/sh\nenv | grep '^GIT_' | sort >> " + dump + "\ncat <<'REPORT'\n" + cleanReport + "\nREPORT\n"
+			Expect(os.WriteFile(coach, []byte(script), 0o755)).To(Succeed())
+
+			runHookHealth(programLine(firstTuningProgramCopy()), []string{
+				"GIT_DIR=/nonexistent/dir", "GIT_INDEX_FILE=/nonexistent/index", "GIT_WORK_TREE=/nonexistent/tree",
+				"GIT_AUTHOR_NAME=someone", "GIT_CONFIG_GLOBAL=/nonexistent/global",
+			}, "--coach", coach)
+
+			raw, err := os.ReadFile(dump)
+			Expect(err).NotTo(HaveOccurred())
+			seen := map[string]bool{}
+			for _, line := range strings.Fields(string(raw)) {
+				seen[line] = true
+			}
+			Expect(seen).To(Equal(map[string]bool{"GIT_CONFIG_GLOBAL=/dev/null": true, "GIT_CONFIG_NOSYSTEM=1": true}))
+		})
+
 		It("does not commit onto a repository named by an inherited GIT_DIR, as in a pre-commit hook", func() {
 			scratch := GinkgoT().TempDir()
 			init := exec.Command("git", "init", "-q", scratch)
