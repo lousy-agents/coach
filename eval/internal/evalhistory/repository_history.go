@@ -15,7 +15,7 @@ type involvements struct {
 // up to history_until, and compares each Go rule. A Coach or git failure
 // marks the repository's analysis failed instead of stopping the run.
 func repositoryHistory(corpus evalcensus.Corpus, repo evalcensus.Repository, coach, dir string, seed int64) RepositoryHistory {
-	result := RepositoryHistory{ID: repo.ID, Since: repo.SHA, Until: repo.HistoryUntil}
+	result := RepositoryHistory{ID: repo.ID, Since: repo.SHA, Until: repo.HistoryUntil, Rules: []RuleResult{}, UnprocessedFixes: []UnprocessedFix{}}
 	run := evalcensus.RunCoach(repo, coach, dir)
 	if run.Failure != "" {
 		result.CoachExit, result.Evidence = run.Exit, run.Failure
@@ -78,5 +78,5 @@ func (result *RepositoryHistory) countFixes(scan FixScan, involved involvements)
 		result.MatchRate = &rate
 	}
 	result.UnmappedFixes = UnmappedFixes{Function: involved.functions.Unmapped, File: involved.files.Unmapped}
-	result.UnprocessedFixes = involved.functions.Unprocessed
+	result.UnprocessedFixes = append(result.UnprocessedFixes, involved.functions.Unprocessed...)
 }

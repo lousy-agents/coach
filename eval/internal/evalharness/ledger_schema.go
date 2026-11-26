@@ -21,11 +21,17 @@ var censusRunSchemaJSON []byte
 
 const censusRunSchemaName = "census_run.schema.json"
 
+//go:embed history_run.schema.json
+var historyRunSchemaJSON []byte
+
+const historyRunSchemaName = "history_run.schema.json"
+
 // compiledLedgerLineSchema compiles the ledger line schema, which selects
-// the run schema by kind: a census run, or the study-shaped run record.
+// the run schema by kind: a census run, a history run, or the study-shaped
+// run record.
 var compiledLedgerLineSchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
 	compiler := jsonschema.NewCompiler()
-	resources := map[string][]byte{runSchemaName: runSchemaJSON, censusRunSchemaName: censusRunSchemaJSON, ledgerLineSchemaName: ledgerLineSchemaJSON}
+	resources := map[string][]byte{runSchemaName: runSchemaJSON, censusRunSchemaName: censusRunSchemaJSON, historyRunSchemaName: historyRunSchemaJSON, ledgerLineSchemaName: ledgerLineSchemaJSON}
 	for name, raw := range resources {
 		doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
 		if err != nil {

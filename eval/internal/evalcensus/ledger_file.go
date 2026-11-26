@@ -7,13 +7,13 @@ import (
 	"path/filepath"
 )
 
-// AppendToLedger appends whole JSON lines to the ledger at path under the
+// appendToLedger appends whole JSON lines to the ledger at path under the
 // ledger's lock, so concurrent writers append one at a time. lines runs
 // under the lock and returns the bytes to append, or an error that refuses
 // the append. A ledger whose last line lacks a newline gets one first, and a
 // failed or short write truncates the ledger back to its length before the
 // append, so no torn line is ever left for a reader to refuse.
-func AppendToLedger(path string, lines func() ([]byte, error)) error {
+func appendToLedger(path string, lines func() ([]byte, error)) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -22,6 +22,12 @@ func AppendToLedger(path string, lines func() ([]byte, error)) error {
 		return err
 	}
 	defer unlock()
+	return appendLocked(path, lines)
+}
+
+// appendLocked builds and appends lines to the ledger at path, whose lock
+// the caller holds.
+func appendLocked(path string, lines func() ([]byte, error)) error {
 	data, err := lines()
 	if err != nil {
 		return err
