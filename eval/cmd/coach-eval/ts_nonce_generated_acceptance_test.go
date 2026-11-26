@@ -14,6 +14,10 @@ import (
 
 const generatedRunNonce = "GEN-NONCE-4c19b7"
 
+func (c programCell) cell() evalgen.Cell {
+	return evalgen.Cell{Layers: c.layers, Packages: c.packages, Entry: c.entry, Depth: c.depth, Field: c.field, Direction: c.direction, Trap: c.trap}
+}
+
 func expectedTestIDs(program evalgen.Program) []string {
 	ids := []string{}
 	for _, visible := range program.Manifest.Template.VisibleTests {
@@ -48,10 +52,8 @@ func hiddenPaths(program evalgen.Program) []string {
 
 var _ = Describe("a generated TypeScript program under the nonce channel (781 AC-3)", func() {
 	It("gives every visible test of every cell exactly one passing record under the ID the manifest lists", func() {
-		for index := 0; index < evalgen.CellCount; index++ {
-			cell, err := evalgen.CellFromIndex(index)
-			Expect(err).NotTo(HaveOccurred())
-			program, err := evalgen.GenerateTypeScript(cell, 0)
+		for index, shape := range programCells {
+			program, err := evalgen.GenerateTypeScript(shape.cell(), 0)
 			Expect(err).NotTo(HaveOccurred())
 			visible := []string{}
 			for _, test := range program.Manifest.Template.VisibleTests {
@@ -68,10 +70,8 @@ var _ = Describe("a generated TypeScript program under the nonce channel (781 AC
 	})
 
 	It("fails every hidden test on the stub and passes every one on the oracle, for every cell", func() {
-		for index := 0; index < evalgen.CellCount; index++ {
-			cell, err := evalgen.CellFromIndex(index)
-			Expect(err).NotTo(HaveOccurred())
-			program, err := evalgen.GenerateTypeScript(cell, 0)
+		for index, shape := range programCells {
+			program, err := evalgen.GenerateTypeScript(shape.cell(), 0)
 			Expect(err).NotTo(HaveOccurred())
 			hidden := hiddenPaths(program)
 			expected := []string{}
