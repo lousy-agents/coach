@@ -5,13 +5,50 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
+var (
+	fastStepTimeout  = regexp.MustCompile(`go test -race[^\n"]*-timeout[ =](\d+)m`)
+	distroRunTimeout = regexp.MustCompile(`acceptance-ci-env[^\n]*-timeout[ =](\d+)m`)
+	distroJobLimit   = regexp.MustCompile(`timeout-minutes:\s*(\d+)`)
+)
+
+func firstMinutes(pattern *regexp.Regexp, text string) (int, bool) {
+	match := pattern.FindStringSubmatch(text)
+	if match == nil {
+		return 0, false
+	}
+	minutes, err := strconv.Atoi(match[1])
+	return minutes, err == nil
+}
+
+func fastAcceptanceTimeout(toml string) (int, bool) {
+	return firstMinutes(fastStepTimeout, taskSteps(toml, "test-acceptance-fast"))
+}
+
+func distroGitRunTimeout(yml string) (int, bool) {
+	return firstMinutes(distroRunTimeout, jobBody(yml, "distro-git"))
+}
+
+func distroGitJobLimit(yml string) (int, bool) {
+	return firstMinutes(distroJobLimit, jobBody(yml, "distro-git"))
+}
+
+func mutated(text, old, replacement string) string {
+	ExpectWithOffset(1, strings.Count(text, old)).To(Equal(1), "the mutant's anchor %q must occur once", old)
+	return strings.Replace(text, old, replacement, 1)
+}
+
 var _ = Describe("the go test timeout of the other full-module runs (#909)", func() {
-	const floorMinutes = 25 // what `mise run test` uses (#605)
+	const (
+		floorMinutes = 25 // what `mise run test` uses (#605)
+		distroRun    = "run: mise exec -- go run ./cmd/acceptance-ci-env -timeout 25m ./..."
+		fastStep     = `"go test -race -timeout 25m ./... -run Acceptance",`
+	)
 
 	var toml, yml string
 
@@ -24,37 +61,68 @@ var _ = Describe("the go test timeout of the other full-module runs (#909)", fun
 		yml = string(raw)
 	})
 
-	timeoutMinutes := func(pattern *regexp.Regexp, text string) int {
-		match := pattern.FindStringSubmatch(text)
-		ExpectWithOffset(1, match).NotTo(BeNil(), "no match for %s in:\n%s", pattern, text)
-		value, err := strconv.Atoi(match[1])
-		ExpectWithOffset(1, err).NotTo(HaveOccurred())
-		return value
-	}
-
-	goTimeout := regexp.MustCompile(`-timeout[ =](\d+)m`)
-	jobLimit := regexp.MustCompile(`timeout-minutes:\s*(\d+)`)
-
 	It("names a go test timeout on test-acceptance-fast, which runs cmd/coach under -race and would otherwise stop at go test's 10-minute default", func() {
-		Expect(taskSteps(toml, "test-acceptance-fast")).To(MatchRegexp(`go test -race[^\n"]*-timeout[ =]\d+m`))
+		_, named := fastAcceptanceTimeout(toml)
+		Expect(named).To(BeTrue())
 	})
 
 	It("gives test-acceptance-fast a go test timeout of at least as many minutes as `mise run test` uses", func() {
-		Expect(timeoutMinutes(goTimeout, taskSteps(toml, "test-acceptance-fast"))).To(BeNumerically(">=", floorMinutes))
+		minutes, _ := fastAcceptanceTimeout(toml)
+		Expect(minutes).To(BeNumerically(">=", floorMinutes))
 	})
 
 	It("names a go test timeout on the distro-git leg's acceptance-ci-env run, which passes its arguments to go test", func() {
-		Expect(jobBody(yml, "distro-git")).To(MatchRegexp(`acceptance-ci-env[^\n]*-timeout[ =]\d+m`))
+		_, named := distroGitRunTimeout(yml)
+		Expect(named).To(BeTrue())
 	})
 
 	It("gives the distro-git leg a go test timeout of at least as many minutes as `mise run test` uses", func() {
-		Expect(timeoutMinutes(goTimeout, jobBody(yml, "distro-git"))).To(BeNumerically(">=", floorMinutes))
+		minutes, _ := distroGitRunTimeout(yml)
+		Expect(minutes).To(BeNumerically(">=", floorMinutes))
 	})
 
 	It("leaves the distro-git job more time than its go test timeout, so go test panics with its goroutine dump before Actions cancels the job", func() {
-		body := jobBody(yml, "distro-git")
+		limit, _ := distroGitJobLimit(yml)
+		timeout, _ := distroGitRunTimeout(yml)
 
-		Expect(timeoutMinutes(jobLimit, body)).To(BeNumerically(">=", timeoutMinutes(goTimeout, body)+5), "the other steps of the job need the margin")
+		Expect(limit).To(BeNumerically(">=", timeout+5), "the other steps of the job need the margin")
+	})
+
+	DescribeTable("does not take a flag go test never receives for the distro-git leg's timeout",
+		func(mutate func(string) string) {
+			_, named := distroGitRunTimeout(mutate(yml))
+			Expect(named).To(BeFalse())
+		},
+		Entry("a comment line in the job that mentions the flag, with the flag gone from the run line", func(yml string) string {
+			yml = mutated(yml, distroRun, "run: mise exec -- go run ./cmd/acceptance-ci-env ./...")
+			return mutated(yml, "      - name: Go tests under git 2.43", "      # acceptance-ci-env passes -timeout 25m through to go test (#909)\n      - name: Go tests under git 2.43")
+		}),
+		Entry("a trailing shell comment on the run line", func(yml string) string {
+			return mutated(yml, distroRun, "run: mise exec -- go run ./cmd/acceptance-ci-env ./... # -timeout 25m")
+		}),
+		Entry("a second command on the run line", func(yml string) string {
+			return mutated(yml, distroRun, "run: mise exec -- go run ./cmd/acceptance-ci-env ./...; echo -timeout 25m")
+		}),
+	)
+
+	DescribeTable("does not take a flag go test never receives for test-acceptance-fast's timeout",
+		func(mutate func(string) string) {
+			_, named := fastAcceptanceTimeout(mutate(toml))
+			Expect(named).To(BeFalse())
+		},
+		Entry("a trailing shell comment inside the step", func(toml string) string {
+			return mutated(toml, fastStep, `"go test -race ./... -run Acceptance # -timeout 25m",`)
+		}),
+		Entry("a second command in the step", func(toml string) string {
+			return mutated(toml, fastStep, `"go test -race ./... -run Acceptance; echo -timeout 25m",`)
+		}),
+	)
+
+	It("reads the distro-git job limit from the key, not from a comment that mentions it", func() {
+		yml = mutated(yml, "    timeout-minutes: 60\n    env:\n      COACH_CI_GIT_VERSION: \"2.43.0\"", "    # timeout-minutes: 60\n    timeout-minutes: 28\n    env:\n      COACH_CI_GIT_VERSION: \"2.43.0\"")
+		limit, _ := distroGitJobLimit(yml)
+
+		Expect(limit).To(Equal(28))
 	})
 
 	It("keeps the sandbox recipe in validation-and-ci.md on the arguments the distro-git leg runs, so a contributor reproduces its timeout", func() {
