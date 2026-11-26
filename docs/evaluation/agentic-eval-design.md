@@ -434,7 +434,7 @@ Under (c), the credential is **unreadable but usable through the proxy**. The ca
 - The nonce arrives on a descriptor that the harness reads and closes before any test runs.
 - The harness then writes one nonce-tagged record per test ID to another descriptor. In Go, the harness is its own test binary; in TS, it is a reporter under `--test-isolation=process`. Visible tests use the same harness.
 - **G1 counts only this channel.**
-- **Residual risk:** in-process code could still target the channel. The static check flags such trials, and they are reported separately.
+- **Residual risk:** in-process code could still target the channel. The static check flags such trials, and they are reported separately. In TypeScript the reporter runs in the parent `node` process, so the paths a test can reach as the same user are `/proc/<ppid>/fd/4`, where a write yields only records without the nonce, which G1 does not count and reports as forged, and `/proc/<ppid>/mem`, which could expose the nonce; the static check shall flag both beside `/proc/self/fd`.
 
 The grade is assembled on the host.
 
