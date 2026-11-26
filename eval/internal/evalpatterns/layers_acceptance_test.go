@@ -126,6 +126,63 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 		})
 	})
 
+	When("two layers forbid each other, so the ranks are a permutation but the pairs are no total order", func() {
+		It("records no roles and the layers as not covered", func() {
+			mutual := `{"schema_version":"1","roots":["."],"layers":[` +
+				`{"name":"x","prefixes":["pkg/x"]},{"name":"y","prefixes":["pkg/y"]},{"name":"z","prefixes":["pkg/z"]}],` +
+				`"forbidden_imports":[{"from":"x","to":"y"},{"from":"x","to":"z"},{"from":"y","to":"x"}]}`
+			profile := profileOfFiles(map[string]string{
+				".lousy-agents/coach.json": mutual,
+				"pkg/x/x1/x.go":            pkgFile("x1"), "pkg/x/x2/x.go": pkgFile("x2"),
+				"pkg/y/y1/y.go": pkgFile("y1"), "pkg/y/y2/y.go": pkgFile("y2"),
+				"pkg/z/z1/z.go": pkgFile("z1"), "pkg/z/z2/z.go": pkgFile("z2"),
+			})
+
+			Expect(profile["roles"]).To(Equal(map[string]any{}))
+			Expect(profile["not_covered"]).To(ContainElement(map[string]any{"shape": "layers", "count": 1.0}))
+		})
+	})
+
+	DescribeTable("a policy that places no package records no layer and lists the layers as not covered, never falling back to the package tree",
+		func(policy string) {
+			profile := profileOfFiles(map[string]string{
+				".lousy-agents/coach.json": policy,
+				"a/x/x.go":                 pkgFile("x"), "a/y/y.go": pkgFile("y"),
+				"b/p/p.go": pkgFile("p"), "b/q/q.go": pkgFile("q"),
+				"c/d/d.go": pkgFile("d"), "c/e/e.go": pkgFile("e"),
+			})
+
+			Expect(measure(profile, "dimensions", "layers")).To(Equal(map[string]any{}))
+			Expect(profile["roles"]).To(Equal(map[string]any{}))
+			Expect(profile["not_covered"]).To(ContainElement(map[string]any{"shape": "layers", "count": 1.0}))
+		},
+		Entry("the policy declares no layers", `{"something_else":true}`),
+		Entry("the policy's layers match no package", `{"schema_version":"1","roots":["."],"layers":[`+
+			`{"name":"m","prefixes":["pkg/m"]},{"name":"n","prefixes":["pkg/n"]},{"name":"o","prefixes":["pkg/o"]}],`+
+			`"forbidden_imports":[{"from":"n","to":"m"},{"from":"o","to":"m"},{"from":"o","to":"n"}]}`),
+	)
+
+	DescribeTable("refuses a checkout whose policy exists but cannot be read, with exit 2, naming the policy but not the host path, rather than falling back to the package tree",
+		func(arrange func(root string)) {
+			root := standInTree()
+			arrange(root)
+
+			_, err := evalpatterns.ExtractProfile(standInReference(), root)
+
+			var refusal evalpatterns.Refusal
+			Expect(errors.As(err, &refusal)).To(BeTrue(), "ExtractProfile returned %v", err)
+			Expect(refusal.Exit).To(Equal(2))
+			Expect(err.Error()).To(ContainSubstring(".lousy-agents/coach.json"))
+			Expect(err.Error()).NotTo(ContainSubstring(root))
+		},
+		Entry("the policy is a directory", func(root string) {
+			Expect(os.MkdirAll(filepath.Join(root, ".lousy-agents", "coach.json"), 0o755)).To(Succeed())
+		}),
+		Entry("the policy's directory is a regular file", func(root string) {
+			writeFile(filepath.Join(root, ".lousy-agents"), "not a directory\n")
+		}),
+	)
+
 	When("the policy orders six layers, more than the generator builds", func() {
 		It("records six layers, no roles, and the layers as not covered rather than clamped", func() {
 			files := chainedLayers("l1", "l2", "l3", "l4", "l5", "l6")
@@ -276,6 +333,8 @@ var _ = Describe("the static call depth of a profile's entries (AC-2.4, AC-2.8)"
 		},
 		Entry("a quoted module path", "module \"example.invalid/one\"\n\ngo 1.26.0\n"),
 		Entry("an indented module line", "  module example.invalid/one\n\ngo 1.26.0\n"),
+		Entry("a module line with a trailing comment", "module example.invalid/one // Deprecated: use example.invalid/two\n\ngo 1.26.0\n"),
+		Entry("a module line separated by a tab", "module\texample.invalid/one\n\ngo 1.26.0\n"),
 	)
 
 	It("extracts a checkout with no go.mod, following only same-package calls", func() {
