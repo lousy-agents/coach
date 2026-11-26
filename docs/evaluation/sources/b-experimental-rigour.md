@@ -2,6 +2,8 @@
 
 Source ledger for the science-grade evaluation of Coach (seeded fixture repositories with ground truth; an agentic eval in which `claude -p` uses `coach` to refactor a fixture, scored against that ground truth with a no-Coach control; reusable for the #260 precision census).
 
+Rows are cited as `b.N`, where N is the section number.
+
 How this ledger was built: every quotation below was copied from the page named in its "Read" line, fetched on 2026-11-25, and each quotation was then checked as a verbatim substring of the fetched text. Where a source's PDF would not parse, the arXiv HTML rendering of the same version was read instead. Numbers marked **derived** are this ledger's own arithmetic from a source's formula, not a figure the source prints. Nothing is cited from memory.
 
 ## Summary of what the sources add up to
@@ -62,7 +64,7 @@ Key findings:
 
 ## 4. Anthropic, "Demystifying evals for AI agents"
 
-- **URL:** https://www.anthropic.com/research/demystifying-evals-for-ai-agents (Engineering, published 9 Jan 2026; listed on https://www.anthropic.com/engineering)
+- **URL:** https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents (published 9 Jan 2026; the same page as a.1, also reachable under `/research/`)
 - **Read:** the page in full.
 
 Key findings:
