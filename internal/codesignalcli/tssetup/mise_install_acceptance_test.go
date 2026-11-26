@@ -34,7 +34,7 @@ var _ = Describe("mise npm-backend install command construction: lifecycle-scrip
 })
 
 var _ = Describe("mise npm-backend install command construction: insulated working directory (coach#328 Task 4, AC-16)", func() {
-	When("the analyzed repository's mise.toml carries a trusted env exec template that would write a sentinel", func() {
+	When("the analyzed repository's mise.toml carries a trusted env exec template that would write a sentinel (needs mise on PATH; serves its own loopback npm registry, so no external service)", func() {
 		It("never executes it, because the real install runs from a private neutral working directory that never discovers the repository's config", neverExecutesBecauseRealInstallRunsFrom)
 	})
 })
@@ -86,19 +86,7 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 		})
 
 		When("the trusted scope's private working directory cannot be created (coach#328 Task 5 integration repair, Finding 5)", func() {
-			It("reports package_manager_config_unverifiable rather than a bare, codeless could-not-start failure", func() {
-
-				repo := GinkgoT().TempDir()
-				Expect(os.WriteFile(filepath.Join(repo, "mise.toml"), []byte("[tools]\n\"npm:typescript\" = \"7.0.2\"\n"), 0o644)).To(Succeed())
-				nonexistentTemp := filepath.Join(GinkgoT().TempDir(), "does-not-exist")
-				GinkgoT().Setenv("TMPDIR", nonexistentTemp)
-
-				result := installMiseTypescriptProject(tstoolchain.LocateMiseTypescriptInstall, context.Background(), repo, "7.0.2")
-				Expect(result.Trusted).To(BeTrue(), "the trust gate itself never touches the working directory: %+v", result)
-				Expect(result.Attempted).To(BeFalse(), "the install subprocess must never start when insulation could not be established: %+v", result)
-				Expect(result.Observed).To(BeFalse(), "%+v", result)
-				Expect(result.Code).To(Equal(projectreadiness.GapPackageManagerConfigUnverifiable), "insulation failing before any subprocess starts must be distinguishable from mise simply being absent from PATH: %+v", result)
-			})
+			It("reports package_manager_config_unverifiable rather than a bare, codeless could-not-start failure", reportsInsulationFailureNotCodelessFailure)
 		})
 	})
 
@@ -188,18 +176,14 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 })
 
 var _ = Describe("mise npm-backend install command construction: real end-to-end native-package classification (coach#328 Task 5 integration repair, Finding 1)", func() {
-	When("mise's default npm backend genuinely installs the frozen row's TypeScript version, with no fabricated filesystem layout standing in for it", func() {
+	When("mise's default npm backend genuinely installs the frozen row's TypeScript version from the public npm registry (needs registry.npmjs.org), with no fabricated filesystem layout standing in for it", func() {
 		It("classifies the freshly-installed compiler as eligible, not merely as an install that exited zero", classifiesFreshlyInstalledCompilerEligibleNotMerely)
 	})
 })
 
 func neverRunsFixturesLifecycleScriptsCheckedTarballs() {
-	if _, err := exec.LookPath("mise"); err != nil {
-		Skip(fmt.Sprintf("mise not found on PATH; skipping the real mise install lifecycle-suppression spec (%s)", err))
-	}
-	if _, err := exec.LookPath("npm"); err != nil {
-		Skip(fmt.Sprintf("npm not found on PATH; skipping the real mise install lifecycle-suppression spec (%s)", err))
-	}
+	requireToolOnPath("mise")
+	requireToolOnPath("npm")
 	dataDir, _ := freshMiseInstallEnv()
 	writeHomeNpmrcRegistry(startLifecycleSentinelRegistry().URL)
 	assertLifecycleSentinelFixtureIsLive(GinkgoT().TempDir())
@@ -214,12 +198,8 @@ func neverRunsFixturesLifecycleScriptsCheckedTarballs() {
 }
 
 func stillNeverRunsFixturesLifecycleScriptsUnder() {
-	if _, err := exec.LookPath("mise"); err != nil {
-		Skip(fmt.Sprintf("mise not found on PATH; skipping the mise npm.shell_out=true lifecycle-suppression spec (%s)", err))
-	}
-	if _, err := exec.LookPath("npm"); err != nil {
-		Skip(fmt.Sprintf("npm not found on PATH; skipping the mise npm.shell_out=true lifecycle-suppression spec (%s)", err))
-	}
+	requireToolOnPath("mise")
+	requireToolOnPath("npm")
 	dataDir, configDir := freshMiseInstallEnv()
 	writeHomeNpmrcRegistry(startLifecycleSentinelRegistry().URL)
 	assertLifecycleSentinelFixtureIsLive(GinkgoT().TempDir())
@@ -238,9 +218,7 @@ func stillNeverRunsFixturesLifecycleScriptsUnder() {
 }
 
 func neverExecutesBecauseRealInstallRunsFrom() {
-	if _, err := exec.LookPath("mise"); err != nil {
-		Skip(fmt.Sprintf("mise not found on PATH; skipping the real mise insulated-working-directory spec (%s)", err))
-	}
+	requireToolOnPath("mise")
 	freshMiseInstallEnv()
 	writeHomeNpmrcRegistry(startLifecycleSentinelRegistry().URL)
 
@@ -274,9 +252,8 @@ func neverExecutesBecauseRealInstallRunsFrom() {
 }
 
 func classifiesFreshlyInstalledCompilerEligibleNotMerely() {
-	if _, err := exec.LookPath("mise"); err != nil {
-		Skip(fmt.Sprintf("mise not found on PATH; skipping the real end-to-end mise install classification spec (%s)", err))
-	}
+	requireToolOnPath("mise")
+	requirePublicNpmRegistry()
 	freshMiseInstallEnv()
 
 	result := installMiseTypescriptGlobal(tstoolchain.LocateMiseTypescriptInstall, context.Background(), "7.0.2")
@@ -285,4 +262,18 @@ func classifiesFreshlyInstalledCompilerEligibleNotMerely() {
 	Expect(result.Succeeded).To(BeTrue(), "a real `mise install npm:typescript@7.0.2` must classify as compilerClassEligible, not merely exit zero -- coach#328 Finding 1: mise's own default npm backend does not hoist the platform-native optionalDependency package to the top-level location classifyCompilerCandidate expects unless something completes that hoisting: %+v", result)
 	Expect(result.Class).To(Equal(tstoolchain.ClassEligible), "%+v", result)
 	Expect(result.NativePath).NotTo(BeEmpty(), "%+v", result)
+}
+
+func reportsInsulationFailureNotCodelessFailure() {
+	requireToolOnPath("mise")
+	repo := GinkgoT().TempDir()
+	Expect(os.WriteFile(filepath.Join(repo, "mise.toml"), []byte("[tools]\n\"npm:typescript\" = \"7.0.2\"\n"), 0o644)).To(Succeed())
+	nonexistentTemp := filepath.Join(GinkgoT().TempDir(), "does-not-exist")
+	GinkgoT().Setenv("TMPDIR", nonexistentTemp)
+
+	result := installMiseTypescriptProject(tstoolchain.LocateMiseTypescriptInstall, context.Background(), repo, "7.0.2")
+	Expect(result.Trusted).To(BeTrue(), "the trust gate itself never touches the working directory: %+v", result)
+	Expect(result.Attempted).To(BeFalse(), "the install subprocess must never start when insulation could not be established: %+v", result)
+	Expect(result.Observed).To(BeFalse(), "%+v", result)
+	Expect(result.Code).To(Equal(projectreadiness.GapPackageManagerConfigUnverifiable), "insulation failing before any subprocess starts must be distinguishable from mise simply being absent from PATH: %+v", result)
 }

@@ -65,7 +65,11 @@ func filteredEnviron(key string) []string {
 	return filtered
 }
 
+// writeHomeNpmrcRegistry points npm at registryURL through HOME/.npmrc. It first drops every ambient npm_config_*
+// variable for the rest of the spec, because NPM_CONFIG_USERCONFIG (set in Claude Code cloud sandboxes) makes npm
+// read the host's file instead of HOME/.npmrc, so a spec that serves its own loopback registry would ask the public one.
 func writeHomeNpmrcRegistry(registryURL string) {
+	dropAmbientNpmConfig()
 	home := os.Getenv("HOME")
 	Expect(home).NotTo(BeEmpty(), "freshMiseInstallEnv must run before writing HOME/.npmrc")
 	if !strings.HasSuffix(registryURL, "/") {
@@ -141,4 +145,11 @@ func writeNonZeroExitStubMise() (dir string) {
 	dir = GinkgoT().TempDir()
 	Expect(os.WriteFile(filepath.Join(dir, "mise"), []byte("#!/bin/sh\nexit 1\n"), 0o755)).To(Succeed())
 	return dir
+}
+
+func dropAmbientNpmConfig() {
+	for _, name := range ambientNpmConfigNames() {
+		GinkgoT().Setenv(name, "")
+		Expect(os.Unsetenv(name)).To(Succeed())
+	}
 }
