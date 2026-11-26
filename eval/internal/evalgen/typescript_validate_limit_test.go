@@ -74,12 +74,16 @@ func TestAValidationRunKillsTheWholeProcessGroupWhenItsLimitPasses(t *testing.T)
 	tsc := writeScript(t, dir, "tsc", "sleep 300 &\necho $! > "+pidFile+"\nsleep 60")
 
 	err, _ := validateTSCWith(t, tsc, 2*time.Second)
+	t.Cleanup(func() {
+		if pid, ok := pidFrom(pidFile); ok {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+	})
 
 	if err == nil || !strings.Contains(err.Error(), "time limit") {
 		t.Fatalf("got %v, want an error that names the time limit", err)
 	}
 	pid := readPID(t, pidFile)
-	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
 	if !eventuallyGone(pid, 5*time.Second) {
 		t.Fatalf("process %d, started by tsc, outlived the run", pid)
 	}
@@ -103,15 +107,21 @@ func TestTheDefaultLimitIsOneMinute(t *testing.T) {
 
 func readPID(t *testing.T, path string) int {
 	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("the script did not record its child's pid: %v", err)
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		t.Fatalf("pid file holds %q: %v", data, err)
+	pid, ok := pidFrom(path)
+	if !ok {
+		t.Fatalf("the script did not record its child's pid in %s", path)
 	}
 	return pid
+}
+
+// pidFrom reads the pid a script wrote, if it wrote one.
+func pidFrom(path string) (int, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	return pid, err == nil
 }
 
 func eventuallyGone(pid int, within time.Duration) bool {
