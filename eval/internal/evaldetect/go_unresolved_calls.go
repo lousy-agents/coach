@@ -1,8 +1,9 @@
 package evaldetect
 
-// dropCallsOutsideTheGraph counts a call to a function that has no node,
-// such as an interface method, as unresolved, so the search only follows
-// calls it can continue from.
+// dropCallsOutsideTheGraph is a guard: every declared function has a node
+// and an interface call is unresolved before it gets here, so no call should
+// reach a missing node. If one does, it is counted as unresolved rather than
+// followed into a nil node.
 func (graph *callGraph) dropCallsOutsideTheGraph() {
 	for _, node := range graph.nodes {
 		var dropped int
