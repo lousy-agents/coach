@@ -25,7 +25,7 @@ var _ = Describe("the census rulings", func() {
 			Expect(readFile(path)).To(ContainSubstring(`"lines":null`))
 			records, err := evalcensus.LoadRecords(path)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(records).To(HaveLen(1))
+			Expect(evalcensus.CurrentRecords(records)).To(HaveLen(1))
 		})
 	})
 

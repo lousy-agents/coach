@@ -85,7 +85,7 @@ var _ = Describe("the census ledger's integrity", func() {
 
 			records, err := evalcensus.LoadRecords(path)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(records).To(HaveLen(1))
+			Expect(evalcensus.CurrentRecords(records)).To(HaveLen(1))
 		})
 	})
 })

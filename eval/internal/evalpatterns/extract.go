@@ -3,31 +3,28 @@ package evalpatterns
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"path/filepath"
 )
 
 // ExtractProfile measures the production Go files of the checkout at root
 // with go/parser alone, and returns the entry's profile as canonical JSON.
 // It runs no command and writes nothing. A file that does not parse
-// refuses the entry with exit 3.
+// refuses the entry with exit 3, and a policy that is not JSON with exit 2.
 func ExtractProfile(reference Reference, root string) ([]byte, error) {
 	if err := reference.Check(); err != nil {
 		return nil, err
 	}
 	files, err := productionGoFiles(root)
 	if err != nil {
-		return nil, reference.refuse(fmt.Sprintf("checkout %s cannot be read: %v", root, err))
+		return nil, reference.refuse(fmt.Sprintf("the checkout cannot be read: %v", checkoutError(root, err)))
 	}
 	p := newProfile(reference)
-	fset := token.NewFileSet()
-	for _, rel := range files {
-		file, err := parser.ParseFile(fset, filepath.Join(root, filepath.FromSlash(rel)), nil, parser.SkipObjectResolution)
-		if err != nil {
-			return nil, Refusal{Label: reference.Label, Exit: AnalysisFailed, Reason: fmt.Sprintf("file %s does not parse: %v", rel, err)}
-		}
-		p.measureFile(fset, file)
+	packages, err := p.measureFiles(reference, root, files)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.measureProgram(root, packages); err != nil {
+		return nil, reference.refuse(err.Error())
 	}
 	raw, err := sealed(p)
 	if err != nil {

@@ -35,13 +35,13 @@ func decodeProfile(raw []byte) map[string]any {
 
 var _ = Describe("extracting a profile from a checkout (#872 Task 2)", func() {
 	When("the checkout is the stand-in tree", func() {
-		It("records each measure of its production Go files, and nothing of its tests, testdata or vendor (AC-2.3, AC-2.5, AC-2.6)", func() {
+		It("records each measure of its production Go files, and nothing of its tests, testdata or vendor (AC-2.1 to AC-2.6, AC-2.8)", func() {
 			profile := decodeProfile(extract(standInTree()))
 
 			Expect(profile["dimensions"]).To(Equal(map[string]any{
-				"layers": map[string]any{},
+				"layers": map[string]any{"2": 1.0},
 				"entry":  map[string]any{"http_handler": 2.0, "method": 1.0, "function": 4.0},
-				"depth":  map[string]any{},
+				"depth":  map[string]any{"0": 6.0, "1": 1.0},
 				"trap":   nil, "field": nil, "direction": nil,
 			}))
 			Expect(profile["shapes"]).To(Equal(map[string]any{
@@ -51,7 +51,11 @@ var _ = Describe("extracting a profile from a checkout (#872 Task 2)", func() {
 				"constructor":    map[string]any{"assigns_only": 1.0, "does_work": 1.0},
 			}))
 			Expect(profile["roles"]).To(Equal(map[string]any{}))
-			Expect(profile["not_covered"]).To(Equal([]any{}))
+			Expect(profile["not_covered"]).To(Equal([]any{
+				map[string]any{"shape": "depth", "reason": "out_of_range", "count": 7.0},
+				map[string]any{"shape": "layers", "reason": "out_of_range", "count": 1.0},
+				map[string]any{"shape": "packages", "reason": "out_of_range", "count": 2.0},
+			}))
 		})
 
 		It("carries the entry's label, SHA and licence, the extractor version and no other free text", func() {
@@ -149,6 +153,7 @@ var _ = Describe("extracting a profile from a checkout (#872 Task 2)", func() {
 			Expect(errors.As(err, &refusal)).To(BeTrue(), "ExtractProfile returned %v", err)
 			Expect(refusal.Exit).To(Equal(3))
 			Expect(err.Error()).To(HavePrefix(`reference "stand-in": `))
+			Expect(err.Error()).NotTo(ContainSubstring(root), "the refusal names the checkout's file, not the host path")
 			Expect(err.Error()).To(ContainSubstring("pick/broken.go"))
 		})
 	})
@@ -189,6 +194,7 @@ var _ = Describe("extracting a profile from a checkout (#872 Task 2)", func() {
 			Expect(err.Error()).To(ContainSubstring("pick/" + name))
 			Expect(err.Error()).To(ContainSubstring("not a regular file"))
 			Expect(err.Error()).NotTo(ContainSubstring("hunter2"))
+			Expect(err.Error()).NotTo(ContainSubstring(root))
 		},
 		Entry("a symlink to a Go file outside the checkout", func(dir string) string {
 			path := filepath.Join(dir, "host.go")
@@ -218,12 +224,14 @@ var _ = Describe("extracting a profile from a checkout (#872 Task 2)", func() {
 
 	When("the checkout directory does not exist", func() {
 		It("refuses the entry with exit 2, naming the label, rather than returning an empty profile", func() {
-			raw, err := evalpatterns.ExtractProfile(standInReference(), filepath.Join(GinkgoT().TempDir(), "missing"))
+			root := filepath.Join(GinkgoT().TempDir(), "missing")
+			raw, err := evalpatterns.ExtractProfile(standInReference(), root)
 
 			var refusal evalpatterns.Refusal
 			Expect(errors.As(err, &refusal)).To(BeTrue(), "ExtractProfile returned %v", err)
 			Expect(refusal.Exit).To(Equal(2))
 			Expect(err.Error()).To(ContainSubstring("cannot be read"))
+			Expect(err.Error()).NotTo(ContainSubstring(root))
 			Expect(raw).To(BeNil())
 		})
 	})
@@ -258,7 +266,8 @@ func treeListing(root string) []string {
 
 // goldenStandInProfile is the stand-in tree's profile, recorded from the
 // first green run after each measure was checked by hand in the rows above.
-const goldenStandInProfile = `{"dimensions":{"depth":{},"direction":null,"entry":{"function":4,"http_handler":2,"method":1},"field":null,"layers":{},"trap":null},` +
-	`"extractor_version":"0.1.0","identity":"ea020b7e7f43b7c1c72503d937550f8668822ccbfefbe6b724d4cbaa9622567f",` +
-	`"label":"stand-in","licence":"MIT","not_covered":[],"roles":{},"schema_version":"1","sha":"0123456789abcdef0123456789abcdef01234567",` +
+const goldenStandInProfile = `{"dimensions":{"depth":{"0":6,"1":1},"direction":null,"entry":{"function":4,"http_handler":2,"method":1},"field":null,"layers":{"2":1},"trap":null},` +
+	`"extractor_version":"0.2.0","identity":"9f87ebb4975623bf1ad7d139ff883963ea06dc1145be2ce51ab83cf486e8ebcd",` +
+	`"label":"stand-in","licence":"MIT","not_covered":[{"count":7,"reason":"out_of_range","shape":"depth"},{"count":1,"reason":"out_of_range","shape":"layers"},{"count":2,"reason":"out_of_range","shape":"packages"}],` +
+	`"roles":{},"schema_version":"1","sha":"0123456789abcdef0123456789abcdef01234567",` +
 	`"shapes":{"branch_density":{"3":1,"4":1},"cognitive":{"0":6,"11":1,"3":1},"constructor":{"assigns_only":1,"does_work":1},"nesting":{"0":6,"1":1,"4":1}}}` + "\n"
