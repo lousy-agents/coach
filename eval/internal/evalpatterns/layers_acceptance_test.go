@@ -3,6 +3,7 @@ package evalpatterns_test
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -49,6 +50,58 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 			for _, name := range []string{"handlers", "logic", "db", "empty", "outside"} {
 				Expect(string(raw)).NotTo(ContainSubstring(`"` + name + `"`))
 			}
+		})
+	})
+
+	DescribeTable("orders the layers by the pairs between layers that hold a package, each pair counted once",
+		func(extraPairs string) {
+			policy := strings.Replace(layeredPolicy, `"forbidden_imports":[`, `"forbidden_imports":[`+extraPairs, 1)
+			profile := profileOfFiles(map[string]string{
+				".lousy-agents/coach.json": policy,
+				"pkg/handlers/a/a.go":      pkgFile("a"), "pkg/handlers/b/b.go": pkgFile("b"),
+				"pkg/logic/l1/l.go": pkgFile("l1"), "pkg/logic/l2/l.go": pkgFile("l2"),
+				"pkg/db/x/x.go": pkgFile("x"), "pkg/db/y/y.go": pkgFile("y"),
+			})
+
+			Expect(profile["roles"]).To(HaveKey("store"))
+			Expect(profile["not_covered"]).To(Equal([]any{}))
+		},
+		Entry("a pair listed twice", `{"from":"db","to":"logic"},`),
+		Entry("a pair into a layer that holds no package", `{"from":"db","to":"empty"},`),
+	)
+
+	When("a package directory shares a layer prefix's leading characters but not its path", func() {
+		It("is not in that layer", func() {
+			profile := profileOfFiles(map[string]string{
+				".lousy-agents/coach.json": layeredPolicy,
+				"pkg/handlers/a/a.go":      pkgFile("a"), "pkg/handlers/b/b.go": pkgFile("b"),
+				"pkg/logic/l1/l.go": pkgFile("l1"), "pkg/logic/l2/l.go": pkgFile("l2"),
+				"pkg/db/x/x.go": pkgFile("x"), "pkg/db/y/y.go": pkgFile("y"),
+				"pkg/dbtools/t/t.go": pkgFile("t"), "pkg/dbtools/u/u.go": pkgFile("u"), "pkg/dbtools/v/v.go": pkgFile("v"),
+			})
+
+			Expect(profile["roles"].(map[string]any)["store"]).To(Equal(map[string]any{"packages": map[string]any{"2": 1.0}}))
+		})
+	})
+
+	When("one layer's prefix sits inside another's", func() {
+		It("puts a package in the layer with the longest matching prefix", func() {
+			nested := `{"schema_version":"1","roots":["."],"layers":[` +
+				`{"name":"outer","prefixes":["pkg"]},{"name":"mid","prefixes":["pkg/mid"]},{"name":"inner","prefixes":["pkg/mid/inner"]}],` +
+				`"forbidden_imports":[{"from":"inner","to":"mid"},{"from":"inner","to":"outer"},{"from":"mid","to":"outer"}]}`
+			profile := profileOfFiles(map[string]string{
+				".lousy-agents/coach.json": nested,
+				"pkg/o1/o.go":              pkgFile("o1"), "pkg/o2/o.go": pkgFile("o2"),
+				"pkg/mid/m1/m.go": pkgFile("m1"), "pkg/mid/m2/m.go": pkgFile("m2"), "pkg/mid/m3/m.go": pkgFile("m3"),
+				"pkg/mid/inner/i1/i.go": pkgFile("i1"), "pkg/mid/inner/i2/i.go": pkgFile("i2"),
+				"pkg/mid/inner/i3/i.go": pkgFile("i3"), "pkg/mid/inner/i4/i.go": pkgFile("i4"),
+			})
+
+			Expect(profile["roles"]).To(Equal(map[string]any{
+				"api":     map[string]any{"packages": map[string]any{"2": 1.0}},
+				"service": map[string]any{"packages": map[string]any{"3": 1.0}},
+				"store":   map[string]any{"packages": map[string]any{"4": 1.0}},
+			}))
 		})
 	})
 
