@@ -37,13 +37,13 @@ func installedTSC() string {
 func tscIn(dir string, args ...string) generateOutcome {
 	cmd := exec.Command(installedTSC(), args...)
 	cmd.Dir = dir
-	return runCommand(cmd)
+	return runGenerateCommand(cmd)
 }
 
 func nodeTest(dir string, files ...string) generateOutcome {
 	cmd := exec.Command("node", append([]string{"--test", "--test-isolation=process"}, files...)...)
 	cmd.Dir = dir
-	return runCommand(cmd)
+	return runGenerateCommand(cmd)
 }
 
 func filesMatching(tree map[string][]byte, pattern string) []string {
@@ -71,7 +71,7 @@ func runGenerateIn(dir, cacheHome string, extraEnv []string, args ...string) gen
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "XDG_CACHE_HOME="+cacheHome)
 	cmd.Env = append(cmd.Env, extraEnv...)
-	return runCommand(cmd)
+	return runGenerateCommand(cmd)
 }
 
 var importSpecifier = regexp.MustCompile(`(?m)(?:\bfrom\s+|\bimport\s+)"([^"]+)"`)

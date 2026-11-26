@@ -23,6 +23,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "generate" {
 		return evalharness.Generate(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "trend" {
+		return evalharness.Trend(args[1:], stdout, stderr)
+	}
 	fmt.Fprintln(stderr, "coach-eval: no evaluation task is implemented yet")
 	return exitTaskUnimplemented
 }

@@ -2,9 +2,6 @@ package main_test
 
 import (
 	"encoding/json"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,38 +63,16 @@ var _ = Describe("coach-eval generate for a Go program", func() {
 			var policy policyFile
 			tree := readTree(program.Path)
 			Expect(json.Unmarshal(tree[".lousy-agents/coach.json"], &policy)).To(Succeed())
-			directories := map[string]bool{}
-			for path := range tree {
-				for _, layer := range policy.Layers {
-					prefix := layer.Prefixes[0] + "/"
-					if strings.HasPrefix(path, prefix) && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
-						directories[filepath.ToSlash(filepath.Dir(path))] = true
-					}
-				}
-			}
-			Expect(directories).To(HaveLen(baseCell.layers*baseCell.packages), "one source directory per package")
+			Expect(sourceDirectories(tree, policy)).To(HaveLen(baseCell.layers*baseCell.packages), "one source directory per package")
 		})
 
-		It("keeps every production function branch-free and pointer-free, so every threshold margin holds by construction (AC-3)", func() {
+		It("keeps every production function branch-free and free of pointer returns, so every threshold margin holds by construction (AC-3)", func() {
 			program := generateOne(cacheHome, append(baseCell.flags(), "--seed", "7")...)
 
-			files := token.NewFileSet()
 			for path, content := range readTree(program.Path) {
-				if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-					continue
+				if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+					Expect(productionShapeViolations(path, content)).To(BeEmpty(), path)
 				}
-				parsed, err := parser.ParseFile(files, path, content, 0)
-				Expect(err).NotTo(HaveOccurred(), path)
-				ast.Inspect(parsed, func(node ast.Node) bool {
-					switch typed := node.(type) {
-					case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
-						Fail("control flow in production code: " + path)
-					case *ast.FuncDecl:
-						Expect(typed.Name.Name).NotTo(HavePrefix("New"), path)
-						Expect(resultsOf(typed)).NotTo(ContainElement(BeAssignableToTypeOf(&ast.StarExpr{})), "pointer return in "+path)
-					}
-					return true
-				})
 			}
 		})
 
@@ -172,14 +147,3 @@ var _ = Describe("coach-eval generate for a Go program", func() {
 		})
 	})
 })
-
-func resultsOf(function *ast.FuncDecl) []ast.Expr {
-	if function.Type.Results == nil {
-		return nil
-	}
-	types := make([]ast.Expr, 0, len(function.Type.Results.List))
-	for _, result := range function.Type.Results.List {
-		types = append(types, result.Type)
-	}
-	return types
-}

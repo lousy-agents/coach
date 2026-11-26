@@ -12,5 +12,7 @@ func withScopePolicy(report *codesignal.Report, project *codesignalcli.ProjectAn
 	out := *report
 	policy := project.PolicyScope
 	out.Scope.Policy = &policy
+	language := project.LanguageScope
+	out.Scope.ProjectLanguage = &language
 	return &out
 }

@@ -12,7 +12,7 @@ func runGenerateThroughMise(cacheHome string, args ...string) generateOutcome {
 	cmd := exec.Command("mise", append([]string{"run", "eval-generate", "--"}, args...)...)
 	cmd.Dir = filepath.Join("..", "..", "..")
 	cmd.Env = append(cmd.Environ(), "XDG_CACHE_HOME="+cacheHome)
-	return runCommand(cmd)
+	return runGenerateCommand(cmd)
 }
 
 var _ = Describe("the eval-generate mise task", func() {

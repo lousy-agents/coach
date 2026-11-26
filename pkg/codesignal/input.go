@@ -112,6 +112,26 @@ type Scope struct {
 	// Policy is always serialized; null means no policy was used for the analysis. A policy that was
 	// found but not analyzed is named by a project_backend_unavailable diagnostic instead.
 	Policy *PolicyScope `json:"policy"`
+	// ProjectLanguage is always serialized; null means no project policy was used, so no project analysis ran.
+	ProjectLanguage *ProjectLanguageScope `json:"project_language"`
+}
+
+// ProjectLanguageSource says what chose the language of a project analysis. Its values are part of the JSON contract.
+type ProjectLanguageSource string
+
+const (
+	// ProjectLanguageSourceFlag is --project-language, which wins over the policy.
+	ProjectLanguageSourceFlag ProjectLanguageSource = "flag"
+	// ProjectLanguageSourcePolicy is the language key of the project policy.
+	ProjectLanguageSourcePolicy ProjectLanguageSource = "policy"
+	// ProjectLanguageSourceDefault is go, where neither the flag nor the policy names a language.
+	ProjectLanguageSourceDefault ProjectLanguageSource = "default"
+)
+
+// ProjectLanguageScope names the language a project analysis ran in and what chose it.
+type ProjectLanguageScope struct {
+	Language string                `json:"language"`
+	Source   ProjectLanguageSource `json:"source"`
 }
 
 // PolicyScope names the policy file a scan used.

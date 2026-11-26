@@ -16,6 +16,8 @@ type codesignalFlags struct {
 	buildTarget              string
 	namedPolicy              policyref.Ref
 	projectLanguage          string
+	projectLanguageSet       bool
+	languageUsed             *string
 	minSeverity              string
 	minSeveritySet           bool
 	top                      string
@@ -86,6 +88,7 @@ func codesignalFlagsFromHolders(h codesignalFlagHolders, setFlags map[string]boo
 		buildTarget:              *h.buildTarget,
 		namedPolicy:              namedPolicyFlag(*h.projectConfig, setFlags["project-config"]),
 		projectLanguage:          *h.projectLanguage,
+		projectLanguageSet:       setFlags["project-language"],
 		minSeverity:              *h.minSeverity,
 		minSeveritySet:           setFlags["min-severity"],
 		top:                      *h.top,
@@ -109,4 +112,17 @@ func namedPolicyFlag(value string, set bool) policyref.Ref {
 		return policyref.Ref{}
 	}
 	return policyref.Named(value)
+}
+
+func (f codesignalFlags) languageFlag() projectLanguageFlag {
+	return projectLanguageFlag{value: f.projectLanguage, given: f.projectLanguageSet}
+}
+
+// withLanguageUsed is the flags with the language the scan ran in, where it ran a project analysis: advice that depends
+// on the language must describe that language, which the policy may have chosen, not the flag's default.
+func (f codesignalFlags) withLanguageUsed() codesignalFlags {
+	if f.languageUsed != nil && *f.languageUsed != "" {
+		f.projectLanguage = *f.languageUsed
+	}
+	return f
 }

@@ -16,7 +16,7 @@ var _ = Describe("the eval-generate mise task for a TypeScript program", func() 
 		cmd.Dir = repositoryRoot()
 		cmd.Env = append(cmd.Environ(), "XDG_CACHE_HOME="+GinkgoT().TempDir())
 
-		outcome := runCommand(cmd)
+		outcome := runGenerateCommand(cmd)
 
 		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 		Expect(outcome.stdout).To(ContainSubstring(`"program_id"`))

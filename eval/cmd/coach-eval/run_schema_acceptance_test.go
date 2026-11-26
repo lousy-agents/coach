@@ -34,5 +34,8 @@ var _ = Describe("the committed run schema", func() {
 		Entry("has worktree_dirty of the wrong type", func(r record) { r["worktree_dirty"] = "yes" }, "worktree_dirty"),
 		Entry("has an unknown caps key", func(r record) { r["caps"].(record)["extra"] = 1 }, "extra"),
 		Entry("is missing a solver key", func(r record) { delete(r["solver"].(record), "model") }, "model"),
+		Entry("has an unknown solver key", func(r record) { r["solver"].(record)["extra"] = "x" }, "extra"),
+		Entry("is missing a usage key", func(r record) { delete(r["usage"].(record), "hours") }, "hours"),
+		Entry("has a grader version that is not a string", func(r record) { r["grader_versions"].(record)["typescript"] = 7 }, "typescript"),
 	)
 })

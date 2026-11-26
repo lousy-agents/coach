@@ -71,8 +71,7 @@ var _ = Describe("eval-compare", func() {
 	)
 
 	DescribeTable("a comparable field that differs", func(path string, value any) {
-		changed := completeRecord("run-b")
-		setPath(changed, path, value)
+		changed := withPath(completeRecord("run-b"), path, value)
 		writeRunRecord(stateRoot, "run-a", completeRecord("run-a"))
 		writeRunRecord(stateRoot, "run-b", changed)
 

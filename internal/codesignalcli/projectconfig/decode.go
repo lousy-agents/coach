@@ -21,7 +21,7 @@ func decode(data []byte) (Config, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&config); err != nil {
-		return Config{}, fmt.Errorf("schema decode failed: %s", err)
+		return Config{}, fmt.Errorf("schema decode failed: %w", err)
 	}
 	if config.SchemaVersion != "1" {
 		return Config{}, fmt.Errorf("schema_version must be \"1\"")

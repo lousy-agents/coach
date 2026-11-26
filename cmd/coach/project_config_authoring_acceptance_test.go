@@ -261,6 +261,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			Expect(json.Unmarshal(data, &candidate)).To(Succeed(), "written file: %s", data)
 			Expect(candidate.SchemaVersion).To(Equal("1"))
 			Expect(candidate.Roots).To(Equal([]string{"."}))
+			Expect(string(data)).To(ContainSubstring(`"language": "typescript"`), "the saved policy says it is TypeScript, so the hook runs the TypeScript analysis")
 			Expect(readStdout()).To(BeEmpty())
 		})
 	})
@@ -291,6 +292,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			Expect(json.Unmarshal(data, &candidate)).To(Succeed(), "written file: %s", data)
 			Expect(candidate.SchemaVersion).To(Equal("1"))
 			Expect(candidate.Roots).To(Equal([]string{"."}))
+			Expect(string(data)).To(ContainSubstring(`"language": "typescript"`), "the saved policy says it is TypeScript, so the hook runs the TypeScript analysis")
 
 			_, statErr := os.Stat(filepath.Join(repo, "project.json"))
 			Expect(os.IsNotExist(statErr)).To(BeTrue(), "the default destination is .lousy-agents/coach.json, not project.json")

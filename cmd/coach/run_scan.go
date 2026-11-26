@@ -19,7 +19,9 @@ func shouldRenderAfterOptionalPreparation(result optionalPreparationResult) bool
 }
 
 func runCodesignalScan(dir string, f codesignalFlags, stdin, stdout, stderr *os.File, budget scanOfferBudget, ports scanPorts) int {
+	f.languageUsed = new(string)
 	report, err := runOneScan(dir, f, stdin, stderr, ports)
+	f = f.withLanguageUsed()
 	if err != nil {
 		noInteractive := nonInteractiveRequested(f)
 		if offerAuthoring(err, f.projectLanguage, authoringInteractive(noInteractive)) == authoringSession {
