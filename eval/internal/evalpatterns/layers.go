@@ -104,8 +104,9 @@ func (policy checkoutPolicy) layerOf(dir string) string {
 	return layer
 }
 
-// ranks counts, for each layer, the other layers it may not import: the
-// outermost layer may import every other one, so it ranks 0.
+// ranks counts, for each layer, the other layers it may not import, each
+// once however often the pair is listed: the outermost layer may import
+// every other one, so it ranks 0.
 func (policy checkoutPolicy) ranks(names []string) map[string]int {
 	present := map[string]bool{}
 	for _, name := range names {
@@ -115,8 +116,11 @@ func (policy checkoutPolicy) ranks(names []string) map[string]int {
 	for _, name := range names {
 		ranks[name] = 0
 	}
+	counted := map[[2]string]bool{}
 	for _, pair := range policy.ForbiddenImports {
-		if present[pair.From] && present[pair.To] && pair.From != pair.To {
+		key := [2]string{pair.From, pair.To}
+		if present[pair.From] && present[pair.To] && pair.From != pair.To && !counted[key] {
+			counted[key] = true
 			ranks[pair.From]++
 		}
 	}
