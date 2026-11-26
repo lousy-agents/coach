@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "profile.schema.json",
+  "title": "Pattern profile",
+  "description": "Derived statistics of one reference repository at one commit (issue #872). Closed: the label and the licence are the only free text, so no source text, identifier, path or repository name fits.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "identity", "label", "sha", "licence", "extractor_version", "roles", "dimensions", "shapes", "not_covered"],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "identity": {
+      "description": "sha256 of the canonical profile JSON (keys sorted, no insignificant whitespace) with identity omitted.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "label": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$", "maxLength": 64 },
+    "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "licence": { "type": "string", "pattern": "\\S", "maxLength": 200 },
+    "extractor_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "roles": {
+      "description": "Packages per layer, written by the generator's role, never by the repository's layer name.",
+      "type": "object",
+      "propertyNames": { "enum": ["api", "service", "domain", "repository", "store"] },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["packages"],
+        "properties": { "packages": { "$ref": "#/$defs/distribution" } }
+      }
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layers", "entry", "depth", "trap", "field", "direction"],
+      "properties": {
+        "layers": { "$ref": "#/$defs/distribution" },
+        "entry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["http_handler", "method", "function"],
+          "properties": {
+            "http_handler": { "$ref": "#/$defs/count" },
+            "method": { "$ref": "#/$defs/count" },
+            "function": { "$ref": "#/$defs/count" }
+          }
+        },
+        "depth": { "$ref": "#/$defs/distribution" },
+        "trap": { "description": "Syntax cannot measure it, so it is always unset.", "const": null },
+        "field": { "description": "Syntax cannot measure it, so it is always unset.", "const": null },
+        "direction": { "description": "Syntax cannot measure it, so it is always unset.", "const": null }
+      }
+    },
+    "shapes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nesting", "cognitive", "branch_density", "constructor"],
+      "properties": {
+        "nesting": { "$ref": "#/$defs/distribution" },
+        "cognitive": { "$ref": "#/$defs/distribution" },
+        "branch_density": { "$ref": "#/$defs/distribution" },
+        "constructor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["assigns_only", "does_work"],
+          "properties": {
+            "assigns_only": { "$ref": "#/$defs/count" },
+            "does_work": { "$ref": "#/$defs/count" }
+          }
+        }
+      }
+    },
+    "not_covered": {
+      "description": "Observed shapes that no generator operator or fixture covers, by the profile's own measure names.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["shape", "count"],
+        "properties": {
+          "shape": { "enum": ["layers", "packages", "entry", "depth", "nesting", "cognitive", "branch_density", "constructor"] },
+          "count": { "type": "integer", "minimum": 1 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0 },
+    "distribution": {
+      "description": "How many observations fall in each bucket; a bucket is a non-negative integer.",
+      "type": "object",
+      "propertyNames": { "pattern": "^(0|[1-9][0-9]{0,5})$" },
+      "additionalProperties": { "$ref": "#/$defs/count" }
+    }
+  }
+}
