@@ -66,16 +66,13 @@ func withoutHostPath(rel string, err error) error {
 	return fmt.Errorf("file %s cannot be read: %w", rel, err)
 }
 
-// checkoutError is err with any host path under root replaced by the path
-// relative to the checkout.
+// checkoutError is err with its path, which a walk of root gives under
+// root, made relative to the checkout.
 func checkoutError(root string, err error) error {
 	var pathErr *fs.PathError
 	if !errors.As(err, &pathErr) {
 		return err
 	}
-	rel, relErr := filepath.Rel(root, pathErr.Path)
-	if relErr != nil || strings.HasPrefix(rel, "..") {
-		return withoutHostPath("outside the checkout", err)
-	}
+	rel, _ := filepath.Rel(root, pathErr.Path)
 	return withoutHostPath(filepath.ToSlash(rel), err)
 }
