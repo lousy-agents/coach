@@ -33,8 +33,9 @@ func TestAuthorProjectConfig_ApprovedAndOutputUnset_WritesCandidateToCandidateOu
 	}
 
 	want := approvedCandidateBytes(t, projectconfig.Config{
-		Roots:  []string{"apps/api"},
-		Layers: []projectconfig.Layer{{Name: "domain", Prefixes: []string{"internal/domain"}}},
+		Language: projectconfig.LanguageTypeScript,
+		Roots:    []string{"apps/api"},
+		Layers:   []projectconfig.Layer{{Name: "domain", Prefixes: []string{"internal/domain"}}},
 	})
 	if !bytes.Equal(result.Document, want) {
 		t.Fatalf("Document = %s, want %s", result.Document, want)

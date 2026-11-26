@@ -672,7 +672,8 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 | `eval-census` | #260's census | 0 · 2 a SHA is unreachable · 3 `coach` non-zero on a repository |
 | `eval-history` | The association (section 13a) | 0 · 2 no network in online mode |
 | `eval-harness-acceptance` | Harness tests | 0 · 1 a test failed · 2 no Docker |
-| `eval-compare` | Compares two runs or shows a trend | 0 comparable · 2 a run missing or incomplete · 4 not comparable |
+| `eval-compare` | Compares two runs | 0 comparable · 2 a run missing or invalid (fails the run schema) · 4 not comparable (a run not `complete`, or a comparable field differs) |
+| `eval-trend` | Trends one cell's metric from the ledger (#819) | 0 a trend prints · 2 a missing or invalid ledger, or an unknown cell · 4 no comparable adjacent pair |
 
 **When T does not fit, the exit is 6, not 2.** Exit 2 means only a missing or invalid input.
 
@@ -699,7 +700,7 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 - the run state;
 - the results.
 
-**The ledger,** `eval/ledger/runs.jsonl`, takes pre-run lines, study results, census and history runs, and `eval-detection --record-baseline` runs.
+**The ledger,** `eval/ledger/runs.jsonl`, takes pre-run lines, study results, census and history runs, and `eval-detection --record-baseline` runs. Each line is self-contained: `{schema_version, kind, recorded, cell, run}`, where `run` is the full run record validated against `run.schema.json`. The line schema is committed as `eval/internal/evalharness/ledger_line.schema.json`. `kind` is `pre_run`, `study`, `census`, `history` or `baseline`. `eval-trend` reads `pre_run`, `study` and `baseline` lines, and never a local `run.json`.
 
 **`eval-compare`** pairs runs by cell (a.7, b.1). It returns exit 4 on any difference in solver, model, CLI, isolation, image, runtime, architecture, grader versions, caps, prompt, oracle or parameters.
 

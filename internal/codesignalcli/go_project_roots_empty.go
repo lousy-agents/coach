@@ -12,8 +12,10 @@ import (
 // withEmptyRootsJudged marks the head side of a Go project analysis
 // incomplete when it analysed no file under the policy's roots. The base side
 // is not judged: a diff that adds the project has no Go source before it.
+// Coverage already incomplete for another cause is left alone, because a zero
+// count then says discovery stopped early, not that the roots hold no Go source.
 func withEmptyRootsJudged(coverage projectmodel.Coverage, roots []string) projectmodel.Coverage {
-	if coverage.Counts["files_seen"] != 0 {
+	if !coverage.Complete || coverage.Counts["files_seen"] != 0 {
 		return coverage
 	}
 

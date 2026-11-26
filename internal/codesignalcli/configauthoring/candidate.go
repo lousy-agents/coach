@@ -59,11 +59,14 @@ func printCandidateSummary(out io.Writer, roots []string, layers []projectconfig
 // buildApprovedCandidate renders the collected fields as the schema-1
 // project-config document and runs it through projectconfig.Parse -- the same
 // validator projectconfig.Load applies to a committed --project-config file
-// -- before treating it as valid. source_sink_pack is never populated: it is
-// a reserved field this feature must not touch.
+// -- before treating it as valid. The candidate names its language, because the
+// agent self-review hook passes no --project-language and would otherwise run the
+// Go analysis on it. source_sink_pack is never populated: it is a reserved field
+// this feature must not touch.
 func buildApprovedCandidate(roots []string, layers []projectconfig.Layer, forbidden []projectconfig.ForbiddenImport, requiredLayer string) ([]byte, error) {
 	candidate := projectconfig.Config{
 		SchemaVersion:    "1",
+		Language:         projectconfig.LanguageTypeScript,
 		Roots:            roots,
 		Layers:           layers,
 		ForbiddenImports: forbidden,

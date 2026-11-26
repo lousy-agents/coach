@@ -352,6 +352,39 @@ run = [
   { task = "source-layout-check" },
 ]
 
+# Runs the eval module's compare command. Arguments after `--` reach the command.
+[tasks.eval-compare]
+description = "Compare two coach-eval runs by run id; exit 0 comparable, 2 a run missing or invalid, 4 not comparable"
+run = """
+set -eu
+bin_dir=$(mktemp -d)
+trap 'rm -rf "$bin_dir"' EXIT
+go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
+"$bin_dir/coach-eval" compare "$@"
+"""
+
+# Generates one deterministic Go program for a structural cell. Arguments after `--` reach the command.
+[tasks.eval-generate]
+description = "Generate a Go eval program by cell (--cell N or every dimension flag); prints one JSON line, exit 2 on invalid input"
+run = """
+set -eu
+bin_dir=$(mktemp -d)
+trap 'rm -rf "$bin_dir"' EXIT
+go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
+"$bin_dir/coach-eval" generate "$@"
+"""
+
+# Prints the metric trend of one cell from the run ledger. Arguments after `--` reach the command.
+[tasks.eval-trend]
+description = "Trend one cell's metric from the run ledger; exit 0 a trend prints, 2 missing or invalid input, 4 no comparable adjacent pair"
+run = """
+set -eu
+bin_dir=$(mktemp -d)
+trap 'rm -rf "$bin_dir"' EXIT
+go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
+"$bin_dir/coach-eval" trend "$@"
+"""
+
 # The single authoritative "everything CI proves" task. No longer the ship gate
 # -- GHA runs these as parallel required jobs -- but still the way to prove the
 # whole thing locally when you want to.
