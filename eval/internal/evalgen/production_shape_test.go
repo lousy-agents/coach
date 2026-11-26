@@ -51,19 +51,29 @@ func shapeViolations(t *testing.T, path string, content []byte) []string {
 	}
 	var violations []string
 	ast.Inspect(parsed, func(node ast.Node) bool {
-		switch typed := node.(type) {
-		case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.GoStmt, *ast.DeferStmt:
-			violations = append(violations, "control flow")
-		case *ast.UnaryExpr:
-			if typed.Op == token.AND {
-				violations = append(violations, "address-of")
-			}
-		case *ast.FuncDecl:
-			violations = append(violations, funcViolations(typed)...)
-		}
+		violations = append(violations, nodeViolations(node)...)
 		return true
 	})
 	return violations
+}
+
+func nodeViolations(node ast.Node) []string {
+	switch typed := node.(type) {
+	case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.GoStmt, *ast.DeferStmt:
+		return []string{"control flow"}
+	case *ast.UnaryExpr:
+		return addressOf(typed)
+	case *ast.FuncDecl:
+		return funcViolations(typed)
+	}
+	return nil
+}
+
+func addressOf(expression *ast.UnaryExpr) []string {
+	if expression.Op == token.AND {
+		return []string{"address-of"}
+	}
+	return nil
 }
 
 func funcViolations(function *ast.FuncDecl) []string {
