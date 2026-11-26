@@ -97,7 +97,8 @@
       "name": "real-code",
       "prefixes": [
         "eval/internal/evalhistory",
-        "eval/internal/evalcensus"
+        "eval/internal/evalcensus",
+        "eval/internal/evalpatterns"
       ]
     }
   ],
