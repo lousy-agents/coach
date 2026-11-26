@@ -25,10 +25,15 @@ var maxCallGraphNodes = 100000
 // GoLayerBypass reports every static call path from an upstream source to a
 // downstream sink that touches no function in the policy's required layer.
 // The grader defines sources and sinks from the policy alone (bypassLayers),
-// independently of Coach, whose own sinks may be narrower.
+// independently of Coach, whose own sinks may be narrower. Only forbidden
+// pairs orient the layers, so a policy without a layer on each side of the
+// required layer is reported with a reason rather than searched.
 func GoLayerBypass(root string, policy Policy) (BypassReport, error) {
 	if policy.requiredLayer == "" {
 		return BypassReport{Reason: "the policy names no required_layer"}, nil
+	}
+	if upstream, downstream := policy.bypassLayers(); len(upstream) == 0 || len(downstream) == 0 {
+		return BypassReport{Reason: "the policy's forbidden_imports give no layer above or below the required layer"}, nil
 	}
 	program, err := loadGoProgram(root)
 	if err != nil {
