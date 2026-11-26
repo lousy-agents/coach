@@ -672,7 +672,7 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 | `eval-census` | #260's census | 0 · 2 a SHA is unreachable · 3 `coach` non-zero on a repository |
 | `eval-history` | The association (section 13a) | 0 · 2 no network in online mode |
 | `eval-harness-acceptance` | Harness tests | 0 · 1 a test failed · 2 no Docker |
-| `eval-compare` | Compares two runs or shows a trend | 0 comparable · 2 a run missing or incomplete · 4 not comparable |
+| `eval-compare` | Compares two runs (trend: #819) | 0 comparable · 2 a run missing or invalid (fails the run schema) · 4 not comparable (a run not `complete`, or a comparable field differs) |
 
 **When T does not fit, the exit is 6, not 2.** Exit 2 means only a missing or invalid input.
 
