@@ -17,6 +17,14 @@ var _ = Describe("the guard that keeps the evaluation out of CI", func() {
 		})
 	})
 
+	When("a workflow runs the eval-patterns task, which reads a reference repository (#872)", func() {
+		It("reports the invocation", func() {
+			workflow := "on:\n  push:\njobs:\n  check:\n    steps:\n      - run: mise run eval-patterns -- --clone coach-self=.\n"
+
+			Expect(evalWorkflowViolations("check.yml", workflow)).To(ConsistOf(ContainSubstring("eval-patterns")))
+		})
+	})
+
 	When("a workflow runs a leg of the eval module", func() {
 		DescribeTable("it reports the leg",
 			func(step string) {
