@@ -365,7 +365,8 @@ go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 
 # Generates one deterministic Go program for a structural cell. Arguments after `--` reach the command.
 [tasks.eval-generate]
-description = "Generate a Go eval program by cell (--cell N or every dimension flag); prints one JSON line, exit 2 on invalid input"
+description = "Generate a Go or TypeScript eval program by cell (--language, then --cell N or every dimension flag); prints one JSON line, exit 2 on invalid input"
+depends = ["js-install"]
 run = """
 set -eu
 bin_dir=$(mktemp -d)
@@ -385,7 +386,8 @@ go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 "$bin_dir/coach-eval" trend "$@"
 """
 
-# Censuses a pinned corpus with a coach built from this checkout. Arguments after `--` reach the command.
+# Censuses a pinned corpus with a coach built from this checkout, appending its records under
+# eval/census and its run to eval/ledger/runs.jsonl. Arguments after `--` reach the command.
 [tasks.eval-census]
 description = "Census a pinned corpus manifest; exit 0 complete, 2 an input unusable or a SHA unreachable, 3 a repository's analysis failed"
 run = """
@@ -394,7 +396,7 @@ bin_dir=$(mktemp -d)
 trap 'rm -rf "$bin_dir"' EXIT
 go build -o "$bin_dir/coach" ./cmd/coach
 go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
-"$bin_dir/coach-eval" census --coach "$bin_dir/coach" "$@"
+"$bin_dir/coach-eval" census --coach "$bin_dir/coach" --census-root eval/census --ledger eval/ledger/runs.jsonl "$@"
 """
 
 # The single authoritative "everything CI proves" task. No longer the ship gate
