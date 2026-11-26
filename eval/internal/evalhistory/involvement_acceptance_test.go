@@ -1,6 +1,8 @@
 package evalhistory_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -195,10 +197,12 @@ var _ = Describe("which units a later fix touched", func() {
 	When("a fix cannot be traced, as when it bumps a submodule that blame cannot read", func() {
 		It("counts that fix as unmapped with its reason, and still traces the other fixes", func() {
 			h := newHistory()
+			Expect(os.MkdirAll(filepath.Join(h.dir, "sub"), 0o755)).To(Succeed(), "an unpopulated submodule's directory, so add -A keeps the gitlink")
 			h.git("update-index", "--add", "--cacheinfo", "160000,"+strings.Repeat("1", 40)+",sub")
 			since := h.commit("base", map[string]string{"p/p.go": baseSource})
-			h.git("update-index", "--cacheinfo", "160000,"+strings.Repeat("2", 40)+",sub")
-			bump := h.commit("fix: bump the submodule", nil)
+			h.git("update-index", "--add", "--cacheinfo", "160000,"+strings.Repeat("2", 40)+",sub")
+			h.git("commit", "-q", "-m", "fix: bump the submodule")
+			bump := h.git("rev-parse", "HEAD")
 			fixB := h.commit("fix: wrong value in B", map[string]string{"p/p.go": replaceLine(baseSource, 8, "\tx := 3")})
 
 			scan, err := evalhistory.FindFixes(h.dir, since, fixB)
