@@ -3,6 +3,7 @@ package tssetup
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -188,18 +189,14 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 })
 
 var _ = Describe("mise npm-backend install command construction: real end-to-end native-package classification (coach#328 Task 5 integration repair, Finding 1)", func() {
-	When("mise's default npm backend genuinely installs the frozen row's TypeScript version, with no fabricated filesystem layout standing in for it", func() {
+	When("mise's default npm backend genuinely installs the frozen row's TypeScript version from the public npm registry (needs registry.npmjs.org), with no fabricated filesystem layout standing in for it", func() {
 		It("classifies the freshly-installed compiler as eligible, not merely as an install that exited zero", classifiesFreshlyInstalledCompilerEligibleNotMerely)
 	})
 })
 
 func neverRunsFixturesLifecycleScriptsCheckedTarballs() {
-	if _, err := exec.LookPath("mise"); err != nil {
-		Skip(fmt.Sprintf("mise not found on PATH; skipping the real mise install lifecycle-suppression spec (%s)", err))
-	}
-	if _, err := exec.LookPath("npm"); err != nil {
-		Skip(fmt.Sprintf("npm not found on PATH; skipping the real mise install lifecycle-suppression spec (%s)", err))
-	}
+	requireToolOnPath("mise")
+	requireToolOnPath("npm")
 	dataDir, _ := freshMiseInstallEnv()
 	writeHomeNpmrcRegistry(startLifecycleSentinelRegistry().URL)
 	assertLifecycleSentinelFixtureIsLive(GinkgoT().TempDir())
@@ -214,12 +211,8 @@ func neverRunsFixturesLifecycleScriptsCheckedTarballs() {
 }
 
 func stillNeverRunsFixturesLifecycleScriptsUnder() {
-	if _, err := exec.LookPath("mise"); err != nil {
-		Skip(fmt.Sprintf("mise not found on PATH; skipping the mise npm.shell_out=true lifecycle-suppression spec (%s)", err))
-	}
-	if _, err := exec.LookPath("npm"); err != nil {
-		Skip(fmt.Sprintf("npm not found on PATH; skipping the mise npm.shell_out=true lifecycle-suppression spec (%s)", err))
-	}
+	requireToolOnPath("mise")
+	requireToolOnPath("npm")
 	dataDir, configDir := freshMiseInstallEnv()
 	writeHomeNpmrcRegistry(startLifecycleSentinelRegistry().URL)
 	assertLifecycleSentinelFixtureIsLive(GinkgoT().TempDir())
@@ -238,9 +231,7 @@ func stillNeverRunsFixturesLifecycleScriptsUnder() {
 }
 
 func neverExecutesBecauseRealInstallRunsFrom() {
-	if _, err := exec.LookPath("mise"); err != nil {
-		Skip(fmt.Sprintf("mise not found on PATH; skipping the real mise insulated-working-directory spec (%s)", err))
-	}
+	requireToolOnPath("mise")
 	freshMiseInstallEnv()
 	writeHomeNpmrcRegistry(startLifecycleSentinelRegistry().URL)
 
@@ -274,9 +265,8 @@ func neverExecutesBecauseRealInstallRunsFrom() {
 }
 
 func classifiesFreshlyInstalledCompilerEligibleNotMerely() {
-	if _, err := exec.LookPath("mise"); err != nil {
-		Skip(fmt.Sprintf("mise not found on PATH; skipping the real end-to-end mise install classification spec (%s)", err))
-	}
+	requireToolOnPath("mise")
+	requireOrSkip("the public npm registry registry.npmjs.org", probeRegistry(&http.Client{Timeout: registryProbeTimeout}, publicNpmRegistryProbeURL))
 	freshMiseInstallEnv()
 
 	result := installMiseTypescriptGlobal(tstoolchain.LocateMiseTypescriptInstall, context.Background(), "7.0.2")
