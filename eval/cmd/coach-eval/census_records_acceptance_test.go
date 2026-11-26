@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -53,6 +54,8 @@ var _ = Describe("what a census run leaves behind", func() {
 			run := ledger[0]["run"].(map[string]any)
 			Expect(run["corpus_id"]).To(Equal("fixture"))
 			Expect(run["repositories"]).To(HaveLen(2))
+			Expect(run["exit"]).To(BeEquivalentTo(0))
+			Expect(ledger[0]["recorded"]).To(Equal(time.Now().UTC().Format(time.DateOnly)))
 		})
 	})
 
@@ -74,6 +77,10 @@ var _ = Describe("what a census run leaves behind", func() {
 			}
 			Expect(rationales[brokenSHA]).To(ContainSubstring("missing.json"))
 			Expect(rationales[busySHA]).To(Equal("findings=2 adjudicable=2"))
+
+			ledger := jsonLines(outputs.ledger)
+			Expect(ledger).To(HaveLen(1))
+			Expect(ledger[0]["run"].(map[string]any)["exit"]).To(BeEquivalentTo(3), "a failed census is never recorded as a clean one")
 		})
 	})
 
@@ -87,7 +94,51 @@ var _ = Describe("what a census run leaves behind", func() {
 			_, _, outputs := runCensusInto(dir, corpus, coachBinary())
 
 			Expect(jsonLines(filepath.Join(outputs.censusRoot, "fixture", "records.jsonl"))).To(HaveLen(2))
-			Expect(jsonLines(outputs.ledger)).To(HaveLen(2))
+			ledger := jsonLines(outputs.ledger)
+			Expect(ledger).To(HaveLen(2))
+			Expect(ledger[0]["run"].(map[string]any)["run_id"]).NotTo(Equal(ledger[1]["run"].(map[string]any)["run_id"]))
+		})
+	})
+
+	When("a write to the run ledger stops part way through", func() {
+		It("truncates the run ledger back to its length before the append, and fails", func() {
+			dir := GinkgoT().TempDir()
+			ledger := filepath.Join(dir, "ledger", "runs.jsonl")
+			Expect(os.MkdirAll(filepath.Dir(ledger), 0o755)).To(Succeed())
+			const limit = 2048 * 512
+			before := strings.Repeat("x", limit-64) + "\n"
+			Expect(os.WriteFile(ledger, []byte(before), 0o644)).To(Succeed())
+			path, sha := censusRepo(goRepoFiles(complexFunctions(1)))
+			corpus := writeCorpus(corpusRepo{ID: "busy", Path: path, SHA: sha, Language: "go"})
+
+			outcome := runProgram("", os.Environ(), "/bin/sh", "-c", `ulimit -f 2048 && exec "$@"`, "sh",
+				coachEvalBinary, "census", "--coach", coachBinary(), "--census-root", filepath.Join(dir, "census"), "--ledger", ledger, corpus)
+
+			Expect(outcome.exitCode).NotTo(Equal(0), outcome.stdout)
+			Expect(outcome.stderr).To(ContainSubstring("ledger"))
+			raw, err := os.ReadFile(ledger)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(raw)).To(Equal(len(before)), "no torn line is left for eval-trend to refuse")
+			Expect(ledger + ".lock").NotTo(BeAnExistingFile())
+		})
+	})
+
+	When("another writer holds the run ledger's lock", func() {
+		It("waits, then fails naming the lock, and leaves the run ledger untouched", func() {
+			dir := GinkgoT().TempDir()
+			ledger := filepath.Join(dir, "ledger", "runs.jsonl")
+			writeLedger(ledger, ledgerLine("pre_run", "2026-11-01", "cell-a", trendRecord("run-1", 0.5)))
+			Expect(os.WriteFile(ledger+".lock", nil, 0o644)).To(Succeed())
+			before, err := os.ReadFile(ledger)
+			Expect(err).NotTo(HaveOccurred())
+			path, sha := censusRepo(goRepoFiles(complexFunctions(1)))
+			corpus := writeCorpus(corpusRepo{ID: "busy", Path: path, SHA: sha, Language: "go"})
+
+			outcome, _, _ := runCensusInto(dir, corpus, coachBinary())
+
+			Expect(outcome.exitCode).NotTo(Equal(0))
+			Expect(outcome.stderr).To(ContainSubstring(ledger + ".lock"))
+			Expect(os.ReadFile(ledger)).To(Equal(before))
 		})
 	})
 
