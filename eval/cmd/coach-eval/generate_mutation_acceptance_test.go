@@ -157,7 +157,7 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 	)
 
 	It("records a vacuous gate for the held-out panel like any other, because every Go template is vacuous today and refusing would block it (#902)", func() {
-		outcome := gated(GinkgoT().TempDir(), newStandIn(), "empty", "--cell", "1", "--seed", "3", "--panel", "held_out")
+		outcome := runGenerateBinary(faultBinary, GinkgoT().TempDir(), append(newStandIn().environment("empty"), "EVAL_ORACLE_DIR="+GinkgoT().TempDir()), "--cell", "1", "--seed", "3", "--panel", "held_out")
 		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 		validation := validationOf(decodeGenerated(outcome.stdout))
 
