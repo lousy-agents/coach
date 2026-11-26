@@ -23,16 +23,6 @@ const goLayerPolicy = `{"schema_version":"1","roots":["."],"layers":[{"name":"do
 
 const tsLayerPolicy = `{"schema_version":"1","roots":["."],"layers":[{"name":"domain","prefixes":["src/domain"]},{"name":"app","prefixes":["src/app"]}],"forbidden_imports":[{"from":"domain","to":"app"}]}`
 
-// typescriptDir is the pinned compiler that js/semantics installs, which the
-// TS layer graph must use rather than any compiler on the host.
-func typescriptDir() string {
-	dir, err := filepath.Abs(filepath.Join("..", "..", "..", "js", "semantics", "node_modules", "typescript"))
-	Expect(err).NotTo(HaveOccurred())
-	_, err = os.Stat(filepath.Join(dir, "package.json"))
-	Expect(err).NotTo(HaveOccurred(), "run npm ci --ignore-scripts in js/semantics first")
-	return dir
-}
-
 // gocognitBinary is the gocognit the eval module pins with its tool directive.
 func gocognitBinary() string {
 	command := exec.Command("go", "tool", "-n", "gocognit")

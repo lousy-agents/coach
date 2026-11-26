@@ -90,7 +90,7 @@ var _ = Describe("the TypeScript layer graph", func() {
 		It("reports nothing", func() {
 			root := tsBase("export const D = () => 1;\n")
 
-			findings, err := evaldetect.TSLayerViolations(root, loadPolicy(root), typescriptDir())
+			findings, err := evaldetect.TSLayerViolations(root, loadPolicy(root))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(findings).To(BeEmpty())
 		})
@@ -100,7 +100,7 @@ var _ = Describe("the TypeScript layer graph", func() {
 		func(domainSource string, line int) {
 			root := tsBase(domainSource)
 
-			findings, err := evaldetect.TSLayerViolations(root, loadPolicy(root), typescriptDir())
+			findings, err := evaldetect.TSLayerViolations(root, loadPolicy(root))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(findings).To(ConsistOf(evaldetect.Finding{
 				RuleID:  layerViolation,
