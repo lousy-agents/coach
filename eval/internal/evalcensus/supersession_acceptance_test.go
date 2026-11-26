@@ -66,3 +66,23 @@ var _ = Describe("a record for a target the ledger already holds", func() {
 		}()),
 	)
 })
+
+var _ = Describe("the records a reader counts", func() {
+	It("counts only the records no later record supersedes", func() {
+		root := GinkgoT().TempDir()
+		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{automatedRecord("first", `"agree"`)})).To(Succeed())
+		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{automatedRecord("second", `"agree"`)})).To(Succeed())
+		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{automatedRecord("third", `"disagree"`)})).To(Succeed())
+		other := automatedRecord("fourth", `"agree"`)
+		other.Target.Path = "pkg/b/b.go"
+		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{other})).To(Succeed())
+		records, err := evalcensus.LoadRecords(filepath.Join(root, "pilot", "records.jsonl"))
+		Expect(err).NotTo(HaveOccurred())
+
+		current := evalcensus.CurrentRecords(records)
+
+		Expect(current).To(HaveLen(2))
+		Expect(current[0].RecordID).To(Equal("third"))
+		Expect(current[1].RecordID).To(Equal("fourth"))
+	})
+})
