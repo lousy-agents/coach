@@ -202,6 +202,20 @@ var _ = Describe("extracting a profile from a checkout (#872 Task 2)", func() {
 		}, "leak.go"),
 	)
 
+	When("the checkout holds a symlinked file that is not Go, and a symlinked directory", func() {
+		It("still extracts, with the same profile as without them: only .go entries must be regular files", func() {
+			plain := extract(standInTree())
+			root := standInTree()
+			outside := GinkgoT().TempDir()
+			writeFile(filepath.Join(outside, "AGENTS.md"), "hunter2\n")
+			writeFile(filepath.Join(outside, "lib", "host.go"), arrowSource)
+			Expect(os.Symlink(filepath.Join(outside, "AGENTS.md"), filepath.Join(root, "README.md"))).To(Succeed())
+			Expect(os.Symlink(filepath.Join(outside, "lib"), filepath.Join(root, "lib"))).To(Succeed())
+
+			Expect(extract(root)).To(Equal(plain))
+		})
+	})
+
 	When("the checkout directory does not exist", func() {
 		It("refuses the entry with exit 2, naming the label, rather than returning an empty profile", func() {
 			raw, err := evalpatterns.ExtractProfile(standInReference(), filepath.Join(GinkgoT().TempDir(), "missing"))
