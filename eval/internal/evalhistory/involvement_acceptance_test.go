@@ -192,6 +192,27 @@ var _ = Describe("which units a later fix touched", func() {
 		})
 	})
 
+	When("a fix cannot be traced, as when it bumps a submodule that blame cannot read", func() {
+		It("counts that fix as unmapped with its reason, and still traces the other fixes", func() {
+			h := newHistory()
+			h.git("update-index", "--add", "--cacheinfo", "160000,"+strings.Repeat("1", 40)+",sub")
+			since := h.commit("base", map[string]string{"p/p.go": baseSource})
+			h.git("update-index", "--cacheinfo", "160000,"+strings.Repeat("2", 40)+",sub")
+			bump := h.commit("fix: bump the submodule", nil)
+			fixB := h.commit("fix: wrong value in B", map[string]string{"p/p.go": replaceLine(baseSource, 8, "\tx := 3")})
+
+			scan, err := evalhistory.FindFixes(h.dir, since, fixB)
+			Expect(err).NotTo(HaveOccurred())
+			result, err := evalhistory.Involve(h.dir, since, unitsAB, fixesOf(scan))
+			Expect(err).NotTo(HaveOccurred(), "one untraceable fix never fails the repository")
+			Expect(result.FixSHA).To(Equal([]string{"", fixB}))
+			Expect(result.Unmapped).To(Equal(1))
+			Expect(result.Unprocessed).To(HaveLen(1))
+			Expect(result.Unprocessed[0].SHA).To(Equal(bump))
+			Expect(result.Unprocessed[0].Reason).To(ContainSubstring("sub"))
+		})
+	})
+
 	DescribeTable("a unit outside its file at since is refused, naming the unit, rather than traced in part",
 		func(unit evalhistory.Unit, named string) {
 			h := newHistory()

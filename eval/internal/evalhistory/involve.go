@@ -9,8 +9,15 @@ type Unit struct {
 // Involvement says, per unit, the first fix that changed one of its lines
 // ("" for none), and how many fixes changed no unit's line.
 type Involvement struct {
-	FixSHA   []string
-	Unmapped int
+	FixSHA      []string
+	Unmapped    int
+	Unprocessed []UnprocessedFix
+}
+
+// UnprocessedFix is a fix that could not be traced, and why.
+type UnprocessedFix struct {
+	SHA    string
+	Reason string
 }
 
 // Involve traces each fix's changed lines back by blame identity to the
