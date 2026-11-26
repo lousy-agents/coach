@@ -39,7 +39,7 @@ type mutationOutcome struct {
 }
 
 // judgeMutation runs the gate and records the verdicts. A run that passes vacuously (no valid mutant, which is
-// every base program until operators add branches) is recorded with a null score.
+// every base program until operators add branches) is recorded with a null score and as mutation_vacuous.
 func judgeMutation(gremlins Gremlins, cache mutationCache, program evalgen.Program) (mutationOutcome, error) {
 	scope, err := MutationScope(program)
 	if err != nil {
@@ -47,6 +47,7 @@ func judgeMutation(gremlins Gremlins, cache mutationCache, program evalgen.Progr
 	}
 	runs := map[string]any{}
 	var scores, shares []float64
+	valid := 0
 	for _, run := range mutationRuns(program) {
 		report, err := cache.report(gremlins, run.tree)
 		if err != nil {
@@ -61,15 +62,25 @@ func judgeMutation(gremlins Gremlins, cache mutationCache, program evalgen.Progr
 			return mutationOutcome{rejectedAt: evalgen.StepMutation}, nil
 		}
 		runs[run.suite] = verdictFields(verdict)
+		valid += verdict.Valid
 		if verdict.Score != nil {
 			scores, shares = append(scores, *verdict.Score), append(shares, *verdict.NotCoveredShare)
 		}
 	}
-	return mutationOutcome{fields: map[string]any{
+	fields := map[string]any{
 		"mutation_checked": true, "mutation_runs": runs,
 		"mutation_score": lowest(scores), "not_covered_share": highest(shares),
-	}}, nil
+		"mutation_vacuous": valid == 0,
+	}
+	if valid == 0 {
+		fields["mutation_vacuous_reason"] = vacuousReason
+	}
+	return mutationOutcome{fields: fields}, nil
 }
+
+// vacuousReason is recorded when neither suite has a valid mutant, so that a reader who sees mutation_checked does not
+// take the score for a measurement of the tests' strength.
+const vacuousReason = "no valid mutant in either suite: the program and the oracle solution have no mutable code in the mutation scope"
 
 func verdictFields(verdict MutationVerdict) map[string]any {
 	return map[string]any{"valid": verdict.Valid, "score": verdict.Score, "not_covered_share": verdict.NotCoveredShare}
