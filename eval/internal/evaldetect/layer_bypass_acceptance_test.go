@@ -112,6 +112,35 @@ var _ = Describe("the Go layer-bypass detector", func() {
 		})
 	})
 
+	When("the first downstream function reached is declared without a body", func() {
+		It("reports it as the sink, and does not count the call as unresolved", func() {
+			root := bypassTree(bypassPolicy("usecases", false), map[string]string{
+				"pkg/store/ext.go": "package store\n\nfunc Ext(s string)\n",
+				"pkg/api/ext.go":   "package api\n\nimport \"example.com/fx/pkg/store\"\n\nfunc Viaext(s string) { store.Ext(s) }\n",
+			})
+
+			report, err := evaldetect.GoLayerBypass(root, loadPolicy(root))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Bypasses).To(HaveLen(1))
+			Expect(report.Bypasses[0].Witness).To(Equal([]string{"example.com/fx/pkg/api.Viaext", "example.com/fx/pkg/store.Ext"}))
+			Expect(report.Unresolved).To(BeZero())
+		})
+	})
+
+	When("only a later edge of the witness crosses a forbidden import pair", func() {
+		It("reports the path as via a forbidden import", func() {
+			root := bypassTree(bypassPolicy("usecases", true), map[string]string{
+				"pkg/api/helper.go": "package api\n\nimport \"example.com/fx/pkg/store\"\n\nfunc Viahelper(s string) { save(s) }\n\nfunc save(s string) { store.Save(s) }\n",
+			})
+
+			report, err := evaldetect.GoLayerBypass(root, loadPolicy(root))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Bypasses).To(HaveLen(1))
+			Expect(report.Bypasses[0].Witness).To(Equal([]string{"example.com/fx/pkg/api.Viahelper", "example.com/fx/pkg/api.save", storeSave}))
+			Expect(report.Bypasses[0].ViaForbiddenImport).To(BeTrue())
+		})
+	})
+
 	When("the sink itself calls further into the downstream layer", func() {
 		It("reports only the first downstream function reached", func() {
 			root := bypassTree(bypassPolicy("usecases", false), map[string]string{
