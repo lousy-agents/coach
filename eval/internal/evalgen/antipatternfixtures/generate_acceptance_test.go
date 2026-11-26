@@ -11,7 +11,7 @@ import (
 )
 
 func generate(raw []byte, out string) (antipatternfixtures.Result, error) {
-	return antipatternfixtures.Generate(raw, acceptAll, out, antipatternfixtures.Templates(), antipatternfixtures.GoVet)
+	return antipatternfixtures.Generate(raw, acceptAll, filepath.Dir(out), filepath.Base(out), antipatternfixtures.Templates(), antipatternfixtures.GoVet)
 }
 
 var _ = Describe("profile-derived anti-pattern fixtures (#872 Task 5)", func() {
@@ -75,6 +75,13 @@ var _ = Describe("profile-derived anti-pattern fixtures (#872 Task 5)", func() {
 			Expect(result.Emitted).To(BeEmpty())
 			Expect(out).NotTo(BeADirectory())
 		})
+	})
+
+	It("emits nothing for a bucket over the threshold that counts no function", func() {
+		result, err := generate(profileWith(map[string]int{"2": 9, "6": 0}, map[string]int{}, map[string]int{}, 0), out)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Emitted).To(BeEmpty())
 	})
 
 	When("the output directory holds fixtures of an earlier run", func() {

@@ -129,16 +129,21 @@ var _ = Describe("coach-eval patterns fixtures (#872 Task 5)", func() {
 			Expect(os.Rename(filepath.Join(profiles, "stand-in.profile.json"), filepath.Join(profiles, name))).To(Succeed())
 			sibling := filepath.Join(filepath.Dir(out), "sibling.txt")
 			Expect(os.WriteFile(sibling, []byte("kept\n"), 0o644)).To(Succeed())
+			kept := filepath.Join(out, "other-label", "kept.txt")
+			Expect(os.MkdirAll(filepath.Dir(kept), 0o755)).To(Succeed())
+			Expect(os.WriteFile(kept, []byte("kept\n"), 0o644)).To(Succeed())
 
 			outcome := runPatternsFixtures("--profiles", profiles, "--out", out)
 
 			Expect(outcome.exitCode).To(Equal(2))
 			Expect(outcome.stderr).To(ContainSubstring(name))
 			Expect(outcome.stderr).To(ContainSubstring(`label "stand-in"`))
-			Expect(sibling).To(BeAnExistingFile())
-			Expect(out).NotTo(BeADirectory())
+			Expect(sibling).To(BeAnExistingFile(), "a sibling of --out survives")
+			Expect(kept).To(BeAnExistingFile(), "--out and another label's fixtures survive")
+			Expect(ids(out)).To(Equal([]string{"other-label"}))
 		},
 		Entry("a name that climbs out of --out", "...profile.json"),
+		Entry("a name with an empty label, which would clear --out itself", ".profile.json"),
 		Entry("another label's name", "other.profile.json"),
 	)
 
