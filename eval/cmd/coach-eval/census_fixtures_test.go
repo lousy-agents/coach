@@ -124,6 +124,7 @@ type censusStatus struct {
 type censusSummary struct {
 	CorpusID string `json:"corpus_id"`
 	Coach    struct {
+		Path   string `json:"path"`
 		SHA256 string `json:"sha256"`
 	} `json:"coach"`
 	Repositories []struct {

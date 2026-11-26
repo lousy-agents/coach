@@ -3,8 +3,10 @@ package main_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -111,6 +113,66 @@ var _ = Describe("coach-eval census", func() {
 		})
 	})
 
+	When("a Go repository comes before a TypeScript one", func() {
+		It("still exits 2, naming the TypeScript repository, and scans nothing", func() {
+			goPath, goSHA := censusRepo(goRepoFiles(complexFunctions(1)))
+			tsPath, tsSHA := censusRepo(map[string]string{"src/a.ts": "export const A = 1;\n"})
+			corpus := writeCorpus(corpusRepo{ID: "api", Path: goPath, SHA: goSHA, Language: "go"}, corpusRepo{ID: "web", Path: tsPath, SHA: tsSHA, Language: "typescript"})
+
+			outcome, _ := runCensus(corpus, coachBinary())
+
+			Expect(outcome.exitCode).To(Equal(2))
+			Expect(outcome.stderr).To(ContainSubstring(`"web"`))
+			Expect(outcome.stdout).To(BeEmpty())
+		})
+	})
+
+	When("the coach binary exists but cannot run", func() {
+		It("records analysis_failed and exits 3", func() {
+			path, sha := censusRepo(goRepoFiles(complexFunctions(1)))
+			corpus := writeCorpus(corpusRepo{ID: "busy", Path: path, SHA: sha, Language: "go"})
+			notExecutable := filepath.Join(GinkgoT().TempDir(), "coach")
+			Expect(os.WriteFile(notExecutable, []byte("not a program"), 0o644)).To(Succeed())
+
+			outcome, summary := runCensus(corpus, notExecutable)
+
+			Expect(outcome.exitCode).To(Equal(3), outcome.stderr)
+			Expect(summary.status("busy").Status).To(Equal("analysis_failed"))
+		})
+	})
+
+	When("a census finishes", func() {
+		It("leaves no clone behind in the temporary directory", func() {
+			path, sha := censusRepo(goRepoFiles(complexFunctions(1)))
+			corpus := writeCorpus(corpusRepo{ID: "busy", Path: path, SHA: sha, Language: "go"})
+			tmp := GinkgoT().TempDir()
+
+			outcome, _ := runCensus(corpus, coachBinary(), "TMPDIR="+tmp)
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			Expect(filepath.Glob(filepath.Join(tmp, "coach-eval-census*"))).To(BeEmpty())
+		})
+	})
+
+	When("the coach binary is named by a path relative to where the census runs", func() {
+		It("runs that binary with exactly the scan arguments, and records its absolute path", func() {
+			path, sha := censusRepo(goRepoFiles(complexFunctions(1)))
+			corpus := writeCorpus(corpusRepo{ID: "busy", Path: path, SHA: sha, Language: "go", ProjectConfig: ".lousy-agents/coach.json"})
+			binDir := GinkgoT().TempDir()
+			argsFile := filepath.Join(binDir, "args")
+			fake := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsFile + "\necho '{\"schema_version\":\"1\",\"signals\":[]}'\n"
+			Expect(os.WriteFile(filepath.Join(binDir, "coach"), []byte(fake), 0o755)).To(Succeed())
+
+			outcome := runProgram(binDir, nil, coachEvalBinary, "census", "--coach", "./coach", corpus)
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			Expect(readArgs(argsFile)).To(Equal([]string{"codesignal", "--baseline", "--format", "json", "--no-interactive", "--fail-on-incomplete-coverage", "--project-config", ".lousy-agents/coach.json"}))
+			var summary censusSummary
+			Expect(json.Unmarshal([]byte(outcome.stdout), &summary)).To(Succeed())
+			Expect(filepath.IsAbs(summary.Coach.Path)).To(BeTrue(), summary.Coach.Path)
+		})
+	})
+
 	When("the census input is not usable", func() {
 		DescribeTable("it exits 2, naming the problem",
 			func(problem string, args ...string) {
@@ -121,6 +183,7 @@ var _ = Describe("coach-eval census", func() {
 			Entry("no corpus manifest", "corpus manifest", "census", "--coach", "/bin/true"),
 			Entry("no coach binary", "--coach", "census", "/nonexistent/corpus.json"),
 			Entry("a corpus manifest that does not load", "/nonexistent/corpus.json", "census", "--coach", "/bin/true", "/nonexistent/corpus.json"),
+			Entry("two corpus manifests", "exactly one corpus manifest", "census", "--coach", "/bin/true", "a.json", "b.json"),
 		)
 	})
 
@@ -166,3 +229,9 @@ var _ = Describe("coach-eval census", func() {
 		Entry("found through HOME", func(markers string) string { return "HOME=" + markers }),
 	)
 })
+
+func readArgs(path string) []string {
+	raw, err := os.ReadFile(path)
+	Expect(err).NotTo(HaveOccurred(), "the coach binary never ran")
+	return strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
+}
