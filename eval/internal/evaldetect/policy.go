@@ -10,8 +10,9 @@ import (
 // Policy is the layer model a detector reads: the same .lousy-agents/coach.json
 // the self-review hook reads.
 type Policy struct {
-	layers    []policyLayer
-	forbidden map[[2]string]bool
+	layers        []policyLayer
+	forbidden     map[[2]string]bool
+	requiredLayer string
 }
 
 type policyLayer struct {
@@ -25,6 +26,7 @@ type policyFile struct {
 		From string `json:"from"`
 		To   string `json:"to"`
 	} `json:"forbidden_imports"`
+	RequiredLayer string `json:"required_layer"`
 }
 
 func LoadPolicy(path string) (Policy, error) {
@@ -36,7 +38,7 @@ func LoadPolicy(path string) (Policy, error) {
 	if err := json.Unmarshal(raw, &file); err != nil {
 		return Policy{}, fmt.Errorf("parse layer policy %s: %w", path, err)
 	}
-	policy := Policy{layers: file.Layers, forbidden: map[[2]string]bool{}}
+	policy := Policy{layers: file.Layers, forbidden: map[[2]string]bool{}, requiredLayer: file.RequiredLayer}
 	for _, pair := range file.ForbiddenImports {
 		policy.forbidden[[2]string{pair.From, pair.To}] = true
 	}

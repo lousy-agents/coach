@@ -1,0 +1,15 @@
+package domain
+
+import "example.com/orders/internal/infra/postgres"
+
+// Order is a customer's purchase.
+type Order struct {
+	ID    string
+	Total int
+}
+
+// Place stores the order. The domain reaches straight into the database adapter, so it cannot be used or tested
+// without Postgres, and a change to the adapter changes the domain.
+func (o Order) Place(store postgres.Store) error {
+	return store.Save(o.ID, o.Total)
+}

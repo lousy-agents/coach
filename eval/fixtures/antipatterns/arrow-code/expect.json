@@ -1,0 +1,17 @@
+{
+  "id": "arrow-code",
+  "name": "Arrow code (deep nesting)",
+  "source": "Arrow anti-pattern: conditions nested until the work sits at the point of the arrow; the fix is guard clauses and early returns (Fowler, Refactoring, 'Replace Nested Conditional with Guard Clauses')",
+  "seed": "complexity.max_nesting_depth in pkg/codesignal/project_continuity.go and pkg/semantics/ts_scope.go (a baseline scan of main at 6d98ea0)",
+  "status": "covered",
+  "expect": {
+    "bad": [
+      {
+        "rule_id": "complexity.max_nesting_depth",
+        "path": "ledger/apply.go",
+        "subject": ""
+      }
+    ],
+    "good": "none"
+  }
+}
