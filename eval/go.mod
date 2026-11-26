@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/onsi/ginkgo/v2 v2.34.0
 	github.com/onsi/gomega v1.44.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 )
 
 require (
