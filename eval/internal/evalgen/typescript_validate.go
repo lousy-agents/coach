@@ -1,10 +1,8 @@
 package evalgen
 
 import (
-	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 )
@@ -53,7 +51,7 @@ func testFiles(tree map[string][]byte) []string {
 
 // passes type-checks the tree and requires every test file to pass.
 func (t TypeScriptTools) passes(dir, step string, tests []string) error {
-	if output, err := run(dir, t.TSC, "-p", "."); err != nil {
+	if output, err := t.run(dir, t.TSC, "-p", "."); err != nil {
 		return fmt.Errorf("%s: tsc: %v\n%s", step, err, output)
 	}
 	if output, err := t.nodeTest(dir, tests); err != nil {
@@ -77,14 +75,5 @@ func (t TypeScriptTools) failsOnlyTheHidden(dir string, visible, hidden []string
 }
 
 func (t TypeScriptTools) nodeTest(dir string, files []string) (string, error) {
-	return run(dir, t.Node, append([]string{"--test", "--test-isolation=process"}, files...)...)
-}
-
-func run(dir, program string, args ...string) (string, error) {
-	cmd := exec.Command(program, args...)
-	cmd.Dir = dir
-	var output bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &output, &output
-	err := cmd.Run()
-	return output.String(), err
+	return t.run(dir, t.Node, append([]string{"--test", "--test-isolation=process"}, files...)...)
 }
