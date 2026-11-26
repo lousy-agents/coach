@@ -31,4 +31,18 @@ var _ = Describe("the TypeScript layer-bypass search names why a required layer 
 
 		Expect(hasLayerBypassDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagLayerBypassRequiredLayerUnmatched)).To(BeFalse(), "got %+v", result.Coverage.Diagnostics)
 	})
+
+	It("does not add it when the layer matches a file but a node on the path lies outside every layer, which is ambiguous for another reason", func() {
+		model := projectmodel.Model{
+			Files:             []projectmodel.File{{Path: "service/inventory.ts"}, {Path: "src/handler.ts"}},
+			CallFacts:         []projectmodel.CallFact{{From: "file:src/handler.ts#handle", To: "a node whose id names no file"}, {From: "a node whose id names no file", To: "db.query"}},
+			ReachabilityFacts: []projectmodel.ReachabilityFact{{Source: "file:src/handler.ts#handle", Sink: "db.query"}},
+			Coverage:          projectmodel.Coverage{Complete: true},
+		}
+
+		result := projectmodel.BuildTypeScriptLayerBypassFromModel(context.Background(), model, projectmodel.BypassLayer{Name: "service", Prefixes: []string{"service"}})
+
+		Expect(hasLayerBypassDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagLayerBypassAmbiguousLayer)).To(BeTrue(), "got %+v", result.Coverage.Diagnostics)
+		Expect(hasLayerBypassDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagLayerBypassRequiredLayerUnmatched)).To(BeFalse(), "got %+v", result.Coverage.Diagnostics)
+	})
 })

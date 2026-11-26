@@ -48,6 +48,23 @@ var _ = Describe("coach codesignal --project-config names why architecture.layer
 		})
 	})
 
+	When("the policy's required_layer matches a package that declares no function", func() {
+		It("does not claim that it matched no package", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "go.mod", goModuleFile)
+			commitFile(repo, "pkg/handlers/handlers.go", handlerQueryingTheDatabaseDirectly)
+			commitFile(repo, "pkg/service/types.go", "package service\n\ntype Account struct{}\n\nconst Limit = 10\n")
+			commitFile(repo, "project.json", goLayerBypassPolicyConfigJSON)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+
+			for _, diagnostic := range decodeCoachReport(stdout).Diagnostics {
+				Expect(diagnostic.Kind).NotTo(Equal(requiredLayerUnmatchedKind))
+			}
+		})
+	})
+
 	When("the policy's required_layer matches a package", func() {
 		It("does not emit that diagnostic, whether or not a bypass is found", func() {
 			repo := newTempGitRepo()
