@@ -70,7 +70,34 @@
         "cmd/semantics-wasm-smoke",
         "cmd/source-layout-guard",
         "cmd/thinproof-preflight",
-        "cmd/thinproof-runner"
+        "cmd/thinproof-runner",
+        "eval/cmd/coach-eval",
+        "eval/internal/evalharness"
+      ]
+    },
+    {
+      "name": "generation",
+      "prefixes": [
+        "eval/internal/evalgen"
+      ]
+    },
+    {
+      "name": "detection",
+      "prefixes": [
+        "eval/internal/evaldetect"
+      ]
+    },
+    {
+      "name": "grading",
+      "prefixes": [
+        "eval/internal/evalgrade"
+      ]
+    },
+    {
+      "name": "real-code",
+      "prefixes": [
+        "eval/internal/evalhistory",
+        "eval/internal/evalcensus"
       ]
     }
   ],
@@ -114,6 +141,186 @@
     {
       "from": "app",
       "to": "tooling"
+    },
+    {
+      "from": "entities",
+      "to": "generation"
+    },
+    {
+      "from": "entities",
+      "to": "detection"
+    },
+    {
+      "from": "entities",
+      "to": "grading"
+    },
+    {
+      "from": "entities",
+      "to": "real-code"
+    },
+    {
+      "from": "usecases",
+      "to": "generation"
+    },
+    {
+      "from": "usecases",
+      "to": "detection"
+    },
+    {
+      "from": "usecases",
+      "to": "grading"
+    },
+    {
+      "from": "usecases",
+      "to": "real-code"
+    },
+    {
+      "from": "adapters",
+      "to": "generation"
+    },
+    {
+      "from": "adapters",
+      "to": "detection"
+    },
+    {
+      "from": "adapters",
+      "to": "grading"
+    },
+    {
+      "from": "adapters",
+      "to": "real-code"
+    },
+    {
+      "from": "app",
+      "to": "generation"
+    },
+    {
+      "from": "app",
+      "to": "detection"
+    },
+    {
+      "from": "app",
+      "to": "grading"
+    },
+    {
+      "from": "app",
+      "to": "real-code"
+    },
+    {
+      "from": "generation",
+      "to": "entities"
+    },
+    {
+      "from": "generation",
+      "to": "usecases"
+    },
+    {
+      "from": "generation",
+      "to": "adapters"
+    },
+    {
+      "from": "generation",
+      "to": "app"
+    },
+    {
+      "from": "generation",
+      "to": "tooling"
+    },
+    {
+      "from": "detection",
+      "to": "entities"
+    },
+    {
+      "from": "detection",
+      "to": "usecases"
+    },
+    {
+      "from": "detection",
+      "to": "adapters"
+    },
+    {
+      "from": "detection",
+      "to": "app"
+    },
+    {
+      "from": "detection",
+      "to": "tooling"
+    },
+    {
+      "from": "grading",
+      "to": "entities"
+    },
+    {
+      "from": "grading",
+      "to": "usecases"
+    },
+    {
+      "from": "grading",
+      "to": "adapters"
+    },
+    {
+      "from": "grading",
+      "to": "app"
+    },
+    {
+      "from": "grading",
+      "to": "tooling"
+    },
+    {
+      "from": "real-code",
+      "to": "entities"
+    },
+    {
+      "from": "real-code",
+      "to": "usecases"
+    },
+    {
+      "from": "real-code",
+      "to": "adapters"
+    },
+    {
+      "from": "real-code",
+      "to": "app"
+    },
+    {
+      "from": "real-code",
+      "to": "tooling"
+    },
+    {
+      "from": "generation",
+      "to": "detection"
+    },
+    {
+      "from": "detection",
+      "to": "generation"
+    },
+    {
+      "from": "generation",
+      "to": "grading"
+    },
+    {
+      "from": "detection",
+      "to": "grading"
+    },
+    {
+      "from": "generation",
+      "to": "real-code"
+    },
+    {
+      "from": "real-code",
+      "to": "generation"
+    },
+    {
+      "from": "grading",
+      "to": "generation"
+    },
+    {
+      "from": "grading",
+      "to": "real-code"
+    },
+    {
+      "from": "real-code",
+      "to": "grading"
     }
   ],
   "required_layer": "usecases"
