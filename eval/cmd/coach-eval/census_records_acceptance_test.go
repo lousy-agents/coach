@@ -9,7 +9,25 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/lousy-agents/coach/eval/internal/evalcensus"
 )
+
+// currentJSONLines reads the records a reader counts: those no later record supersedes, through evalcensus so the rule
+// lives in one place.
+func currentJSONLines(path string) []map[string]any {
+	records, err := evalcensus.LoadRecords(path)
+	Expect(err).NotTo(HaveOccurred())
+	var lines []map[string]any
+	for _, record := range evalcensus.CurrentRecords(records) {
+		raw, err := json.Marshal(record)
+		Expect(err).NotTo(HaveOccurred())
+		var line map[string]any
+		Expect(json.Unmarshal(raw, &line)).To(Succeed())
+		lines = append(lines, line)
+	}
+	return lines
+}
 
 func jsonLines(path string) []map[string]any {
 	raw, err := os.ReadFile(path)
@@ -33,7 +51,7 @@ var _ = Describe("what a census run leaves behind", func() {
 			outcome, summary, outputs := runCensusInto(GinkgoT().TempDir(), corpus, coachBinary())
 			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 
-			records := jsonLines(filepath.Join(outputs.censusRoot, "fixture", "records.jsonl"))
+			records := currentJSONLines(filepath.Join(outputs.censusRoot, "fixture", "records.jsonl"))
 			Expect(records).To(HaveLen(2))
 			values := map[string]any{}
 			for _, record := range records {
@@ -72,7 +90,7 @@ var _ = Describe("what a census run leaves behind", func() {
 			Expect(outcome.exitCode).To(Equal(3), outcome.stderr)
 
 			rationales := map[string]any{}
-			for _, record := range jsonLines(filepath.Join(outputs.censusRoot, "fixture", "records.jsonl")) {
+			for _, record := range currentJSONLines(filepath.Join(outputs.censusRoot, "fixture", "records.jsonl")) {
 				rationales[record["target"].(map[string]any)["sha"].(string)] = record["rationale"]
 			}
 			Expect(rationales[brokenSHA]).To(ContainSubstring("missing.json"))
@@ -93,7 +111,9 @@ var _ = Describe("what a census run leaves behind", func() {
 			runCensusInto(dir, corpus, coachBinary())
 			_, _, outputs := runCensusInto(dir, corpus, coachBinary())
 
-			Expect(jsonLines(filepath.Join(outputs.censusRoot, "fixture", "records.jsonl"))).To(HaveLen(2))
+			recordsPath := filepath.Join(outputs.censusRoot, "fixture", "records.jsonl")
+			Expect(jsonLines(recordsPath)).To(HaveLen(2), "the second run keeps the first run's record")
+			Expect(currentJSONLines(recordsPath)).To(HaveLen(1), "the second run's record supersedes the first")
 			ledger := jsonLines(outputs.ledger)
 			Expect(ledger).To(HaveLen(2))
 			Expect(ledger[0]["run"].(map[string]any)["run_id"]).NotTo(Equal(ledger[1]["run"].(map[string]any)["run_id"]))

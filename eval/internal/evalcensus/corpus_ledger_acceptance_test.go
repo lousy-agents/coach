@@ -18,7 +18,7 @@ var _ = Describe("a corpus's census ledger", func() {
 
 			records, err := evalcensus.LoadRecords(filepath.Join(root, "pilot", "records.jsonl"))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(records).To(HaveLen(1))
+			Expect(evalcensus.CurrentRecords(records)).To(HaveLen(1))
 		})
 	})
 
