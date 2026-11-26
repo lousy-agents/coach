@@ -2,6 +2,7 @@ package main_test
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -105,6 +106,27 @@ var _ = Describe("coach-eval history", func() {
 			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 			rules := jsonLines(outputs.ledger)[0]["run"].(map[string]any)["repositories"].([]any)[0].(map[string]any)["rules"].([]any)
 			Expect([]any{rules[0].(map[string]any)["rule_id"], rules[1].(map[string]any)["rule_id"]}).To(Equal([]any{"complexity.cognitive_complexity", "complexity.branch_density"}))
+		})
+	})
+
+	When("the same history runs twice over one corpus, census root and ledger", func() {
+		It("links each record of the second run to the first run's record for the same target", func() {
+			corpus := writeHistoryCorpus(historyRepoEntry{ID: "r", Path: path, SHA: since, HistoryUntil: until, Language: "go"})
+			first, outputs := runHistory(nil, corpus, "--seed", "7")
+			Expect(first.exitCode).To(Equal(0), first.stderr)
+			var firstIDs []any
+			for _, record := range jsonLines(outputs.records()) {
+				firstIDs = append(firstIDs, record["record_id"])
+			}
+
+			second := runProgram("", os.Environ(), coachEvalBinary, "history", "--coach", coachBinary(), "--census-root", outputs.censusRoot, "--ledger", outputs.ledger, "--seed", "7", corpus)
+
+			Expect(second.exitCode).To(Equal(0), second.stderr)
+			all := jsonLines(outputs.records())
+			Expect(all).To(HaveLen(2 * len(firstIDs)))
+			for _, record := range all[len(firstIDs):] {
+				Expect(record["supersedes"]).To(BeElementOf(firstIDs...), "a re-run's record names the first run's record for its target")
+			}
 		})
 	})
 
