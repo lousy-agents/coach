@@ -46,9 +46,18 @@ type shapes struct {
 }
 
 type notCovered struct {
-	Shape string `json:"shape"`
-	Count int    `json:"count"`
+	Shape  string `json:"shape"`
+	Reason string `json:"reason"`
+	Count  int    `json:"count"`
 }
+
+// The closed list of reasons a shape is not covered.
+const (
+	outOfRange                 = "out_of_range"
+	noTotalOrder               = "no_total_order"
+	policyDeclaresNoLayers     = "policy_declares_no_layers"
+	policyLayersMatchNoPackage = "policy_layers_match_no_package"
+)
 
 // profile is the derived statistics of one reference at one commit. Its
 // only free text is the label and the licence.

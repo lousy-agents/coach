@@ -17,7 +17,7 @@ func outside(value, low, high int) bool { return value < low || value > high }
 func (p *profile) recordLayers(shape layerShape) {
 	if len(shape.packages) == 0 {
 		if shape.fromPolicy {
-			p.addNotCovered("layers", 1)
+			p.addNotCovered("layers", shape.unplaced, 1)
 		}
 		return
 	}
@@ -28,18 +28,15 @@ func (p *profile) recordLayers(shape layerShape) {
 			p.Roles[roles[i]] = roleStats{Packages: distribution{itoa(count): 1}}
 		}
 	}
-	unrolled := shape.fromPolicy && !shape.ordered
-	if unrolled || outside(len(shape.packages), minLayers, maxLayers) {
-		p.addNotCovered("layers", 1)
-	}
-	p.addNotCovered("packages", countOutside(shape.packages, minPackages, maxPackages))
+	p.addNotCovered("layers", layersReason(shape), 1)
+	p.addNotCovered("packages", outOfRange, countOutside(shape.packages, minPackages, maxPackages))
 }
 
 func (p *profile) recordDepths(depths []int) {
 	for _, depth := range depths {
 		p.Dimensions.Depth.add(depth)
 	}
-	p.addNotCovered("depth", countOutside(depths, minDepth, maxDepth))
+	p.addNotCovered("depth", outOfRange, countOutside(depths, minDepth, maxDepth))
 }
 
 func countOutside(values []int, low, high int) int {
@@ -54,8 +51,21 @@ func countOutside(values []int, low, high int) int {
 
 // addNotCovered appends a not-covered item. ExtractProfile records depth,
 // then layers, then packages, which fixes the list's order.
-func (p *profile) addNotCovered(shape string, count int) {
-	if count > 0 {
-		p.NotCovered = append(p.NotCovered, notCovered{Shape: shape, Count: count})
+func (p *profile) addNotCovered(shape, reason string, count int) {
+	if reason != "" && count > 0 {
+		p.NotCovered = append(p.NotCovered, notCovered{Shape: shape, Reason: reason, Count: count})
 	}
+}
+
+// layersReason is why a placed layer count is not covered, or "". A count
+// outside the generator's range is reported as such even when the policy
+// also leaves the layers unordered, since no order would make it buildable.
+func layersReason(shape layerShape) string {
+	if outside(len(shape.packages), minLayers, maxLayers) {
+		return outOfRange
+	}
+	if shape.fromPolicy && !shape.ordered {
+		return noTotalOrder
+	}
+	return ""
 }

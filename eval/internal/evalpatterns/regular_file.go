@@ -6,12 +6,17 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // readRegularFile reads the checkout file at the slash-separated rel. A file
-// that is not regular, such as a symlink, is an error rather than a file to
-// read: the checkout is untrusted, and a link could reach a file on the host.
+// that is not regular, or a directory on the way to it that is not a
+// directory, such as a symlink, is an error rather than a path to follow:
+// the checkout is untrusted, and a link could reach a file on the host.
 func readRegularFile(root, rel string) ([]byte, error) {
+	if err := requireDirectories(root, rel); err != nil {
+		return nil, err
+	}
 	path := filepath.Join(root, filepath.FromSlash(rel))
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -27,6 +32,30 @@ func readRegularFile(root, rel string) ([]byte, error) {
 	return raw, nil
 }
 
+// requireDirectories checks that each directory below root on the way to
+// rel is a real directory. A missing one is fs.ErrNotExist.
+func requireDirectories(root, rel string) error {
+	parts := strings.Split(rel, "/")
+	for i := 1; i < len(parts); i++ {
+		dir := strings.Join(parts[:i], "/")
+		info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(dir)))
+		if err != nil {
+			return withoutHostPath(rel, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("file %s cannot be read: %s is %s", rel, dir, notADirectory(info.Mode()))
+		}
+	}
+	return nil
+}
+
+func notADirectory(mode fs.FileMode) string {
+	if mode.IsRegular() {
+		return "not a directory"
+	}
+	return "not a regular file or directory"
+}
+
 // withoutHostPath names rel, not the host path the checkout sits under,
 // and keeps the cause so a missing file is still fs.ErrNotExist.
 func withoutHostPath(rel string, err error) error {
@@ -35,4 +64,18 @@ func withoutHostPath(rel string, err error) error {
 		err = pathErr.Err
 	}
 	return fmt.Errorf("file %s cannot be read: %w", rel, err)
+}
+
+// checkoutError is err with any host path under root replaced by the path
+// relative to the checkout.
+func checkoutError(root string, err error) error {
+	var pathErr *fs.PathError
+	if !errors.As(err, &pathErr) {
+		return err
+	}
+	rel, relErr := filepath.Rel(root, pathErr.Path)
+	if relErr != nil || strings.HasPrefix(rel, "..") {
+		return withoutHostPath("outside the checkout", err)
+	}
+	return withoutHostPath(filepath.ToSlash(rel), err)
 }

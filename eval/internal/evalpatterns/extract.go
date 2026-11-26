@@ -18,7 +18,7 @@ func ExtractProfile(reference Reference, root string) ([]byte, error) {
 	}
 	files, err := productionGoFiles(root)
 	if err != nil {
-		return nil, reference.refuse(fmt.Sprintf("checkout %s cannot be read: %v", root, err))
+		return nil, reference.refuse(fmt.Sprintf("the checkout cannot be read: %v", checkoutError(root, err)))
 	}
 	p := newProfile(reference)
 	fset := token.NewFileSet()
