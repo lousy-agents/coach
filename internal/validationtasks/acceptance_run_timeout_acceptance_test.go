@@ -56,4 +56,16 @@ var _ = Describe("the go test timeout of the other full-module runs (#909)", fun
 
 		Expect(timeoutMinutes(jobLimit, body)).To(BeNumerically(">=", timeoutMinutes(goTimeout, body)+5), "the other steps of the job need the margin")
 	})
+
+	It("keeps the sandbox recipe in validation-and-ci.md on the arguments the distro-git leg runs, so a contributor reproduces its timeout", func() {
+		Expect(readRepoText("docs/development/validation-and-ci.md")).To(ContainSubstring("go run ./cmd/acceptance-ci-env -timeout 25m ./..."))
+	})
+
+	It("quotes test-acceptance-fast's go test command with its timeout in acceptance-harness.md", func() {
+		Expect(readRepoText("docs/architecture/acceptance-harness.md")).To(ContainSubstring("go test -race -timeout 25m ./... -run Acceptance"))
+	})
+
+	It("quotes no run of the acceptance suites without a timeout in acceptance-harness.md", func() {
+		Expect(readRepoText("docs/architecture/acceptance-harness.md")).NotTo(ContainSubstring("go test -race ./... -run Acceptance"))
+	})
 })
