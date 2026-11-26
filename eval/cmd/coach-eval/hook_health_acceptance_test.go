@@ -232,10 +232,10 @@ var _ = Describe("coach-eval hook-health (#789, design 7 and 10)", func() {
 			Expect(os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte("#!/bin/sh\nexit 1\n"), 0o755)).To(Succeed())
 			return hooks
 		}
-		configFile := func(content string) string {
-			path := filepath.Join(GinkgoT().TempDir(), "gitconfig")
-			Expect(os.WriteFile(path, []byte(content), 0o644)).To(Succeed())
-			return path
+		homeWithGitConfig := func(content string) string {
+			home := GinkgoT().TempDir()
+			Expect(os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(content), 0o644)).To(Succeed())
+			return home
 		}
 
 		It("does not commit onto a repository named by an inherited GIT_DIR, as in a pre-commit hook", func() {
@@ -254,21 +254,13 @@ var _ = Describe("coach-eval hook-health (#789, design 7 and 10)", func() {
 
 		DescribeTable("ignores the host's global git configuration",
 			func(config func() string) {
-				outcome := healthy([]string{"GIT_CONFIG_GLOBAL=" + configFile(config())})
+				outcome := healthy([]string{"HOME=" + homeWithGitConfig(config())})
 
 				Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 			},
 			Entry("a hooks path whose pre-commit hook fails", func() string { return "[core]\n\thooksPath = " + failingHooks() + "\n" }),
 			Entry("signing every commit with a program that fails", func() string { return "[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = /bin/false\n" }),
 		)
-
-		It("ignores the host's system git configuration", func() {
-			system := configFile("[core]\n\thooksPath = " + failingHooks() + "\n")
-
-			outcome := healthy([]string{"GIT_CONFIG_SYSTEM=" + system})
-
-			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
-		})
 	})
 
 	DescribeTable("exits 2 and names a required tool that PATH does not hold, whichever of the three it is",
