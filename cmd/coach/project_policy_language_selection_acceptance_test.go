@@ -213,3 +213,19 @@ var _ = Describe("coach codesignal: which language a scan used, and why (#805)",
 func singleRootPolicyWithLanguage(language string) string {
 	return fmt.Sprintf(`{"schema_version":"1","language":%q,"roots":["."]}`+"\n", language)
 }
+
+var _ = Describe("coach codesignal: a policy named with --project-config can name the language too (#805)", func() {
+	DescribeTable("the named policy's language is used, and the flag still wins",
+		func(policyLanguage string, want map[string]any, args ...string) {
+			repo := commitScannableGoRepo()
+			commitFile(repo, "cfg/p.json", singleRootPolicyWithLanguage(policyLanguage))
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, append([]string{"--format=json", "--project-config", "cfg/p.json"}, args...)...)
+
+			Expect(exitCode).To(Equal(0), "stdout=%.600s stderr=%s", stdout, stderr)
+			Expect(projectLanguageDisclosure(stdout)).To(Equal(want))
+		},
+		Entry("a policy that names go", "go", map[string]any{"language": "go", "source": "policy"}),
+		Entry("a policy that names typescript, overridden by the flag", "typescript", map[string]any{"language": "go", "source": "flag"}, "--project-language", "go"),
+	)
+})

@@ -438,6 +438,8 @@ A `--project-language` that differs from the policy's `language` is used, and th
 
 Any other value is refused as `project_config_invalid` with exit `2`: a different case (`"Go"`), an unsupported language, an empty string, `null`, and a value that is not a string. The message says `the "language" key must be "go" or "typescript"`, whether the policy is read from the revision or from the working tree.
 
+Guided TypeScript authoring (`--suggest-project-config --project-language typescript`) saves `"language": "typescript"` in the policy it writes. A Go candidate names no language, which is the default.
+
 A policy names one language. A repository with Go and TypeScript roots keeps one policy per language and names the other with `--project-config`; the hook's discovery reads `.lousy-agents/coach.json` (or the root `project.json`) only.
 
 Coach versions that predate the key reject a policy that carries it, as they reject any unknown key: exit `2`, `schema decode failed: json: unknown field "language"`.
@@ -790,7 +792,7 @@ A report from a version that predates `cause` has no `cause` key. A consumer rea
 
 A scan that read a project policy reports which language the project analysis ran in and what chose it:
 
-- JSON `scope.project_language` holds `language` (`go` or `typescript`) and `source`: `flag` (`--project-language` was given), `policy` (the policy's `language`) or `default` (neither, so `go`). It is `null` when no project policy was read, because no project analysis ran.
+- JSON `scope.project_language` holds `language` (`go` or `typescript`) and `source`: `flag` (`--project-language` was given), `policy` (the policy's `language`) or `default` (neither, so `go`). It is `null` when no project analysis ran: no project policy was read, or no backend could run the one that was (`project_backend_unavailable`).
 - Text prints a `language:` line after the policy line and its warnings when the flag or the policy chose the language: `language: typescript (from the policy)` or `language: go (from --project-language)`. It prints none when the language is the default, or when no project policy was read, so the text of a scan whose policy names no language is what it was before the key existed.
 - A `--project-language` that differs from the policy's `language` adds a `project_language_overrides_policy` diagnostic. Its `path` is the policy, and its message names the language used and the language the policy names. A flag that agrees with the policy, or a policy that names no language, adds none.
 - With a TypeScript analysis, `project_provenance.language` is the same language. A Go analysis has no `project_provenance`, so `scope.project_language` is the field that covers both.
