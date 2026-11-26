@@ -81,12 +81,17 @@ const layerExpect = `{"id":"layer","name":"Layer breach","source":"Martin","seed
 var layerSignal = "architecture.layer_violation|internal/domain/order.go|architecture.layer_violation:internal/domain->internal/infra"
 
 func runAntipatterns(fixtures, coach string, extraArgs ...string) generateOutcome {
+	return runAntipatternsWith(nil, fixtures, coach, extraArgs...)
+}
+
+// runAntipatternsWith runs the command with extra environment entries after the caller's own.
+func runAntipatternsWith(env []string, fixtures, coach string, extraArgs ...string) generateOutcome {
 	args := []string{"antipatterns", "--fixtures", fixtures}
 	if coach != "" {
 		args = append(args, "--coach", coach)
 	}
 	cmd := exec.Command(coachEvalBinary, append(args, extraArgs...)...)
-	cmd.Env = os.Environ()
+	cmd.Env = append(os.Environ(), env...)
 	return runGenerateCommand(cmd)
 }
 
