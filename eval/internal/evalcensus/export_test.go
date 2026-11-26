@@ -45,3 +45,20 @@ func FailFirstWriteTo(path string, n int, during func()) (restore func()) {
 	}
 	return func() { writeLedger = saved }
 }
+
+// FindingKey is the part of a Coach finding that the census's sample orders by.
+type FindingKey struct {
+	RuleID, Path, Subject, Fingerprint string
+	StartRow, EndRow                   uint
+}
+
+// CompareFindingKeys is the order a seeded draw sorts two findings by, so a spec can show that each key decides.
+func CompareFindingKeys(a, b FindingKey) int {
+	return compareFindings(a.signal(), b.signal())
+}
+
+func (k FindingKey) signal() reportSignal {
+	signal := reportSignal{RuleID: k.RuleID, Path: k.Path, Subject: k.Subject, Fingerprint: k.Fingerprint}
+	signal.Location.StartRow, signal.Location.EndRow = k.StartRow, k.EndRow
+	return signal
+}
