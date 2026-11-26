@@ -133,6 +133,17 @@ var _ = Describe("the TypeScript resolver's clauses", func() {
 		})
 	})
 
+	When("a specifier matches a paths pattern's prefix but not its suffix", func() {
+		It("is not resolved through that pattern", func() {
+			findings, err := tsViolations(tsTree(map[string]string{
+				"tsconfig.json":   `{"compilerOptions":{"baseUrl":".","paths":{"@app/*.js":["src/app/*.ts"]}}}`,
+				"src/domain/d.ts": "import { A } from \"@app/a.ts\";\n",
+			}))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(findings).To(BeEmpty())
+		})
+	})
+
 	When("a bare specifier only starts with the package's own name", func() {
 		It("is not refused as a self-reference", func() {
 			findings, err := tsViolations(tsTree(map[string]string{
