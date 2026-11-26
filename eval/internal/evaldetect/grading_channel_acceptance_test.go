@@ -100,9 +100,22 @@ var _ = Describe("the G2 static check for grading-channel access (#857, design 4
 		Entry("a Go test", "pkg/a/a_test.go"),
 		Entry("a TypeScript test", "src/a/a.test.ts"),
 		Entry("a TypeScript spec", "src/a/a.spec.ts"),
-		Entry("a vendored dependency", "vendor/x/x.ts"),
 		Entry("node_modules", "node_modules/x/x.ts"),
-		Entry("a hidden directory", ".cache/x.ts"),
+		Entry("a nested node_modules", "src/a/node_modules/x/x.ts"),
+		Entry("git's own directory", ".git/hooks/x.ts"),
+	)
+
+	DescribeTable("reads a directory the agent can import from by relative path",
+		func(path string) {
+			findings, err := channelScan(map[string]string{path: "const b = process.binding(\"fs\");\n"})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(findings).To(Equal([]evaldetect.Finding{channelFinding(path, "process_binding", 1)}))
+		},
+		Entry("a hidden directory", ".hidden/x.ts"),
+		Entry("a nested hidden directory", "src/.hidden/x.ts"),
+		Entry("a vendor directory", "vendor/x/x.ts"),
+		Entry("a testdata directory", "src/testdata/x.ts"),
 	)
 
 	It("flags a reference in a .mts and a .cts source as in a .ts", func() {

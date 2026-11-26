@@ -85,6 +85,9 @@ var _ = Describe("every route the G2 check names to a descriptor, in both forms 
 		Entry("a syscall call with no descriptor", "import \"syscall\"\n\nvar pid = syscall.Getpid()\n", nil),
 		Entry("syscall.Write on a variable descriptor", "import \"syscall\"\n\nvar n, err = syscall.Write(fd, nil)\n", nil),
 		Entry("another package named unix", "import \"example.com/unix\"\n\nvar n, err = unix.Write(4, nil)\n", nil),
+		Entry("a cgo call on descriptor 4", "import \"C\"\n\nvar n = C.write(4, nil, 0)\n", []evaldetect.Finding{channelFinding("pkg/a/a.go", "inherited_fd", 5)}),
+		Entry("a cgo call on standard output", "import \"C\"\n\nvar n = C.write(1, nil, 0)\n", nil),
+		Entry("a call on a value named C when cgo is not imported", "var n = C.write(4, nil, 0)\n", nil),
 		Entry("an aliased os import", "import o \"os\"\n\nvar f = o.NewFile(4, \"in\")\n", []evaldetect.Finding{channelFinding("pkg/a/a.go", "os_new_file", 5)}),
 		Entry("a raw string that names /proc/<pid>/mem", "var p = `/proc/1/mem`\n", []evaldetect.Finding{channelFinding("pkg/a/a.go", "proc_mem", 3)}),
 	)
