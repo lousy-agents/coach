@@ -2,8 +2,6 @@ package evaldetect
 
 import "errors"
 
-var errNotImplemented = errors.New("evaldetect: not implemented")
-
 // ErrRefused marks input a detector does not support and will not guess at.
 var ErrRefused = errors.New("evaldetect: refused")
 
@@ -19,12 +17,4 @@ type Finding struct {
 	Path    string
 	Subject string
 	Line    int
-}
-
-func TSLayerViolations(root string, policy Policy) ([]Finding, error) {
-	return nil, errNotImplemented
-}
-
-func ResolveGocognit(evalModuleDir string, env []string) (Gocognit, error) {
-	return Gocognit{}, errNotImplemented
 }

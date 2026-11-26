@@ -1,14 +1,28 @@
 package evaldetect_test
 
 import (
-	"os"
+	"io/fs"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/eval/internal/evaldetect"
 )
+
+// downloadedFiles lists every file in a module cache except the lock files
+// the go command leaves even when module lookup is disabled.
+func downloadedFiles(cache string) []string {
+	var files []string
+	Expect(filepath.WalkDir(cache, func(path string, entry fs.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() && !strings.HasSuffix(path, ".lock") {
+			files = append(files, path)
+		}
+		return err
+	})).To(Succeed())
+	return files
+}
 
 var _ = Describe("resolving the pinned gocognit", func() {
 	evalModule := filepath.Join("..", "..")
@@ -29,9 +43,7 @@ var _ = Describe("resolving the pinned gocognit", func() {
 			_, err := evaldetect.ResolveGocognit(evalModule, []string{"GOMODCACHE=" + emptyCache})
 			Expect(err).To(MatchError(evaldetect.ErrGocognitUnavailable))
 
-			entries, readErr := os.ReadDir(emptyCache)
-			Expect(readErr).NotTo(HaveOccurred())
-			Expect(entries).To(BeEmpty(), "resolving gocognit must not download into the module cache")
+			Expect(downloadedFiles(emptyCache)).To(BeEmpty(), "resolving gocognit must not download into the module cache")
 		})
 	})
 })
