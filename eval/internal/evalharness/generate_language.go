@@ -23,11 +23,11 @@ func toolsFor(language evalgen.Language) (evalgen.TypeScriptTools, error) {
 	return evalgen.TypeScriptTools{}, nil
 }
 
-func generateProgram(request GenerateRequest) (evalgen.Program, error) {
-	if request.Language == evalgen.LanguageTypeScript {
-		return evalgen.GenerateTypeScript(request.Cell, request.Seed)
+func generateProgram(language evalgen.Language, cell evalgen.Cell, seed int64) (evalgen.Program, error) {
+	if language == evalgen.LanguageTypeScript {
+		return evalgen.GenerateTypeScript(cell, seed)
 	}
-	return evalgen.Generate(request.Cell, request.Seed)
+	return evalgen.Generate(cell, seed)
 }
 
 func validateProgram(program evalgen.Program, tools evalgen.TypeScriptTools) error {

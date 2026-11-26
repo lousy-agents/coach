@@ -3,6 +3,8 @@ package evalgen
 import (
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -17,23 +19,27 @@ func Validate(p Program) error {
 	defer os.RemoveAll(work)
 
 	steps := []validationStep{
-		{"stub", p.Tree, [][]string{{"build", "./..."}, {"vet", "./..."}, {"test", "./..."}}, nil},
-		{"hidden tests on the stub", p.Tests, nil, []string{p.moduleName() + "/tests/feature"}},
-		{"clean oracle", p.Solution, [][]string{{"vet", "./..."}, {"test", "./..."}}, nil},
+		{id: StepNative, name: "stub", files: p.Tree, commands: [][]string{{"build", "./..."}, {"vet", "./..."}, {"test", "./..."}}},
+		{id: StepNative, name: "hidden tests on the stub", files: p.Tests, fails: []string{p.moduleName() + "/tests/feature"}},
+		{id: StepDeleteBaseline, name: "delete baseline", remove: p.entryFile(), target: "./tests/...", fails: []string{p.moduleName() + "/tests/feature"}},
+		{id: StepNative, name: "clean oracle", files: p.Solution, commands: [][]string{{"vet", "./..."}, {"test", "./..."}}},
 	}
 	for _, step := range steps {
 		if err := step.run(work); err != nil {
-			return err
+			return &StepError{Step: step.id, Err: err}
 		}
 	}
 	return nil
 }
 
-// validationStep overlays files on the work tree, then runs go commands that must pass or, when fails is set,
-// a go test whose only failing packages must be exactly those.
+// validationStep overlays files on the work tree, removes one file, then runs go commands that must pass or,
+// when fails is set, a go test of target whose only failing packages must be exactly those.
 type validationStep struct {
+	id       string
 	name     string
 	files    map[string][]byte
+	remove   string
+	target   string
 	commands [][]string
 	fails    []string
 }
@@ -41,6 +47,11 @@ type validationStep struct {
 func (step validationStep) run(work string) error {
 	if err := WriteTree(work, step.files); err != nil {
 		return err
+	}
+	if step.remove != "" {
+		if err := os.Remove(filepath.Join(work, filepath.FromSlash(step.remove))); err != nil {
+			return err
+		}
 	}
 	for _, args := range step.commands {
 		if output, err := goIn(work, args...); err != nil {
@@ -50,10 +61,17 @@ func (step validationStep) run(work string) error {
 	if step.fails == nil {
 		return nil
 	}
-	if err := requireOnlyFailures(work, step.fails); err != nil {
+	if err := requireOnlyFailures(work, step.target, step.fails); err != nil {
 		return fmt.Errorf("%s: %w", step.name, err)
 	}
 	return nil
+}
+
+// entryFile is the source file of the entry package, which the delete baseline removes.
+func (p Program) entryFile() string {
+	entry := p.Manifest.Template.APISurface[0].Entry
+	dir := entry[:strings.LastIndex(entry, ".")]
+	return dir + "/" + path.Base(dir) + ".go"
 }
 
 func (p Program) moduleName() string {

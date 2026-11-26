@@ -27,7 +27,7 @@ var _ = Describe("coach-eval generate exit codes", func() {
 		Entry("an entry kind that is not one of the four", []string{"--layers", "3", "--packages", "2", "--entry", "lambda", "--depth", "2", "--field", "scalar", "--direction", "read", "--trap", "layering"}, nil, "entry"),
 		Entry("an unknown flag", []string{"--no-such-flag"}, nil, "no-such-flag"),
 		Entry("no cell at all", []string{"--seed", "1"}, nil, "cell"),
-		Entry("the held-out panel without EVAL_ORACLE_DIR", []string{"--cell", "0", "--panel", "held_out"}, []string{"EVAL_ORACLE_DIR="}, "EVAL_ORACLE_DIR"),
+		Entry("the held-out panel without EVAL_ORACLE_DIR", []string{"--cell", "1", "--panel", "held_out"}, []string{"EVAL_ORACLE_DIR="}, "EVAL_ORACLE_DIR"),
 		Entry("a PATH with no go on it", []string{"--cell", "0"}, []string{"PATH=" + os.TempDir() + "/no-such-directory"}, "go"),
 	)
 })

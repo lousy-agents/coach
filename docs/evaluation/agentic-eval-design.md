@@ -681,7 +681,7 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 | `eval-detection` | Per-rule H3 from cached fixtures; seconds to minutes | 0 · 1 a rule mismatch or a promoted `known_miss` · 2 a missing compiler or tool · 3 `coach` non-zero |
 | `eval-detection-selftest` | Mutation red tests | 0 every mutation turns H3 red · 1 one did not · 2 the override is absent |
 | `eval-hook-health` | Hook health plus the probe edit, on tuning cells; no model, no Docker needed | 0 · 1 a health or probe failure · 2 a missing tool |
-| `eval-generate` | Generation and validation, natively | 0 · 2 a missing tool · 8 the total rejection rate is above 50% (the report says which operators) |
+| `eval-generate` | Generation and validation, natively | 0 · 1 an error that is not a rejection, such as an unwritable cache · 2 a missing or invalid input or tool (Go, the gocognit pin, the eval module, `EVAL_ORACLE_DIR` for the held-out panel) · 8 the total rejection rate is above 50%, or a cell is rejected at every one of ten attempts (the report says which steps and which operators) |
 | `eval-replay` | The new `coach` and hook over the pilot's saved trees; diffs findings and messages | 0 · 2 no saved pilot trees |
 | `eval-precommit-agent` | Wiring; ≈ 10 min, ≈ 3 τ | 0 · 1 an integrity failure · 2 a refusal (no 15.15 record, no `sbx`, or a credential problem) |
 | `eval-agent-pilot` | 360 trials; writes the estimates | 0 · 1 a harness-caused event (R) · 2 a refusal · 5 killed (R) · 6 a cap reached (R after the caps are raised) |
