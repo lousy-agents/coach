@@ -1,10 +1,8 @@
 package evalgen_test
 
 import (
-	"bytes"
 	"reflect"
 	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/lousy-agents/coach/eval/internal/evalgen"
@@ -15,8 +13,13 @@ import (
 // threshold, derived from the rule definitions and not from Coach output).
 var refusedShapes = regexp.MustCompile(`\b(if|else|for|while|do|switch|case|try|catch|throw|new|delete|void|let|var)\b|\?|&&|\|\||\.push\(|\.splice\(`)
 
+var (
+	productionFile = regexp.MustCompile(`^src/.*\.ts$`)
+	testFile       = regexp.MustCompile(`\.test\.ts$`)
+)
+
 func isProduction(path string) bool {
-	return strings.HasPrefix(path, "src/") && strings.HasSuffix(path, ".ts") && !strings.HasSuffix(path, ".test.ts")
+	return productionFile.MatchString(path) && !testFile.MatchString(path)
 }
 
 // TestEveryTypeScriptCellIsBranchFreeAndDeterministic walks the whole cell space with two seeds, without the
@@ -45,28 +48,6 @@ func assertCellAndSeed(t *testing.T, index int, seed int64) {
 	}
 	assertProduction(t, index, seed, first)
 	assertGraderSubset(t, index, seed, first)
-}
-
-// slashOutsideStrings finds a `/` that is not inside a string: the layer grader refuses a slash it cannot classify,
-// so the generated sources hold none, which also rules out regular expressions and divisions.
-var doubleQuoted = regexp.MustCompile(`"(?:[^"\\\n]|\\.)*"`)
-
-func slashOutsideStrings(source []byte) bool {
-	return bytes.Contains(doubleQuoted.ReplaceAll(source, nil), []byte("/"))
-}
-
-func assertGraderSubset(t *testing.T, index int, seed int64, program evalgen.Program) {
-	t.Helper()
-	for _, files := range []map[string][]byte{program.Tree, program.Tests, program.Solution} {
-		for path, source := range files {
-			if strings.HasSuffix(path, ".tsx") || strings.HasSuffix(path, ".jsx") {
-				t.Fatalf("cell %d seed %d: %s is JSX", index, seed, path)
-			}
-			if strings.HasSuffix(path, ".ts") && slashOutsideStrings(source) {
-				t.Fatalf("cell %d seed %d: %s holds a slash outside a string", index, seed, path)
-			}
-		}
-	}
 }
 
 func assertProduction(t *testing.T, index int, seed int64, program evalgen.Program) {
