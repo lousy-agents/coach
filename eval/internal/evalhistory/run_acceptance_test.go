@@ -166,6 +166,7 @@ var _ = Describe("a history run over a pinned corpus", func() {
 			repo := summary.Repositories[0]
 			Expect(repo.Fixes).To(Equal(2))
 			Expect(repo.UnmappedFixes.Function).To(Equal(1))
+			Expect(repo.UnmappedFixes.File).To(Equal(1), "an untraceable fix is unmapped at both levels")
 			Expect(repo.UnprocessedFixes).To(HaveLen(1))
 			Expect(repo.UnprocessedFixes[0].SHA).To(Equal(bump))
 			Expect(repo.UnprocessedFixes[0].Reason).To(ContainSubstring("sub"))
@@ -218,6 +219,47 @@ var _ = Describe("a history run over a pinned corpus", func() {
 			Expect(summary.Repositories[0].Evidence).To(ContainSubstring("could not be read"))
 		})
 	})
+
+	When("history_until is the census SHA itself", func() {
+		It("reports an empty window, with a match rate of 0, and a summary that encodes as JSON", func() {
+			summary, err := evalhistory.Run(corpusFor(h, since, since, goRule(cognitive)), fakeCoach(signals), 7)
+			Expect(err).NotTo(HaveOccurred())
+			repo := summary.Repositories[0]
+			Expect([]int{repo.Commits, repo.Fixes}).To(Equal([]int{0, 0}))
+			Expect(repo.MatchRate).To(BeZero())
+			_, err = json.Marshal(summary)
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	When("Coach's output is JSON with no signals", func() {
+		It("marks the repository's analysis failed rather than reading it as no findings", func() {
+			summary, err := evalhistory.Run(corpus, fakeCoachPrinting("{}"), 7)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(summary.AnalysisFailed()).To(BeTrue())
+			Expect(summary.Repositories[0].Evidence).To(ContainSubstring("could not be read"))
+		})
+	})
+
+	DescribeTable("an unusable second repository stops the run before any repository is scanned",
+		func(edit func(*evalcensus.Repository), message string) {
+			second := corpus.Repositories[0]
+			second.ID = "second"
+			edit(&second)
+			corpus.Repositories = append(corpus.Repositories, second)
+			marker := filepath.Join(GinkgoT().TempDir(), "coach-ran")
+			coach := filepath.Join(GinkgoT().TempDir(), "coach")
+			Expect(os.WriteFile(coach, []byte("#!/bin/sh\ntouch '"+marker+"'\necho '{\"signals\":[]}'\n"), 0o755)).To(Succeed())
+
+			_, err := evalhistory.Run(corpus, coach, 7)
+
+			Expect(err).To(MatchError(ContainSubstring(message)))
+			Expect(marker).NotTo(BeAnExistingFile(), "Coach ran before the run was refused")
+		},
+		Entry("one without history_until", func(r *evalcensus.Repository) { r.HistoryUntil = "" }, `repository "second" has no history_until`),
+		Entry("a TypeScript one", func(r *evalcensus.Repository) { r.Language = "typescript" }, `repository "second" is TypeScript`),
+		Entry("one whose history_until does not descend from its SHA", func(r *evalcensus.Repository) { r.SHA, r.HistoryUntil = r.HistoryUntil, r.SHA }, `repository "second": history_until`),
+	)
 
 	DescribeTable("an unusable input stops the run before any scan",
 		func(edit func(*evalcensus.Corpus), message string) {
