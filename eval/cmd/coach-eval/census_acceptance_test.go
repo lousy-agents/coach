@@ -141,6 +141,19 @@ var _ = Describe("coach-eval census", func() {
 		})
 	})
 
+	When("the coach binary does not exist", func() {
+		It("exits 2 naming --coach, before scanning anything", func() {
+			path, sha := censusRepo(goRepoFiles(complexFunctions(1)))
+			corpus := writeCorpus(corpusRepo{ID: "busy", Path: path, SHA: sha, Language: "go"})
+
+			outcome, _ := runCensus(corpus, filepath.Join(GinkgoT().TempDir(), "no-such-coach"))
+
+			Expect(outcome.exitCode).To(Equal(2))
+			Expect(outcome.stderr).To(ContainSubstring("--coach"))
+			Expect(outcome.stdout).To(BeEmpty())
+		})
+	})
+
 	When("a census finishes", func() {
 		It("leaves no clone behind in the temporary directory", func() {
 			path, sha := censusRepo(goRepoFiles(complexFunctions(1)))
