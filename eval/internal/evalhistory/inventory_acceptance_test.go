@@ -4,6 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/eval/internal/evalcensus"
 	"github.com/lousy-agents/coach/eval/internal/evalhistory"
 )
 
@@ -22,7 +23,7 @@ var _ = Describe("the unit inventory at since", func() {
 			})
 			h.commit("later", map[string]string{"p/p.go": baseSource + "\nfunc Later() {}\n"})
 
-			inventory, err := evalhistory.GoInventory(h.dir, since)
+			inventory, err := evalhistory.GoInventory(h.dir, since, evalcensus.Repository{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(inventory.Functions).To(ConsistOf(
 				evalhistory.Unit{Path: "p/p.go", Start: 3, End: 5},
@@ -44,10 +45,44 @@ var _ = Describe("the unit inventory at since", func() {
 				"p/p_test.go": "package p\n\nfunc TestA() {}\n",
 			})
 
-			inventory, err := evalhistory.GoInventory(h.dir, since)
+			inventory, err := evalhistory.GoInventory(h.dir, since, evalcensus.Repository{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(inventory.Functions).To(ContainElement(evalhistory.Unit{Path: "p/p_test.go", Start: 3, End: 3}))
 			Expect(inventory.Files).To(ContainElement(evalhistory.Unit{Path: "p/p_test.go", Start: 1, End: 3}))
+		})
+	})
+
+	When("the repository names include and exclude globs", func() {
+		It("draws no control from eval/, a vendored directory, or an excluded glob", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{
+				"q/q.go":        "package q\n\nfunc Q() {}\n",
+				"eval/e/e.go":   "package e\n\nfunc E() {}\n",
+				"gen/g/g.go":    "package g\n\nfunc G() {}\n",
+				"vendor/v/v.go": "package v\n\nfunc V() {}\n",
+			})
+			repo := evalcensus.Repository{Exclude: []string{"gen/**"}}
+
+			inventory, err := evalhistory.GoInventory(h.dir, since, repo)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(inventory.Functions).To(ConsistOf(evalhistory.Unit{Path: "q/q.go", Start: 3, End: 3}))
+			Expect(inventory.Files).To(ConsistOf(evalhistory.Unit{Path: "q/q.go", Start: 1, End: 3}))
+		})
+
+		It("lists exactly the paths the census admits, through the census's own scope", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{
+				"q/q.go":      "package q\n\nfunc Q() {}\n",
+				"q/skip/s.go": "package skip\n\nfunc S() {}\n",
+				"r/r.go":      "package r\n\nfunc R() {}\n",
+			})
+			repo := evalcensus.Repository{Include: []string{"q/**"}, Exclude: []string{"q/skip/**"}}
+
+			inventory, err := evalhistory.GoInventory(h.dir, since, repo)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(inventory.Files).To(ConsistOf(evalhistory.Unit{Path: "q/q.go", Start: 1, End: 3}))
+			Expect(repo.Admits("q/q.go")).To(BeTrue())
+			Expect(repo.Admits("q/skip/s.go")).To(BeFalse())
 		})
 	})
 
@@ -59,7 +94,7 @@ var _ = Describe("the unit inventory at since", func() {
 				"b.go": "package p\n\n\n\nfunc B1() {}\n",
 			})
 
-			inventory, err := evalhistory.GoInventory(h.dir, since)
+			inventory, err := evalhistory.GoInventory(h.dir, since, evalcensus.Repository{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(inventory.Functions).To(Equal([]evalhistory.Unit{
 				{Path: "a.go", Start: 3, End: 3},
@@ -74,7 +109,7 @@ var _ = Describe("the unit inventory at since", func() {
 			h := newHistory()
 			since := h.commit("base", map[string]string{"p/p.go": baseSource, "p/broken.go": "package p\n\nfunc (\n"})
 
-			_, err := evalhistory.GoInventory(h.dir, since)
+			_, err := evalhistory.GoInventory(h.dir, since, evalcensus.Repository{})
 			Expect(err).To(MatchError(ContainSubstring("p/broken.go")))
 		})
 	})
