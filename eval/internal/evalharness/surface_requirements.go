@@ -14,13 +14,18 @@ func surfaceSymbols(program evalgen.Program) []evaldetect.Symbol {
 	for _, symbol := range program.Manifest.Template.APISurface {
 		qualified := strings.TrimPrefix(symbol.Symbol, prefix)
 		split := strings.LastIndex(qualified, ".")
+		if split < 0 {
+			symbols = append(symbols, evaldetect.Symbol{Dir: qualified})
+			continue
+		}
 		symbols = append(symbols, evaldetect.Symbol{Dir: qualified[:split], Name: qualified[split+1:]})
 	}
 	return symbols
 }
 
 // surfaceEdges are the imports the manifest's route requires: each package of the api surface imports the next, so
-// that the entry reaches every hop through the one before it.
+// that the entry reaches every hop through the one before it. The route holds each package once; a package that
+// appeared twice would require an import of itself.
 func surfaceEdges(program evalgen.Program) []evaldetect.Edge {
 	symbols := surfaceSymbols(program)
 	var edges []evaldetect.Edge
