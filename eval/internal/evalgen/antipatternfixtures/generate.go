@@ -17,13 +17,18 @@ type Emitted struct {
 	Value int
 }
 
-// Generate writes into out, which it first clears, one fixture for each
-// template whose shape the profile observed. A profile that fails validate
-// or is of another version is refused with exit 2 before anything is
-// written. A fixture whose variant fails vet is left out, the others are
-// written, and the run exits 3 naming it.
-func Generate(raw []byte, validate Validator, out string, templates []Template, vet Vetter) (Result, error) {
+// Generate writes into root/label, which it first clears, one fixture for
+// each template whose shape the profile observed. A profile that fails
+// validate or is of another version, or a label that is not one path
+// segment, is refused with exit 2 before anything is removed. A fixture
+// whose variant fails vet is left out, the others are written, and the run
+// exits 3 naming it.
+func Generate(raw []byte, validate Validator, root, label string, templates []Template, vet Vetter) (Result, error) {
 	read, err := readProfile(raw, validate)
+	if err != nil {
+		return Result{}, err
+	}
+	out, err := labelDir(root, label)
 	if err != nil {
 		return Result{}, err
 	}
