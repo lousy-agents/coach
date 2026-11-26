@@ -47,21 +47,31 @@ func moduleImports(tree map[string][]byte, module string) (map[string][]string, 
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		parsed, err := parser.ParseFile(files, name, source, parser.ImportsOnly)
+		imported, err := fileModuleImports(files, name, source, module)
 		if err != nil {
 			return nil, err
 		}
-		for _, spec := range parsed.Imports {
-			imported, err := strconv.Unquote(spec.Path.Value)
-			if err != nil {
-				return nil, err
-			}
-			if internal, ok := strings.CutPrefix(imported, module+"/"); ok {
-				imports[path.Dir(name)] = append(imports[path.Dir(name)], internal)
-			}
-		}
+		imports[path.Dir(name)] = append(imports[path.Dir(name)], imported...)
 	}
 	return imports, nil
+}
+
+func fileModuleImports(files *token.FileSet, name string, source []byte, module string) ([]string, error) {
+	parsed, err := parser.ParseFile(files, name, source, parser.ImportsOnly)
+	if err != nil {
+		return nil, err
+	}
+	var internal []string
+	for _, spec := range parsed.Imports {
+		imported, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			return nil, err
+		}
+		if directory, ok := strings.CutPrefix(imported, module+"/"); ok {
+			internal = append(internal, directory)
+		}
+	}
+	return internal, nil
 }
 
 func moduleNameOf(program evalgen.Program) string {
