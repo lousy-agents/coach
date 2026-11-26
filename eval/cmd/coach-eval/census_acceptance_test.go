@@ -201,7 +201,7 @@ var _ = Describe("coach-eval census", func() {
 			fake := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsFile + "\necho '{\"schema_version\":\"1\",\"signals\":[]}'\n"
 			Expect(os.WriteFile(filepath.Join(binDir, "coach"), []byte(fake), 0o755)).To(Succeed())
 
-			outcome := runProgram(binDir, nil, coachEvalBinary, "census", "--coach", "./coach", corpus)
+			outcome := runProgram(binDir, nil, coachEvalBinary, "census", "--coach", "./coach", "--census-root", filepath.Join(binDir, "census"), "--ledger", filepath.Join(binDir, "runs.jsonl"), corpus)
 
 			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 			Expect(readArgs(argsFile)).To(Equal([]string{"codesignal", "--baseline", "--format", "json", "--no-interactive", "--fail-on-incomplete-coverage", "--project-config", ".lousy-agents/coach.json"}))
@@ -218,10 +218,12 @@ var _ = Describe("coach-eval census", func() {
 				Expect(outcome.exitCode).To(Equal(2))
 				Expect(outcome.stderr).To(ContainSubstring(problem))
 			},
-			Entry("no corpus manifest", "corpus manifest", "census", "--coach", "/bin/true"),
+			Entry("no corpus manifest", "corpus manifest", "census", "--coach", "/bin/true", "--census-root", "/tmp/r", "--ledger", "/tmp/l"),
 			Entry("no coach binary", "--coach", "census", "/nonexistent/corpus.json"),
-			Entry("a corpus manifest that does not load", "/nonexistent/corpus.json", "census", "--coach", "/bin/true", "/nonexistent/corpus.json"),
-			Entry("two corpus manifests", "exactly one corpus manifest", "census", "--coach", "/bin/true", "a.json", "b.json"),
+			Entry("a corpus manifest that does not load", "/nonexistent/corpus.json", "census", "--coach", "/bin/true", "--census-root", "/tmp/r", "--ledger", "/tmp/l", "/nonexistent/corpus.json"),
+			Entry("two corpus manifests", "exactly one corpus manifest", "census", "--coach", "/bin/true", "--census-root", "/tmp/r", "--ledger", "/tmp/l", "a.json", "b.json"),
+			Entry("no census root", "--census-root", "census", "--coach", "/bin/true", "--ledger", "/tmp/l", "corpus.json"),
+			Entry("no ledger", "--ledger", "census", "--coach", "/bin/true", "--census-root", "/tmp/r", "corpus.json"),
 		)
 	})
 

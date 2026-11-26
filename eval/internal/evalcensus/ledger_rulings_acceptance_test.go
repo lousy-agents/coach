@@ -64,6 +64,31 @@ var _ = Describe("the census rulings", func() {
 		})
 	})
 
+	DescribeTable("an analysis_status record takes only a status, from an automated census",
+		func(mutate func(*evalcensus.Record), allowed bool) {
+			record := automatedRecord("r1", `"measured"`)
+			record.Measure, record.Source, record.Target.Path, record.Target.Lines = "analysis_status", evalcensus.Source{Kind: "census", Ref: "abc"}, ".", nil
+			mutate(&record)
+
+			err := evalcensus.AppendRecords(ledgerPath(), []evalcensus.Record{record})
+			if allowed {
+				Expect(err).NotTo(HaveOccurred())
+			} else {
+				Expect(err).To(MatchError(evalcensus.ErrInvalidRecord))
+			}
+		},
+		Entry("measured", func(r *evalcensus.Record) {}, true),
+		Entry("not_exercised", func(r *evalcensus.Record) { r.Value = json.RawMessage(`"not_exercised"`) }, true),
+		Entry("not_adjudicable_only", func(r *evalcensus.Record) { r.Value = json.RawMessage(`"not_adjudicable_only"`) }, true),
+		Entry("analysis_failed", func(r *evalcensus.Record) { r.Value = json.RawMessage(`"analysis_failed"`) }, true),
+		Entry("out_of_scope", func(r *evalcensus.Record) { r.Value = json.RawMessage(`"out_of_scope"`) }, true),
+		Entry("agree", func(r *evalcensus.Record) { r.Value = json.RawMessage(`"agree"`) }, false),
+		Entry("a number", func(r *evalcensus.Record) { r.Value = json.RawMessage(`3`) }, false),
+		Entry("a human rater", func(r *evalcensus.Record) {
+			r.Source, r.Rater, r.Rationale = evalcensus.Source{Kind: "human", Ref: "x"}, evalcensus.Rater{ID: strPtr("a reviewer"), Kind: "human"}, "read it"
+		}, false),
+	)
+
 	When("a write stops part way through", func() {
 		It("truncates the ledger back to its length before the append", func() {
 			path := ledgerPath()

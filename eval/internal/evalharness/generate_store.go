@@ -3,15 +3,11 @@ package evalharness
 import (
 	"fmt"
 	"os"
-	"os/exec"
 
 	"github.com/lousy-agents/coach/eval/internal/evalgen"
 )
 
 func storeFor(request GenerateRequest) (evalgen.Store, error) {
-	if _, err := exec.LookPath("go"); err != nil {
-		return evalgen.Store{}, fmt.Errorf("the go toolchain is not on PATH: generated programs are validated with go build, vet and test")
-	}
 	store := evalgen.DefaultStore()
 	if request.Panel == PanelHeldOut {
 		store.OracleRoot = os.Getenv("EVAL_ORACLE_DIR")

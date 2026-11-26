@@ -9,6 +9,13 @@
     "kind": {"enum": ["pre_run", "study", "census", "history", "baseline"]},
     "recorded": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
     "cell": {"type": "string", "minLength": 1},
-    "run": {"$ref": "run.schema.json"}
-  }
+    "run": {"type": "object"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"kind": {"const": "census"}}, "required": ["kind"]},
+      "then": {"properties": {"run": {"$ref": "census_run.schema.json"}}},
+      "else": {"properties": {"run": {"$ref": "run.schema.json"}}}
+    }
+  ]
 }
