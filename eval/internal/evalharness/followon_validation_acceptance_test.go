@@ -1,6 +1,8 @@
 package evalharness_test
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -35,6 +37,21 @@ import "testing"
 
 func TestNothing(t *testing.T) {}
 `
+
+// copiesALock passes a lock by value, which go vet reports and go test's own vet subset does not.
+func copiesALock(pkg string) string {
+	return "package " + pkg + "\n\nimport \"sync\"\n\nfunc copiesALock(lock sync.Mutex) { _ = lock }\n"
+}
+
+func entryDirectory(program evalgen.Program) string {
+	entry := program.Manifest.Template.APISurface[0].Entry
+	return entry[:strings.LastIndex(entry, ".")]
+}
+
+func entryPackage(program evalgen.Program) string {
+	directory := entryDirectory(program)
+	return directory[strings.LastIndex(directory, "/")+1:]
+}
 
 func followOnProgram() evalgen.Program {
 	cell, err := evalgen.CellFromIndex(1)
@@ -73,6 +90,26 @@ var _ = Describe("native validation of a program's follow-on slot", func() {
 
 		Expect(err).To(MatchError(ContainSubstring("follow-on oracle")))
 		Expect(rejectionStep(err)).To(Equal(evalgen.StepFollowOnOracle))
+	})
+
+	It("rejects a clean oracle that passes its tests but fails go vet (AC-20)", func() {
+		program := followOnProgram()
+		program.Solution[entryDirectory(program)+"/copylock.go"] = []byte(copiesALock(entryPackage(program)))
+
+		err := evalgen.Validate(program)
+
+		Expect(err).To(MatchError(ContainSubstring("clean oracle")))
+		Expect(err).To(MatchError(ContainSubstring("vet")))
+	})
+
+	It("rejects a follow-on oracle that passes its tests but fails go vet (AC-20)", func() {
+		program := followOnProgram()
+		program.FollowOnSolution[entryDirectory(program)+"/copylock.go"] = []byte(copiesALock(entryPackage(program)))
+
+		err := evalgen.Validate(program)
+
+		Expect(err).To(MatchError(ContainSubstring("follow-on oracle")))
+		Expect(err).To(MatchError(ContainSubstring("vet")))
 	})
 
 	It("accepts a generated program (AC-20)", func() {

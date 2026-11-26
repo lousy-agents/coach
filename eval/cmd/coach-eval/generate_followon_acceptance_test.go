@@ -2,6 +2,9 @@ package main_test
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -118,4 +121,79 @@ var _ = Describe("a generated Go program's follow-on slot", func() {
 func followOnFirstField(manifest map[string]any) string {
 	template := manifest["template"].(map[string]any)
 	return template["follow_on"].(map[string]any)["first_field"].(string)
+}
+
+func entityFieldNames(tree map[string][]byte, entity string) []string {
+	for _, content := range tree {
+		parsed, err := parser.ParseFile(token.NewFileSet(), "", content, 0)
+		if err != nil {
+			continue
+		}
+		if names := structFieldNames(parsed, entity); names != nil {
+			return names
+		}
+	}
+	return nil
+}
+
+func structFieldNames(file *ast.File, entity string) []string {
+	var names []string
+	ast.Inspect(file, func(node ast.Node) bool {
+		spec, isType := node.(*ast.TypeSpec)
+		if !isType || spec.Name.Name != entity {
+			return true
+		}
+		if structure, isStruct := spec.Type.(*ast.StructType); isStruct {
+			for _, field := range structure.Fields.List {
+				names = append(names, field.Names[0].Name)
+			}
+		}
+		return false
+	})
+	return names
+}
+
+var _ = Describe("a generated Go program's follow-on manifest entry", func() {
+	for _, cell := range programCells[:4] {
+		It("names the entity's two fields in order and the entry's symbol, so the request names the right field ("+cell.entry+") (AC-19)", func() {
+			program := generateOne(GinkgoT().TempDir(), append(cell.flags(), "--seed", "9")...)
+			manifest := manifestOf(program)
+			template := manifest["template"].(map[string]any)
+			followOn := template["follow_on"].(map[string]any)
+
+			fields := entityFieldNames(readTree(program.Path), entityOf(program))
+			Expect(fields).To(HaveLen(4), "ID, Name, the first field and the second")
+			Expect(followOn["first_field"]).To(Equal(fields[2]))
+			Expect(followOn["field"]).To(Equal(fields[3]))
+			surface := template["api_surface"].([]any)[0].(map[string]any)
+			Expect(followOn["entry"]).To(Equal(surface["entry"]))
+		})
+	}
+
+	It("regenerates a cached program whose follow-on tests no longer match its id (AC-19)", func() {
+		cacheHome := GinkgoT().TempDir()
+		args := append(baseCell.flags(), "--seed", "6")
+		first := generateOne(cacheHome, args...)
+		tests := readTree(filepath.Join(first.OracleDir, "followon", "tests"))
+		var path string
+		for candidate := range tests {
+			path = candidate
+		}
+		Expect(path).NotTo(BeEmpty())
+		Expect(os.WriteFile(filepath.Join(first.OracleDir, "followon", "tests", path), []byte("package tampered\n"), 0o644)).To(Succeed())
+
+		repaired := generateOne(cacheHome, args...)
+
+		Expect(repaired.Cache).To(Equal("miss"))
+		Expect(readTree(filepath.Join(repaired.OracleDir, "followon", "tests"))).To(Equal(tests))
+	})
+})
+
+func entityOf(program generatedProgram) string {
+	for _, content := range readTree(program.Path) {
+		if match := regexp.MustCompile(`(?m)^type (Account|Order|Patient|Book|Invoice) struct`).FindSubmatch(content); match != nil {
+			return string(match[1])
+		}
+	}
+	return ""
 }
