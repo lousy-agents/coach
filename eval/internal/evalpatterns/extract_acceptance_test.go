@@ -35,13 +35,13 @@ func decodeProfile(raw []byte) map[string]any {
 
 var _ = Describe("extracting a profile from a checkout (#872 Task 2)", func() {
 	When("the checkout is the stand-in tree", func() {
-		It("records each measure of its production Go files, and nothing of its tests, testdata or vendor (AC-2.3, AC-2.5, AC-2.6)", func() {
+		It("records each measure of its production Go files, and nothing of its tests, testdata or vendor (AC-2.1 to AC-2.6, AC-2.8)", func() {
 			profile := decodeProfile(extract(standInTree()))
 
 			Expect(profile["dimensions"]).To(Equal(map[string]any{
-				"layers": map[string]any{},
+				"layers": map[string]any{"2": 1.0},
 				"entry":  map[string]any{"http_handler": 2.0, "method": 1.0, "function": 4.0},
-				"depth":  map[string]any{},
+				"depth":  map[string]any{"0": 6.0, "1": 1.0},
 				"trap":   nil, "field": nil, "direction": nil,
 			}))
 			Expect(profile["shapes"]).To(Equal(map[string]any{
@@ -51,7 +51,11 @@ var _ = Describe("extracting a profile from a checkout (#872 Task 2)", func() {
 				"constructor":    map[string]any{"assigns_only": 1.0, "does_work": 1.0},
 			}))
 			Expect(profile["roles"]).To(Equal(map[string]any{}))
-			Expect(profile["not_covered"]).To(Equal([]any{}))
+			Expect(profile["not_covered"]).To(Equal([]any{
+				map[string]any{"shape": "depth", "count": 7.0},
+				map[string]any{"shape": "layers", "count": 1.0},
+				map[string]any{"shape": "packages", "count": 2.0},
+			}))
 		})
 
 		It("carries the entry's label, SHA and licence, the extractor version and no other free text", func() {
