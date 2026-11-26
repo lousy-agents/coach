@@ -6,53 +6,80 @@ import (
 	"testing/fstest"
 )
 
+type ambiguityCase struct {
+	name         string
+	ambiguity    layerAmbiguity
+	unclassified bool
+	want         []string
+}
+
+func ambiguityRow(name string, ambiguity layerAmbiguity, unclassified bool, want ...string) ambiguityCase {
+	return ambiguityCase{name: name, ambiguity: ambiguity, unclassified: unclassified, want: want}
+}
+
 func TestLayerAmbiguityDiagnostics(t *testing.T) {
-	layer := BypassLayer{Name: "service", Prefixes: []string{"pkg/service"}}
-	tests := []struct {
-		name         string
-		ambiguity    layerAmbiguity
-		unclassified bool
-		want         []string
-	}{
-		{"nothing is ambiguous", layerAmbiguity{}, false, nil},
-		{"a matched layer with a node outside every layer is ambiguous without the unmatched cause", layerAmbiguity{}, true, []string{DiagLayerBypassAmbiguousLayer}},
-		{"a layer under which nothing sits names the cause", layerAmbiguity{ambiguous: true, unmatched: true}, false, []string{DiagLayerBypassAmbiguousLayer, DiagLayerBypassRequiredLayerUnmatched}},
-		{"a layer that is ambiguous for another reason names no cause", layerAmbiguity{ambiguous: true}, false, []string{DiagLayerBypassAmbiguousLayer}},
-		{"an unclassified node does not repeat the ambiguous code", layerAmbiguity{ambiguous: true, unmatched: true}, true, []string{DiagLayerBypassAmbiguousLayer, DiagLayerBypassRequiredLayerUnmatched}},
+	applied, unmatched, otherReason := layerAmbiguity{}, layerAmbiguity{ambiguous: true, unmatched: true}, layerAmbiguity{ambiguous: true}
+	both := []string{DiagLayerBypassAmbiguousLayer, DiagLayerBypassRequiredLayerUnmatched}
+	tests := []ambiguityCase{
+		ambiguityRow("nothing is ambiguous", applied, false),
+		ambiguityRow("a matched layer with a node outside every layer is ambiguous without the unmatched cause", applied, true, DiagLayerBypassAmbiguousLayer),
+		ambiguityRow("a layer under which nothing sits names the cause", unmatched, false, both...),
+		ambiguityRow("a layer that is ambiguous for another reason names no cause", otherReason, false, DiagLayerBypassAmbiguousLayer),
+		ambiguityRow("an unclassified node does not repeat the ambiguous code", unmatched, true, both...),
 	}
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := diagnosticCodes(test.ambiguity.diagnostics(nil, layer, test.unclassified))
-			if !slices.Equal(got, test.want) {
-				t.Fatalf("diagnostic codes = %v, want %v", got, test.want)
-			}
-		})
+		t.Run(test.name, test.run)
 	}
 }
 
+var serviceLayer = BypassLayer{Name: "service", Prefixes: []string{"pkg/service"}}
+
+func (c ambiguityCase) run(t *testing.T) {
+	expectDiagnosticCodes(t, c.ambiguity.diagnostics(nil, serviceLayer, c.unclassified), c.want)
+}
+
+func expectDiagnosticCodes(t *testing.T, diagnostics []Diagnostic, want []string) {
+	t.Helper()
+	if got := diagnosticCodes(diagnostics); !slices.Equal(got, want) {
+		t.Fatalf("diagnostic codes = %v, want %v", got, want)
+	}
+}
+
+type packageCase struct {
+	name  string
+	files []string
+	want  bool
+}
+
+func packageRow(name string, want bool, files ...string) packageCase {
+	return packageCase{name: name, files: files, want: want}
+}
+
 func TestGoLayerHasPackage(t *testing.T) {
-	layer := BypassLayer{Name: "service", Prefixes: []string{"pkg/service"}}
-	tests := []struct {
-		name  string
-		files []string
-		want  bool
-	}{
-		{"a source file in the layer's directory", []string{"pkg/service/types.go"}, true},
-		{"a source file in a directory below it", []string{"pkg/service/inner/types.go"}, true},
-		{"only a test file in the layer's directory", []string{"pkg/service/types_test.go"}, false},
-		{"a source file outside the layer", []string{"pkg/other/types.go"}, false},
-		{"a file that is not Go source", []string{"pkg/service/README.md"}, false},
-		{"a directory that only shares a stem with the prefix", []string{"pkg/servicex/types.go"}, false},
-		{"vendored code under the prefix", []string{"pkg/service/vendor/dep/dep.go"}, false},
-		{"testdata under the prefix", []string{"pkg/service/testdata/case.go"}, false},
-		{"a hidden directory under the prefix", []string{"pkg/service/.cache/gen.go"}, false},
+	tests := []packageCase{
+		packageRow("a source file in the layer's directory", true, "pkg/service/types.go"),
+		packageRow("a source file in a directory below it", true, "pkg/service/inner/types.go"),
+		packageRow("only a test file in the layer's directory", false, "pkg/service/types_test.go"),
+		packageRow("a source file outside the layer", false, "pkg/other/types.go"),
+		packageRow("a file that is not Go source", false, "pkg/service/README.md"),
+		packageRow("a directory that only shares a stem with the prefix", false, "pkg/servicex/types.go"),
+		packageRow("vendored code under the prefix", false, "pkg/service/vendor/dep/dep.go"),
+		packageRow("testdata under the prefix", false, "pkg/service/testdata/case.go"),
+		packageRow("a hidden directory under the prefix", false, "pkg/service/.cache/gen.go"),
 	}
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := goLayerHasPackage(snapshotOf(test.files), layer); got != test.want {
-				t.Fatalf("goLayerHasPackage(%v) = %v, want %v", test.files, got, test.want)
-			}
-		})
+		t.Run(test.name, test.run)
+	}
+}
+
+func (c packageCase) run(t *testing.T) {
+	expectLayerHasPackage(t, c.files, serviceLayer, c.want)
+}
+
+func expectLayerHasPackage(t *testing.T, files []string, layer BypassLayer, want bool) {
+	t.Helper()
+	if got := goLayerHasPackage(snapshotOf(files), layer); got != want {
+		t.Fatalf("goLayerHasPackage(%v) = %v, want %v", files, got, want)
 	}
 }
 
