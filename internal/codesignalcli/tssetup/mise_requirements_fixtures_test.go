@@ -47,14 +47,15 @@ func requireOrSkip(requirement string, cause error) {
 	}
 }
 
-// probeRegistry reports why registryURL cannot be reached with the client's timeout and the process's proxy settings.
+// probeRegistry treats any 4xx or 5xx as unavailable: a 429 or a mirror that lacks the package would otherwise send the
+// real install on to fail as a false red. It reports why registryURL cannot be reached with the client's timeout and the process's proxy settings.
 func probeRegistry(client *http.Client, registryURL string) error {
 	response, err := client.Get(registryURL)
 	if err != nil {
 		return fmt.Errorf("probe %s: %w", registryURL, err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode >= http.StatusInternalServerError {
+	if response.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("probe %s: status %d", registryURL, response.StatusCode)
 	}
 	return nil
