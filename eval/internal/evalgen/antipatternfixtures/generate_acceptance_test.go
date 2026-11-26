@@ -25,7 +25,7 @@ var _ = Describe("profile-derived anti-pattern fixtures (#872 Task 5)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ids(out)).To(Equal([]string{"arrow-code", "constructor-does-real-work", "god-file", "spaghetti-conditional"}))
 			Expect(result.Emitted).To(HaveLen(4))
-			Expect(allFiles(out)).To(HaveEach(Or(Equal("expect.json"), HaveSuffix(".txt"))))
+			Expect(allFiles(out)).To(HaveEach(Or(HaveSuffix("/expect.json"), HaveSuffix(".txt"))))
 			for _, id := range ids(out) {
 				Expect(tree(filepath.Join(out, id))).To(SatisfyAll(HaveKey("expect.json"), HaveKey("bad/go.mod.txt"), HaveKey("good/go.mod.txt")))
 			}
