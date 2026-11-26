@@ -64,7 +64,17 @@ type compareOutcome struct {
 
 // runCompare runs the built coach-eval binary, so exit codes are the contract under test.
 func runCompare(stateRoot string, runIDs ...string) compareOutcome {
-	cmd := exec.Command(coachEvalBinary, append([]string{"compare"}, runIDs...)...)
+	return runWithStateRoot(stateRoot, exec.Command(coachEvalBinary, append([]string{"compare"}, runIDs...)...))
+}
+
+// runCompareThroughMise runs the eval-compare mise task from the repository root.
+func runCompareThroughMise(stateRoot string, runIDs ...string) compareOutcome {
+	cmd := exec.Command("mise", append([]string{"run", "eval-compare", "--"}, runIDs...)...)
+	cmd.Dir = filepath.Join("..", "..", "..")
+	return runWithStateRoot(stateRoot, cmd)
+}
+
+func runWithStateRoot(stateRoot string, cmd *exec.Cmd) compareOutcome {
 	cmd.Env = append(os.Environ(), "XDG_STATE_HOME="+stateRoot)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
