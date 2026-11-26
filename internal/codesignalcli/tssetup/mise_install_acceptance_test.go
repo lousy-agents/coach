@@ -3,7 +3,6 @@ package tssetup
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -266,7 +265,7 @@ func neverExecutesBecauseRealInstallRunsFrom() {
 
 func classifiesFreshlyInstalledCompilerEligibleNotMerely() {
 	requireToolOnPath("mise")
-	requireOrSkip("the public npm registry registry.npmjs.org", probeRegistry(&http.Client{Timeout: registryProbeTimeout}, publicNpmRegistryProbeURL))
+	requirePublicNpmRegistry()
 	freshMiseInstallEnv()
 
 	result := installMiseTypescriptGlobal(tstoolchain.LocateMiseTypescriptInstall, context.Background(), "7.0.2")

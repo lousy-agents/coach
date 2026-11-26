@@ -1,6 +1,7 @@
 package tssetup
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -39,6 +40,14 @@ func requireToolOnPath(name string) {
 	requireOrSkip(name, err)
 }
 
+func requirePublicNpmRegistry() {
+	skipReason, failure := registryProbeOutcome(probeRegistry(&http.Client{Timeout: registryProbeTimeout}, publicNpmRegistryProbeURL), realToolchainRequired())
+	Expect(failure).To(BeEmpty())
+	if skipReason != "" {
+		Skip(skipReason)
+	}
+}
+
 func requireOrSkip(requirement string, cause error) {
 	skipReason, failure := outcomeWhenRequirementMissing(requirement, cause, realToolchainRequired())
 	Expect(failure).To(BeEmpty())
@@ -47,22 +56,33 @@ func requireOrSkip(requirement string, cause error) {
 	}
 }
 
+// registryProbeMisconfigured is a 4xx answer other than 429: the probe URL is wrong or the registry does not serve it, so
+// no later run would fix it, and skipping would hide it.
 type registryProbeMisconfigured struct{ error }
 
 func registryProbeOutcome(probeErr error, required bool) (skipReason, failure string) {
+	var misconfigured *registryProbeMisconfigured
+	if errors.As(probeErr, &misconfigured) {
+		return "", probeErr.Error()
+	}
 	return outcomeWhenRequirementMissing("the public npm registry", probeErr, required)
 }
 
-// probeRegistry treats any 4xx or 5xx as unavailable: a 429 or a mirror that lacks the package would otherwise send the
-// real install on to fail as a false red. It reports why registryURL cannot be reached with the client's timeout and the process's proxy settings.
+// probeRegistry reports why registryURL cannot be installed from now, with the client's timeout and the process's proxy
+// settings: a transport error, a 429 or a 5xx is unavailable, any other 4xx is a misconfigured probe, and a 2xx or 3xx is reachable.
 func probeRegistry(client *http.Client, registryURL string) error {
 	response, err := client.Get(registryURL)
 	if err != nil {
 		return fmt.Errorf("probe %s: %w", registryURL, err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("probe %s: status %d", registryURL, response.StatusCode)
+	status := response.StatusCode
+	probeErr := fmt.Errorf("probe %s: status %d", registryURL, status)
+	switch {
+	case status == http.StatusTooManyRequests || status >= http.StatusInternalServerError:
+		return probeErr
+	case status >= http.StatusBadRequest:
+		return &registryProbeMisconfigured{probeErr}
 	}
 	return nil
 }
