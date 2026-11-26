@@ -8,8 +8,10 @@ import (
 
 // TestSampleCellsFollowsTheProfile draws 200 of the 1,728 cells at seed 7
 // from a profile that saw only five layers and depth two. Uniformly, a third
-// of the cells have five layers and a quarter depth two; the profile's
-// weights (41/43 and 41/44 of each dimension) must lift both far above that.
+// of the cells have five layers and a quarter depth two (about 67 and 50 of
+// 200); the profile's weights (41/43 and 41/44 of each dimension) must lift
+// both to at least 80% and 75%. The draw is deterministic at a fixed seed,
+// so the exact counts are pinned too.
 func TestSampleCellsFollowsTheProfile(t *testing.T) {
 	cells, err := evalgen.SampleCells(skewedProfile(t), 200, 7)
 	if err != nil {
@@ -25,6 +27,9 @@ func TestSampleCellsFollowsTheProfile(t *testing.T) {
 	depthTwo := countWhere(cells, func(c evalgen.Cell) bool { return c.Depth == 2 })
 	if fiveLayers < 160 || depthTwo < 150 {
 		t.Fatalf("five layers in %d and depth two in %d of 200; the profile weights them over uniform's ~67 and ~50", fiveLayers, depthTwo)
+	}
+	if fiveLayers != 180 || depthTwo != 156 {
+		t.Fatalf("five layers in %d and depth two in %d of 200 at seed 7; the draw is deterministic and was 180 and 156", fiveLayers, depthTwo)
 	}
 }
 
