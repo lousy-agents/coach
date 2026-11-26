@@ -13,13 +13,9 @@ func (r tsResolver) pathsCandidates(specifier string) []string {
 	if !ok {
 		return nil
 	}
-	base := r.config.pathsDir
-	if r.config.hasBaseURL {
-		base = r.config.baseURL
-	}
 	var candidates []string
 	for _, target := range r.config.paths[pattern] {
-		candidates = append(candidates, path.Join(base, strings.Replace(target, "*", star, 1)))
+		candidates = append(candidates, path.Join(r.config.pathsDir, strings.Replace(target, "*", star, 1)))
 	}
 	return candidates
 }
