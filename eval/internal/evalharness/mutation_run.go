@@ -13,8 +13,9 @@ import (
 
 const emptyGremlinsReport = `{"files":[]}`
 
-// runGremlins unleashes Gremlins on a tree and returns its JSON report. Gremlins writes no report when the
-// tree has nothing to mutate, which is an empty report.
+// runGremlins unleashes Gremlins on a tree and returns its JSON report. Gremlins v0.6.0 writes no report when
+// the tree has nothing to mutate (observed on branch-free programs, and relied on rather than documented by the
+// tool), so a missing report is an empty one; any other failure to read it is an error, never a vacuous pass.
 func runGremlins(gremlins Gremlins, tree map[string][]byte) ([]byte, error) {
 	directory, err := os.MkdirTemp("", "coach-eval-mutation")
 	if err != nil {
