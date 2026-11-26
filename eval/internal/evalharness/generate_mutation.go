@@ -13,13 +13,15 @@ func pinnedGremlins(request GenerateRequest) (Gremlins, error) {
 		return Gremlins{}, nil
 	}
 	if binary, version := gremlinsOverride(); binary != "" {
-		return Gremlins{Binary: binary, Version: version}, nil
+		return Gremlins{Binary: binary, Version: version, Limit: gremlinsLimit()}, nil
 	}
 	module, err := findEvalModule()
 	if err != nil {
 		return Gremlins{}, err
 	}
-	return ResolveGremlins(module, nil)
+	gremlins, err := ResolveGremlins(module, nil)
+	gremlins.Limit = gremlinsLimit()
+	return gremlins, err
 }
 
 // judgeMutation runs the gate for a program that passed the other steps, unless the run skipped it. A skipped

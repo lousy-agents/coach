@@ -2,7 +2,11 @@
 
 package evalharness
 
-import "github.com/lousy-agents/coach/eval/internal/evaldetect"
+import (
+	"time"
+
+	"github.com/lousy-agents/coach/eval/internal/evaldetect"
+)
 
 // faultsFromEnvironment is empty in every build but the acceptance one: the release binary cannot be made to
 // reject a program by an environment variable.
@@ -13,3 +17,6 @@ func gremlinsOverride() (binary, version string) { return "", "" }
 
 // detectorVersion is the pinned detector's version in every build but the acceptance one.
 func detectorVersion() string { return evaldetect.PinnedGocognitVersion }
+
+// gremlinsLimit is how long a Gremlins run may take, in every build but the acceptance one.
+func gremlinsLimit() time.Duration { return DefaultGremlinsLimit }

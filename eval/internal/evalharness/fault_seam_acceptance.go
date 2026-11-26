@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lousy-agents/coach/eval/internal/evaldetect"
 	"github.com/lousy-agents/coach/eval/internal/evalgen"
@@ -70,4 +71,14 @@ func detectorVersion() string {
 		return version
 	}
 	return evaldetect.PinnedGocognitVersion
+}
+
+// gremlinsTimeoutVariable shortens the time limit of a Gremlins run, so a spec can show a hung one killed.
+const gremlinsTimeoutVariable = "COACH_EVAL_GREMLINS_TIMEOUT"
+
+func gremlinsLimit() time.Duration {
+	if limit, err := time.ParseDuration(os.Getenv(gremlinsTimeoutVariable)); err == nil && limit > 0 {
+		return limit
+	}
+	return DefaultGremlinsLimit
 }
