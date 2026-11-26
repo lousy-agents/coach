@@ -17,13 +17,13 @@ const (
 // LedgerLine builds one census run's ledger line, newline included. The
 // ledger's schema lives in the tooling ring, which this package may not
 // import, so coach-eval supplies the builder.
-type LedgerLine func(summary Summary, exit int) ([]byte, error)
+type LedgerLine func(summary Summary, exit int, recorded time.Time) ([]byte, error)
 
 // Census runs `coach-eval census --coach <binary> --census-root <dir>
 // --ledger <runs.jsonl> <corpus.json>`. It appends each rule's status as a
 // record under the census root and the run as a ledger line, then prints the
 // run's summary as JSON.
-func Census(args []string, stdout, stderr io.Writer, ledgerLine LedgerLine) int {
+func Census(args []string, stdout, stderr io.Writer, ledgerLine LedgerLine, now func() time.Time) int {
 	parsed, err := parseCensusArgs(args)
 	if err != nil {
 		fmt.Fprintf(stderr, "coach-eval census: %v\n", err)
@@ -52,7 +52,7 @@ func Census(args []string, stdout, stderr io.Writer, ledgerLine LedgerLine) int 
 }
 
 func recordRun(parsed censusArgs, summary Summary, exit int, ledgerLine LedgerLine) error {
-	line, err := ledgerLine(summary, exit)
+	line, err := ledgerLine(summary, exit, time.Now().UTC())
 	if err != nil {
 		return fmt.Errorf("build census ledger line: %w", err)
 	}

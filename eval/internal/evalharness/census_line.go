@@ -11,7 +11,7 @@ import (
 // census:<corpus_id>, validated against the ledger line schema. It names
 // the Coach binary by base name: its sha256 is the identity, and its full
 // path is a build directory that differs on every run.
-func CensusLine(summary evalcensus.Summary, exit int) ([]byte, error) {
+func CensusLine(summary evalcensus.Summary, exit int, recorded time.Time) ([]byte, error) {
 	now := time.Now().UTC()
 	data, err := validLedgerLine(map[string]any{
 		"schema_version": "1",

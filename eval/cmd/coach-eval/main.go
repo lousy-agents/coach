@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/lousy-agents/coach/eval/internal/evalcensus"
 	"github.com/lousy-agents/coach/eval/internal/evalharness"
@@ -23,10 +24,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return evalharness.Compare(stateHome(), args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "census" {
-		return evalcensus.Census(args[1:], stdout, stderr, evalharness.CensusLine)
+		return evalcensus.Census(args[1:], stdout, stderr, evalharness.CensusLine, time.Now)
 	}
 	if len(args) > 0 && args[0] == "history" {
-		return evalhistory.History(args[1:], stdout, stderr, evalharness.HistoryLine)
+		return evalhistory.History(args[1:], stdout, stderr, evalharness.HistoryLine, time.Now)
 	}
 	if len(args) > 0 && args[0] == "generate" {
 		return evalharness.Generate(args[1:], stdout, stderr)

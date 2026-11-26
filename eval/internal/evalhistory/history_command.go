@@ -19,13 +19,13 @@ const (
 // LedgerLine builds one history run's ledger line, newline included. The
 // ledger's schema lives in the tooling ring, which this package may not
 // import, so coach-eval supplies the builder.
-type LedgerLine func(summary Summary, exit int) ([]byte, error)
+type LedgerLine func(summary Summary, exit int, recorded time.Time) ([]byte, error)
 
 // History runs `coach-eval history --coach <binary> --census-root <dir>
 // --ledger <runs.jsonl> --seed <n> <corpus.json>`. It appends the run's
 // association records and its ledger line as one unit, then prints the
 // run's summary as JSON.
-func History(args []string, stdout, stderr io.Writer, ledgerLine LedgerLine) int {
+func History(args []string, stdout, stderr io.Writer, ledgerLine LedgerLine, now func() time.Time) int {
 	summary, exit, err := history(args, ledgerLine)
 	if err != nil {
 		fmt.Fprintf(stderr, "coach-eval history: %v\n", err)
@@ -57,7 +57,7 @@ func history(args []string, ledgerLine LedgerLine) (Summary, int, error) {
 	if summary.AnalysisFailed() {
 		exit = HistoryAnalysisFailed
 	}
-	line, err := ledgerLine(summary, exit)
+	line, err := ledgerLine(summary, exit, time.Now().UTC())
 	if err != nil {
 		return Summary{}, 0, fmt.Errorf("build history ledger line: %w", err)
 	}
