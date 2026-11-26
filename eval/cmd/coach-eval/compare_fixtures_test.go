@@ -85,6 +85,11 @@ func runCommand(stateRoot, dir, name string, args ...string) compareOutcome {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "XDG_STATE_HOME="+stateRoot)
+	return runCmd(cmd)
+}
+
+// runCmd runs cmd to completion and returns its exit code and output.
+func runCmd(cmd *exec.Cmd) compareOutcome {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
