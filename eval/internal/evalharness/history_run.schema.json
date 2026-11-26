@@ -35,7 +35,8 @@
           "evidence": {"type": "string"},
           "commits": {"type": "integer", "minimum": 0},
           "fixes": {"type": "integer", "minimum": 0},
-          "match_rate": {"type": "number", "minimum": 0, "maximum": 1},
+          "match_rate": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+          "match_rate_null_reason": {"type": "string", "minLength": 1},
           "unmapped_fixes": {
             "type": "object",
             "additionalProperties": false,
