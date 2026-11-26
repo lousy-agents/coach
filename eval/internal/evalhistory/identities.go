@@ -1,11 +1,20 @@
 package evalhistory
 
 // unitIdentities maps the identity of every line of every unit at since to
-// the unit's index.
+// the unit's index, blaming each file once however many units it holds.
 func unitIdentities(repoDir, since string, units []Unit) (map[lineIdentity]int, error) {
 	owner := map[lineIdentity]int{}
+	blamed := map[string][]lineIdentity{}
 	for index, unit := range units {
-		identities, err := blameLines(repoDir, since, unit.Path, []lineRange{{unit.Start, unit.End}})
+		all, ok := blamed[unit.Path]
+		if !ok {
+			var err error
+			if all, err = blameFile(repoDir, since, unit.Path); err != nil {
+				return nil, err
+			}
+			blamed[unit.Path] = all
+		}
+		identities, err := selectLines(all, unit.Path, since, []lineRange{{unit.Start, unit.End}})
 		if err != nil {
 			return nil, err
 		}
