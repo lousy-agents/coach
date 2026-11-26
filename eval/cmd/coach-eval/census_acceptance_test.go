@@ -56,6 +56,22 @@ var _ = Describe("coach-eval census", func() {
 		})
 	})
 
+	When("Coach reports the project coverage incomplete", func() {
+		It("records analysis_failed and exits 3", func() {
+			path, sha := censusRepo(map[string]string{
+				"go.mod":                   "module example.com/fx\n\ngo 1.26.0\n",
+				"pkg/app/a.go":             "package app\n\nfunc A() {}\n",
+				".lousy-agents/coach.json": `{"schema_version":"1","roots":["."],"layers":[{"name":"usecases","prefixes":["pkg/usecases"]},{"name":"app","prefixes":["pkg/app"]}],"forbidden_imports":[],"required_layer":"usecases"}`,
+			})
+			corpus := writeCorpus(corpusRepo{ID: "partial", Path: path, SHA: sha, Language: "go"})
+
+			outcome, summary := runCensus(corpus, coachBinary())
+
+			Expect(outcome.exitCode).To(Equal(3), outcome.stderr)
+			Expect(summary.status("partial").Status).To(Equal("analysis_failed"))
+		})
+	})
+
 	When("a mutated threshold is in force", func() {
 		It("no longer reports the 12 measured findings, so the expectation above turns red", func() {
 			busyPath, busySHA := censusRepo(goRepoFiles(complexFunctions(12)))
@@ -130,11 +146,10 @@ var _ = Describe("coach-eval census", func() {
 		})
 	})
 
-	When("the caller's global git configuration defines a filter a repository selects", func() {
-		It("does not run it", func() {
+	DescribeTable("a filter in the caller's global git configuration is never run",
+		func(globalEnv func(markers string) string) {
 			markers := GinkgoT().TempDir()
-			global := filepath.Join(markers, "gitconfig")
-			Expect(os.WriteFile(global, []byte("[filter \"planted\"]\n\tsmudge = touch "+filepath.Join(markers, "smudge")+"; cat\n"), 0o644)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(markers, ".gitconfig"), []byte("[filter \"planted\"]\n\tsmudge = touch "+filepath.Join(markers, "smudge")+"; cat\n"), 0o644)).To(Succeed())
 			path, sha := censusRepo(map[string]string{
 				"go.mod":         "module example.com/fx\n\ngo 1.26.0\n",
 				"p/p.go":         complexFunctions(1),
@@ -142,10 +157,12 @@ var _ = Describe("coach-eval census", func() {
 			})
 			corpus := writeCorpus(corpusRepo{ID: "planted", Path: path, SHA: sha, Language: "go"})
 
-			outcome, _ := runCensus(corpus, coachBinary(), "GIT_CONFIG_GLOBAL="+global)
+			outcome, _ := runCensus(corpus, coachBinary(), globalEnv(markers))
 
 			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 			Expect(filepath.Join(markers, "smudge")).NotTo(BeAnExistingFile())
-		})
-	})
+		},
+		Entry("named by GIT_CONFIG_GLOBAL", func(markers string) string { return "GIT_CONFIG_GLOBAL=" + filepath.Join(markers, ".gitconfig") }),
+		Entry("found through HOME", func(markers string) string { return "HOME=" + markers }),
+	)
 })
