@@ -50,5 +50,5 @@ func reported(findings []evaldetect.Finding) error {
 	for _, finding := range findings {
 		lines = append(lines, fmt.Sprintf("%s %s:%d %s", finding.RuleID, finding.Path, finding.Line, finding.Subject))
 	}
-	return fmt.Errorf("the graded detectors report on the base:\n%s", strings.Join(lines, "\n"))
+	return fmt.Errorf("the graded detectors report:\n%s", strings.Join(lines, "\n"))
 }
