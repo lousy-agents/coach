@@ -155,7 +155,7 @@ mise run wasm-build
 mise run vulncheck
 ```
 
-Once `eval-precommit` (#786) ships, contributors shall run `mise run ci-fast` and `mise run eval-precommit` before commit. `eval-precommit` is model-free and runs locally; it is not in the CI-mirrored list above.
+Once `eval-precommit` (#786) ships, contributors shall run `mise run ci-fast` and `mise run eval-precommit` before commit. `eval-precommit` is model-free and runs locally; it is not in the CI-mirrored list above, and no workflow shall invoke an `eval-*` task.
 
 Run `ci-fast` inside an implement/review loop and `ci-all` for the broadest local run. Neither is the pre-PR gate. `ci-all` reaches `js-install` through its sidecar build, so the sidecar and TypeScript-backend specs do run inside `test` — but `test` carries no `-ginkgo.fail-on-empty`, so if their compiler preconditions fail they skip and `ci-all` stays green. The `projectmodel-sidecar` and `ts-project-backend` leaves exist to make that skip a failure. `platform-smoke` has no local equivalent at all, and no local composite pins Node 26, so `ts-project-backend-node26` proves nothing a local run can reproduce without writing that `mise.local.toml`.
 
