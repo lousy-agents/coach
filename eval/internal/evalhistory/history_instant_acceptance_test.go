@@ -15,7 +15,7 @@ import (
 )
 
 var _ = Describe("the instant a history run is recorded at", func() {
-	It("dates the records and the ledger line from one reading of the clock", func() {
+	It("dates the records and the ledger line from one reading of a clock that ticks past midnight on the next", func() {
 		h := newHistory()
 		since := h.commit("start", map[string]string{"p/s.go": unitsSource})
 		until := h.commit("fix: B", map[string]string{"p/s.go": replaceLine(unitsSource, 8, "\tx := 20")})
@@ -26,7 +26,10 @@ var _ = Describe("the instant a history run is recorded at", func() {
 		root := GinkgoT().TempDir()
 		instant := time.Date(2001, 2, 3, 23, 59, 59, 999, time.UTC)
 		readings := 0
-		clock := func() time.Time { readings++; return instant }
+		clock := func() time.Time {
+			readings++
+			return instant.Add(time.Duration(readings-1) * time.Second)
+		}
 		var recorded []time.Time
 		line := func(_ evalhistory.Summary, _ int, at time.Time) ([]byte, error) {
 			recorded = append(recorded, at)
