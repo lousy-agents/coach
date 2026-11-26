@@ -71,3 +71,24 @@ func detectorVersion() string {
 	}
 	return evaldetect.PinnedGocognitVersion
 }
+
+// The override variables replace the step list and the version a cached program is keyed by, so a spec can change
+// only one of them.
+const (
+	validationStepsVariable   = "COACH_EVAL_VALIDATION_STEPS"
+	validationVersionVariable = "COACH_EVAL_VALIDATION_VERSION"
+)
+
+func validationSteps() []string {
+	if steps := os.Getenv(validationStepsVariable); steps != "" {
+		return strings.Split(steps, ",")
+	}
+	return evalgen.ValidationSteps
+}
+
+func validationVersion() string {
+	if version := os.Getenv(validationVersionVariable); version != "" {
+		return version
+	}
+	return ValidationVersion
+}
