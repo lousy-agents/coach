@@ -46,6 +46,9 @@ var _ = Describe("the api_surface check (design §4, G2: an api_surface symbol m
 		Entry("when the package has no such function (AC-30)", map[string]string{
 			"internal/api/entry/entry.go": "package entry\n\nfunc Other() {}\n",
 		}),
+		Entry("when only a function whose name starts with the symbol's is declared (AC-30)", map[string]string{
+			"internal/api/entry/entry.go": "package entry\n\nfunc Runner() {}\n",
+		}),
 		Entry("when the name is not exported (AC-30)", map[string]string{
 			"internal/api/entry/entry.go": "package entry\n\nfunc run() {}\n",
 		}),

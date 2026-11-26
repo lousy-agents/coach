@@ -76,6 +76,48 @@ var _ = Describe("the oracles' api_surface and required-edge checks (design §4,
 				g.FollowOnSolution[entryFileOf(d)] = declaredWithoutBody(d, n)
 			}),
 	)
+	DescribeTable("rejects at the g2 step, naming the symbol or the edge, when the last hop of the route is the one that is missing (AC-30, AC-31)",
+		func(cell int, rule string, mutate func(generated *evalgen.Program, last int), subject func(generated evalgen.Program, last int) string) {
+			generated := cloned(program(cell))
+			last := len(generated.Manifest.Template.APISurface) - 1
+			Expect(last).To(BeNumerically(">=", 2), "a route of at least three symbols")
+			mutate(&generated, last)
+
+			_, err := evalharness.GradeOracles(generated)
+
+			Expect(err).To(HaveOccurred())
+			Expect(rejectionStep(err)).To(Equal(evalgen.StepG2))
+			Expect(err.Error()).To(ContainSubstring(rule))
+			Expect(err.Error()).To(ContainSubstring(subject(generated, last)))
+		},
+		Entry("the last symbol's function is gone from the first oracle", 0, "api_surface.symbol_absent",
+			func(g *evalgen.Program, last int) {
+				d, _ := surfaceSymbol(*g, last)
+				g.Solution[entryFileOf(d)] = emptyPackage(d)
+			},
+			func(g evalgen.Program, last int) string { d, n := surfaceSymbol(g, last); return d + "." + n }),
+		Entry("the last hop no longer imports the package before it is reached, on a route of three", 0, "architecture.required_edge_absent",
+			func(g *evalgen.Program, last int) {
+				d, n := surfaceSymbol(*g, last-1)
+				g.Solution[entryFileOf(d)] = declaredWithoutBody(d, n)
+			},
+			func(g evalgen.Program, last int) string {
+				from, _ := surfaceSymbol(g, last-1)
+				to, _ := surfaceSymbol(g, last)
+				return from + "->" + to
+			}),
+		Entry("a hop in the middle of a route of four no longer imports the next one", 12, "architecture.required_edge_absent",
+			func(g *evalgen.Program, _ int) {
+				d, n := surfaceSymbol(*g, 1)
+				g.Solution[entryFileOf(d)] = declaredWithoutBody(d, n)
+			},
+			func(g evalgen.Program, _ int) string {
+				from, _ := surfaceSymbol(g, 1)
+				to, _ := surfaceSymbol(g, 2)
+				return from + "->" + to
+			}),
+	)
+
 	It("rejects at the g2 step, instead of panicking, when the manifest names a symbol with no package qualifier (AC-30)", func() {
 		generated := cloned(program(0))
 		generated.Manifest.Template.APISurface = append([]evalgen.APISymbol(nil), generated.Manifest.Template.APISurface...)
@@ -85,6 +127,6 @@ var _ = Describe("the oracles' api_surface and required-edge checks (design §4,
 
 		Expect(err).To(HaveOccurred())
 		Expect(rejectionStep(err)).To(Equal(evalgen.StepG2))
-		Expect(err.Error()).To(ContainSubstring("api_surface.symbol_absent"))
+		Expect(err.Error()).To(ContainSubstring("api_surface.symbol_absent:nodot.\n"), "the subject names the symbol as the manifest wrote it")
 	})
 })
