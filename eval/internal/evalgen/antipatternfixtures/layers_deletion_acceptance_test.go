@@ -10,13 +10,19 @@ import (
 	"github.com/lousy-agents/coach/eval/internal/evalgen/antipatternfixtures"
 )
 
+// withUnvettableGood is the template with its good variant made to fail go vet.
+func withUnvettableGood(template antipatternfixtures.Template) antipatternfixtures.Template {
+	good := template.Good
+	template.Good = func(value int) map[string]string { return withUnusedVariable(good(value)) }
+	return template
+}
+
 // withBrokenSkippedLayer is the templates with the skipped-layer fixture's good variant made to fail go vet.
 func withBrokenSkippedLayer() []antipatternfixtures.Template {
 	var templates []antipatternfixtures.Template
 	for _, template := range antipatternfixtures.Templates() {
 		if template.ID == "skipped-layer" {
-			good := template.Good
-			template.Good = func(value int) map[string]string { return withUnusedVariable(good(value)) }
+			template = withUnvettableGood(template)
 		}
 		templates = append(templates, template)
 	}
