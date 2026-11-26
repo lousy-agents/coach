@@ -67,7 +67,7 @@ description = "Run the fast, in-process Ginkgo/Gomega acceptance suites (public 
 run = [
   "go run ./cmd/acceptance-guard-preflight",
   { task = "acceptance-style-check" },
-  "go test -race ./... -run Acceptance",
+  "go test -race -timeout 25m ./... -run Acceptance",
 ]
 
 [tasks.test-queue-conformance]

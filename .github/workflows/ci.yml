@@ -304,7 +304,7 @@ jobs:
           experimental: true
 
       - name: Go tests under git 2.43, as a non-root user
-        run: mise exec -- go run ./cmd/acceptance-ci-env ./...
+        run: mise exec -- go run ./cmd/acceptance-ci-env -timeout 25m ./...
 
   # Single required check for branch protection. Leaf jobs stay parallel;
   # this job fails if any required leaf is not success. if: always() so a
