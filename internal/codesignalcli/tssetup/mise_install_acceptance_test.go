@@ -34,7 +34,7 @@ var _ = Describe("mise npm-backend install command construction: lifecycle-scrip
 })
 
 var _ = Describe("mise npm-backend install command construction: insulated working directory (coach#328 Task 4, AC-16)", func() {
-	When("the analyzed repository's mise.toml carries a trusted env exec template that would write a sentinel", func() {
+	When("the analyzed repository's mise.toml carries a trusted env exec template that would write a sentinel (needs mise on PATH; serves its own loopback npm registry, so no external service)", func() {
 		It("never executes it, because the real install runs from a private neutral working directory that never discovers the repository's config", neverExecutesBecauseRealInstallRunsFrom)
 	})
 })
@@ -265,6 +265,7 @@ func classifiesFreshlyInstalledCompilerEligibleNotMerely() {
 }
 
 func reportsInsulationFailureNotCodelessFailure() {
+	requireToolOnPath("mise")
 	repo := GinkgoT().TempDir()
 	Expect(os.WriteFile(filepath.Join(repo, "mise.toml"), []byte("[tools]\n\"npm:typescript\" = \"7.0.2\"\n"), 0o644)).To(Succeed())
 	nonexistentTemp := filepath.Join(GinkgoT().TempDir(), "does-not-exist")
