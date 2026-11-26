@@ -3,7 +3,9 @@ package main_test
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -12,6 +14,7 @@ import (
 const (
 	gremlinsOverrideVariable = "COACH_EVAL_GREMLINS"
 	gremlinsVersionVariable  = "COACH_EVAL_GREMLINS_VERSION"
+	gremlinsTimeoutVariable  = "COACH_EVAL_GREMLINS_TIMEOUT"
 )
 
 // standInGremlins writes the report a chosen mutation run would: it logs each invocation, takes the report's path
@@ -24,6 +27,8 @@ while [ $# -gt 0 ]; do
 done
 file=$(grep -rlE 'func (\(Service\) )?(Get|Set)[A-Za-z]*\(|func Run\(' --include=*.go internal | grep -v _test.go | head -1)
 mode="$STANDIN_MODE"
+if [ "$mode" = "exit1" ]; then echo 'partial output'; exit 1; fi
+if [ "$mode" = "hang" ]; then sleep 20 & echo $! > "$GREMLINS_PIDFILE"; wait; mode=good; fi
 if [ "$mode" = "empty" ]; then exit 0; fi
 if [ "$mode" = "unreadable" ]; then mkdir "$out"; exit 0; fi
 if [ "$mode" = "bad-once" ]; then
@@ -39,20 +44,21 @@ printf '{"files":[{"file_name":"%s","mutations":[%s]}]}' "$file" "$mutations" > 
 `
 
 type standIn struct {
-	binary, log, state string
+	binary, log, state, pidfile string
 }
 
 func newStandIn() standIn {
 	directory := GinkgoT().TempDir()
 	return standIn{
-		binary: writeExecutable(directory, "gremlins", standInGremlins),
-		log:    filepath.Join(directory, "invocations.log"),
-		state:  filepath.Join(directory, "state"),
+		binary:  writeExecutable(directory, "gremlins", standInGremlins),
+		log:     filepath.Join(directory, "invocations.log"),
+		state:   filepath.Join(directory, "state"),
+		pidfile: filepath.Join(directory, "pid"),
 	}
 }
 
 func (s standIn) environment(mode string) []string {
-	return []string{gremlinsOverrideVariable + "=" + s.binary, "GREMLINS_LOG=" + s.log, "GREMLINS_STATE=" + s.state, "STANDIN_MODE=" + mode, "COACH_BIN="}
+	return []string{gremlinsOverrideVariable + "=" + s.binary, "GREMLINS_LOG=" + s.log, "GREMLINS_STATE=" + s.state, "GREMLINS_PIDFILE=" + s.pidfile, "STANDIN_MODE=" + mode, "COACH_BIN="}
 }
 
 // runs lists what each invocation saw in its working tree, in order: "base" for the program as the agent gets it,
@@ -64,6 +70,17 @@ func (s standIn) runs() []string {
 	}
 	Expect(err).NotTo(HaveOccurred())
 	return strings.Fields(string(content))
+}
+
+// running reports whether the process is alive. A killed process nothing has reaped yet is a zombie, which kill(2)
+// still finds; /proc says which, where it exists.
+func running(pid int) bool {
+	stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return syscall.Kill(pid, 0) == nil
+	}
+	state := strings.Fields(string(stat[strings.LastIndex(string(stat), ")")+1:]))
+	return len(state) > 0 && state[0] != "Z"
 }
 
 func (s standIn) invocations() int { return len(s.runs()) }
@@ -125,6 +142,34 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 			Expect(outcome.exitCode).To(Equal(1), outcome.stderr)
 			Expect(outcome.stdout).To(BeEmpty())
 			Expect(outcome.stderr).To(ContainSubstring(".gremlins-report.json"))
+		})
+	})
+
+	When("Gremlins exits non-zero after printing part of a result and writing no report", func() {
+		It("is an error that is not a rejection, naming the exit status, and prints no program (AC-24)", func() {
+			outcome := gated(GinkgoT().TempDir(), newStandIn(), "exit1", "--cell", "1", "--seed", "3")
+
+			Expect(outcome.exitCode).To(Equal(1), outcome.stderr)
+			Expect(outcome.stdout).To(BeEmpty())
+			Expect(outcome.stderr).To(ContainSubstring("exit status 1"))
+			Expect(outcome.stderr).To(ContainSubstring("partial output"))
+		})
+	})
+
+	When("Gremlins runs past the time limit", func() {
+		It("kills it and what it started, exits 1 naming the limit, and prints no program (AC-24)", func() {
+			gremlins := newStandIn()
+
+			outcome := runGenerateBinary(faultBinary, GinkgoT().TempDir(), append(gremlins.environment("hang"), gremlinsTimeoutVariable+"=2s"), "--cell", "1", "--seed", "3")
+
+			Expect(outcome.exitCode).To(Equal(1), outcome.stderr)
+			Expect(outcome.stdout).To(BeEmpty())
+			Expect(outcome.stderr).To(ContainSubstring("did not finish within the time limit of 2s"))
+			content, err := os.ReadFile(gremlins.pidfile)
+			Expect(err).NotTo(HaveOccurred())
+			pid, err := strconv.Atoi(strings.TrimSpace(string(content)))
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func() bool { return running(pid) }).Should(BeFalse(), "the process Gremlins started is gone")
 		})
 	})
 
