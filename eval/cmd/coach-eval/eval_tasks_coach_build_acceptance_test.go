@@ -61,6 +61,7 @@ var _ = Describe("the eval tasks' coach build (#881)", func() {
 		Entry("eval-census", "eval-census"),
 		Entry("eval-history", "eval-history"),
 		Entry("eval-antipatterns", "eval-antipatterns"),
+		Entry("eval-hook-health", "eval-hook-health"),
 	)
 
 	DescribeTable("builds the same binary from a checkout before and after a tracked file is edited, as a census run leaves it",
@@ -82,6 +83,7 @@ var _ = Describe("the eval tasks' coach build (#881)", func() {
 		Entry("eval-census", "eval-census"),
 		Entry("eval-history", "eval-history"),
 		Entry("eval-antipatterns", "eval-antipatterns"),
+		Entry("eval-hook-health", "eval-hook-health"),
 	)
 
 	It("builds coach with -trimpath -buildvcs=false in every task that builds it into the task's bin_dir", func() {
