@@ -51,16 +51,20 @@ func buildCallGraph(program goProgram) (callGraph, error) {
 // follows calls it can continue from.
 func (graph *callGraph) dropCallsOutsideTheGraph() {
 	for _, node := range graph.nodes {
-		kept := node.calls[:0]
-		for _, call := range node.calls {
-			if graph.nodes[call.callee] == nil {
-				graph.unresolved++
-				continue
-			}
+		var dropped int
+		node.calls, dropped = graph.callsInTheGraph(node.calls)
+		graph.unresolved += dropped
+	}
+}
+
+func (graph *callGraph) callsInTheGraph(calls []callSite) ([]callSite, int) {
+	kept := calls[:0]
+	for _, call := range calls {
+		if graph.nodes[call.callee] != nil {
 			kept = append(kept, call)
 		}
-		node.calls = kept
 	}
+	return kept, len(calls) - len(kept)
 }
 
 func (graph *callGraph) addFile(program goProgram, pkg *goPackage, rel string, file *ast.File) {
