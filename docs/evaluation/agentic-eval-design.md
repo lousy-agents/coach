@@ -6,7 +6,7 @@ Conventions:
 - Decisions marked **our choice** have no source behind them. The owner ratified them on 2026-11-26 ("Decisions taken"); the pilot may revise the 15.7b defaults.
 - Every claim about outside practice cites a ledger row (section 1).
 - A claim with no citation is about this repository, and names the file it was read from.
-- Repository facts were read at `main` = `ed0ac13`, and re-checked against `main` = `3ff4146` in the review of #776.
+- Repository facts were read at `main` = `ed0ac13`, and spot-checked against `main` = `3ff4146` in the review of #776.
 
 ## Owner requirements: compliance
 
@@ -15,7 +15,7 @@ Conventions:
 | Uses the owner's local, subscription-based Claude Code credentials; no API key | **Conditionally met** | Decision 15.14 under the strict reading: only the existing host login may be used. Then there are no agentic runs. |
 | The oracle is never inside the agent's container | **Met** under options (b) and (c), by construction (section 7) | Choosing option (a), which is rejected |
 | Runnable before commit as `mise` tasks; no scheduled or CI runs | **Met.** `eval-precommit` is model-free, Docker-optional, and targets ≤ 2 minutes warm | Wiring any `eval-*` task into a workflow. A guard test forbids this (section 10) |
-| Fully autonomous: no human hours | **Conditionally met** (section 15, "Residuals") | 15.15 is "no" (the agentic hypotheses stay unjudged); #260 is not amended (decision 15.9 option b); a reboot or credential expiry during a study |
+| Fully autonomous: no human hours | **Conditionally met** (section 15, "Residuals") | 15.15 is "no" (the agentic hypotheses stay unjudged); #260 has not yet been amended (decision 15.9 chose option a); a reboot or credential expiry during a study |
 
 ## Decisions taken (2026-11-26)
 
@@ -160,10 +160,26 @@ Only rules with a **general** detector are graded. Each detector is pinned, live
 
 | Graded `rule_id` | Language | Detector | Threshold and comparison (also in the protocol) |
 | --- | --- | --- | --- |
-| `architecture.layer_violation`, `architecture.layer_bypass` | Go, TS | **In-house graph check**: the import graph (`go list -deps -json`; TS module resolution, using `typescript@7.0.2` copied from `js/semantics/node_modules`) checked against `.lousy-agents/coach.json`. **This is the same policy file the hook reads.** A missing required edge is a G2 absence | any forbidden edge counts; a bypass is a direct edge that skips `required_layer` |
-| `complexity.cognitive_complexity` | Go | **gocognit** (external, f.10), pinned by module pseudo-version through mise. The harness asserts the host and image versions are equal | `-over 14`, which reports complexity > 14, matching Coach's "from the threshold up" at 15 (`docs/cli-codesignal.md` threshold table) |
+| `architecture.layer_violation` | Go, TS | **In-house graph check** against `.lousy-agents/coach.json`. **This is the same policy file the hook reads.** Each import is placed in the layer with the longest matching prefix. **Go:** each `.go` file's imports are parsed with `go/parser` and resolved against every `go.mod` under the root, nested modules included. **TS:** a Go-native lexer and resolver, independent of Coach's TS backend and of the `typescript` package. It resolves relative specifiers, `baseUrl`, single-wildcard `paths` and relative `extends` (depth ≤ 16), and reads tsconfig comments and trailing commas. It refuses by name anything outside the generated subset (below). A missing required edge is a G2 absence | any forbidden edge counts |
+| `complexity.cognitive_complexity` | Go | **gocognit** (external, f.10), pinned at v1.3.0 by a `tool` directive in `eval/go.mod`, not through mise, so CI never installs it. `coach-eval` builds it from the module cache alone (`GOPROXY=off`, `GOTOOLCHAIN=local`, applied after the caller's environment). It refuses, without fetching, when the cache lacks it, and refuses a binary built from any other version | `-over 14`, which reports complexity > 14, matching Coach's "from the threshold up" at 15 (`docs/cli-codesignal.md` threshold table) |
+
+**The TS grader's subset.** The TS layer check refuses with a named reason, never guessing:
+- a `.tsx` source (JSX);
+- any `/` that is not after an identifier, a property name, a number, a string or `]`, because it could start a regular expression. So a division after `)`, `}` or `++` is refused;
+- project references;
+- package.json `imports` and self-references;
+- a nested `tsconfig.json`;
+- `paths` with more than one wildcard;
+- non-literal `import()`/`require()`.
+
+Generated TS programs stay inside this subset (#781).
+
+**The detectors' reading of a tree.**
+- **Build constraints:** the Go layer check parses files with `go/parser` rather than `go list -deps -json`, so it ignores build constraints. Generated programs carry none.
+- **File sets:** gocognit is given the whole root, while the layer walk skips `vendor`, `testdata`, `node_modules` and hidden directories. In generated programs the two file sets are the same. Any use on real code (the census) must align them first.
 
 **Not graded until a stated mapping to Coach's definition exists:**
+- `architecture.layer_bypass`. Coach's rule is a call-graph search (`pkg/projectmodel.BuildGoLayerBypass`) from a handler-shaped source to a pinned sink that skips `required_layer`, not an import edge, so an import-graph check cannot grade it. An independent call-graph detector is #816;
 - nesting depth, both Go and TS. ESLint `max-depth` (f.11) counts nested blocks, and its mapping to Coach's count is not established;
 - TS cognitive complexity (f.11: eslint-plugin-sonarjs could not be retrieved);
 - `state.hidden_input_mutation`, `security.toctou_check_then_act`, `coupling.tight_constructor_init`, `complexity.branch_density`, the density rules, `coupling.deep_relative_import` and `structure.react_component_orchestration_density`.
@@ -606,7 +622,7 @@ Coach's version and configuration are printed with every result (c.5).
   | --- | --- |
   | `eval/cmd/coach-eval`, `eval/internal/evalharness` | tooling |
   | `eval/internal/evalgen` | generation |
-  | `eval/internal/evaldetect` (the layer-graph check for Go and TS, which uses the pinned `typescript`; the gocognit adapter) | detection |
+  | `eval/internal/evaldetect` (the layer-graph check for Go and TS; the gocognit adapter) | detection |
   | `eval/internal/evalgrade` | grading |
   | `eval/internal/evalhistory`, `eval/internal/evalcensus` | real-code |
 
@@ -683,7 +699,7 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 
 - **The decision record** `eval/protocol/decisions/15.15.json`. It holds the permission, the model, the caps (trials, tokens, turns, timeout, run hours) and the weekly-trials figure.
 - **Docker**, for grading and for `sbx` under (c).
-- **Pinned tools**, through mise: Node, the TS compiler, gocognit, Gremlins and StrykerJS.
+- **Pinned tools**, through mise: Node, the TS compiler, Gremlins and StrykerJS. gocognit is pinned by the `tool` directive in `eval/go.mod` (section 4).
 - **`claude`**, at the recorded version, with a valid credential.
 - **No API-key path:** no API-key variable, no `apiKeyHelper`, and no `sbx` secret.
 - **`EVAL_ORACLE_DIR`.**
@@ -766,8 +782,7 @@ The join key is `(source.sha, rule_id, path, subject, lines)`. This repository's
   "pilot_estimates_ref": "path + sha256",
   "graded_rules": [
     { "rule_id": "architecture.layer_violation", "languages": ["go", "ts"], "detector": "evaldetect layer graph", "comparison": "any forbidden edge" },
-    { "rule_id": "architecture.layer_bypass", "languages": ["go", "ts"], "detector": "evaldetect layer graph", "comparison": "direct edge skipping required_layer" },
-    { "rule_id": "complexity.cognitive_complexity", "languages": ["go"], "detector": "gocognit <pseudo-version>", "comparison": "-over 14 (> 14, i.e. >= 15)" }
+    { "rule_id": "complexity.cognitive_complexity", "languages": ["go"], "detector": "gocognit v1.3.0 (eval/go.mod tool)", "comparison": "-over 14 (> 14, i.e. >= 15)" }
   ],
   "delta": { "complexity.cognitive_complexity": 3 },
   "mutation": { "tools": { "gremlins": "string", "stryker": "string" }, "score_min": 0.8, "not_covered_max": 0.10, "scope": "import graph from api_surface" },
@@ -886,8 +901,10 @@ Grouped under b.7's four headings, plus generation and contamination.
 
 **Construct**
 - **H3 is conformance on seeded rows,** not precision. The team writes the rules, the generator, the operators and the in-house layer check (c.8).
-- **The tasks are synthetic.** They are generated programs, small and regular, that start below Coach's published thresholds. This limits realism, and the claim names it.
-- **H4 covers only the graded rules:** layering (an in-house check that reads the same policy as the hook) and Go cognitive complexity (gocognit, external). The disagreement between detectors and Coach, and `coach_base_fp`, are reported.
+- **The tasks are synthetic.** They are generated programs, small and regular, that start below Coach's published thresholds.
+  - **The bases are deliberately simple.** The generated Go base is branch-free and pointer-free, with value semantics, so every margin below Coach's thresholds holds by construction (#780). Complexity enters only through the operators (#782).
+  - This limits realism, and the claim names it.
+- **H4 covers only the graded rules:** layer violations (an in-house check that reads the same policy as the hook) and Go cognitive complexity (gocognit, external). Layer bypass is H3-only until #816. The disagreement between detectors and Coach, and `coach_base_fp`, are reported.
 - **Injected is not natural** (c.6, c.7, f.1). Cognitive complexity is only partly validated (d.1, d.2), and gocognit's reading can differ from Coach's (f.10).
 - **Circularity** (d.7) is controlled by an external grader for complexity, the generation and detection fence, and `rules_in_prompt`. The in-house layer check shares the policy with the hook by design. It checks the same contract, independently implemented.
 
