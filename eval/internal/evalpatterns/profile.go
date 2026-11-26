@@ -2,7 +2,7 @@ package evalpatterns
 
 // ExtractorVersion is the version of the measures a profile records; a
 // change to any measure changes it, and so the profile's identity.
-const ExtractorVersion = "0.1.0"
+const ExtractorVersion = "0.2.0"
 
 // distribution counts observations per integer bucket, keyed by the bucket
 // written in decimal.

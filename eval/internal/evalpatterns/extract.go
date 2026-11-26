@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"path/filepath"
 )
 
 // ExtractProfile measures the production Go files of the checkout at root
@@ -24,7 +23,11 @@ func ExtractProfile(reference Reference, root string) ([]byte, error) {
 	fset := token.NewFileSet()
 	packages := map[string][]*ast.File{}
 	for _, rel := range files {
-		file, err := parser.ParseFile(fset, filepath.Join(root, filepath.FromSlash(rel)), nil, parser.SkipObjectResolution)
+		src, err := readRegularFile(root, rel)
+		if err != nil {
+			return nil, reference.refuse(err.Error())
+		}
+		file, err := parser.ParseFile(fset, rel, src, parser.SkipObjectResolution)
 		if err != nil {
 			return nil, Refusal{Label: reference.Label, Exit: AnalysisFailed, Reason: fmt.Sprintf("file %s does not parse: %v", rel, err)}
 		}
