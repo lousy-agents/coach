@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -159,11 +160,38 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 	It("commits a variant without the host's git configuration, so a host hook cannot fail the scan", func() {
 		hooks := GinkgoT().TempDir()
 		Expect(os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte("#!/bin/sh\nexit 1\n"), 0o755)).To(Succeed())
-		config := filepath.Join(GinkgoT().TempDir(), "gitconfig")
-		Expect(os.WriteFile(config, []byte("[core]\n\thooksPath = "+hooks+"\n"), 0o644)).To(Succeed())
+		home := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(home, ".gitconfig"), []byte("[core]\n\thooksPath = "+hooks+"\n"), 0o644)).To(Succeed())
 		writeFixture(fixtures, "layer", layerExpect, variantFiles(reportOf(layerSignal), nil), variantFiles(reportOf(), nil))
 
-		outcome := runAntipatternsWith([]string{"GIT_CONFIG_GLOBAL=" + config}, fixtures, cannedCoach())
+		outcome := runAntipatternsWith([]string{"HOME=" + home}, fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+	})
+
+	It("scans a variant in its own repository when the caller's environment names another, as in a pre-commit hook", func() {
+		other := GinkgoT().TempDir()
+		Expect(exec.Command("git", "init", "-q", other).Run()).To(Succeed())
+		writeFixture(fixtures, "layer", layerExpect, variantFiles(reportOf(layerSignal), nil), variantFiles(reportOf(), nil))
+
+		outcome := runAntipatternsWith([]string{
+			"GIT_DIR=" + filepath.Join(other, ".git"), "GIT_WORK_TREE=" + other, "GIT_INDEX_FILE=" + filepath.Join(other, ".git", "index"),
+		}, fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		count, err := exec.Command("git", "-C", other, "rev-list", "--all", "--count").Output()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(strings.TrimSpace(string(count))).To(Equal("0"), "the caller's repository gained no commit")
+	})
+
+	It("runs a coach named by a relative path, from the directory the command was started in", func() {
+		writeFixture(fixtures, "layer", layerExpect, variantFiles(reportOf(layerSignal), nil), variantFiles(reportOf(), nil))
+		coach := cannedCoach()
+		cmd := exec.Command(coachEvalBinary, "antipatterns", "--fixtures", fixtures, "--coach", "./"+filepath.Base(coach))
+		cmd.Dir = filepath.Dir(coach)
+		cmd.Env = os.Environ()
+
+		outcome := runGenerateCommand(cmd)
 
 		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 	})
