@@ -83,6 +83,9 @@ var _ = Describe("the go test timeout of the other full-module runs (#909)", fun
 		Entry("a trailing shell comment on the run line", func(yml string) string {
 			return mutated(yml, distroRun, "run: mise exec -- go run ./cmd/acceptance-ci-env ./... # -timeout 25m")
 		}),
+		Entry("a test binary timeout after -args, which overrides go test's own", func(yml string) string {
+			return mutated(yml, distroRun, distroRun+" -args -test.timeout 5m")
+		}),
 		Entry("a second command on the run line", func(yml string) string {
 			return mutated(yml, distroRun, "run: mise exec -- go run ./cmd/acceptance-ci-env ./...; echo -timeout 25m")
 		}),
@@ -95,6 +98,9 @@ var _ = Describe("the go test timeout of the other full-module runs (#909)", fun
 		},
 		Entry("a trailing shell comment inside the step", func(toml string) string {
 			return mutated(toml, fastStep, `"go test -race ./... -run Acceptance # -timeout 25m",`)
+		}),
+		Entry("a test binary timeout after -args, which overrides go test's own", func(toml string) string {
+			return mutated(toml, fastStep, `"go test -race -timeout 25m ./... -run Acceptance -args -test.timeout 5m",`)
 		}),
 		Entry("a second command in the step", func(toml string) string {
 			return mutated(toml, fastStep, `"go test -race ./... -run Acceptance; echo -timeout 25m",`)
