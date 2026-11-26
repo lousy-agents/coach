@@ -20,12 +20,19 @@ func goreleaserConfigurationViolations(content string) []string {
 		violations = append(violations, "names the tag "+evalOverrideBuildTag)
 	}
 	for _, line := range strings.Split(content, "\n") {
-		key := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
-		for _, forbidden := range []string{"tags:", "flags:", "ldflags:"} {
-			if strings.HasPrefix(key, forbidden) {
-				violations = append(violations, "declares "+strings.TrimSuffix(forbidden, ":"))
-			}
+		if key, declared := declaredBuildOption(line); declared {
+			violations = append(violations, "declares "+key)
 		}
 	}
 	return violations
+}
+
+func declaredBuildOption(line string) (key string, declared bool) {
+	trimmed := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
+	for _, option := range []string{"tags", "flags", "ldflags"} {
+		if strings.HasPrefix(trimmed, option+":") {
+			return option, true
+		}
+	}
+	return "", false
 }
