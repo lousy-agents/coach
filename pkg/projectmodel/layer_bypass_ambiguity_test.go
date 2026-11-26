@@ -66,6 +66,8 @@ func TestGoLayerHasPackage(t *testing.T) {
 		packageRow("vendored code under the prefix", false, "pkg/service/vendor/dep/dep.go"),
 		packageRow("testdata under the prefix", false, "pkg/service/testdata/case.go"),
 		packageRow("a hidden directory under the prefix", false, "pkg/service/.cache/gen.go"),
+		packageRow("a directory the go tool ignores because of its leading underscore", false, "pkg/service/_attic/old.go"),
+		packageRow("a matching file followed by files that do not match", true, "pkg/service/a.go", "pkg/store/s.go", "zz/z.go"),
 	}
 	for _, test := range tests {
 		t.Run(test.name, test.run)

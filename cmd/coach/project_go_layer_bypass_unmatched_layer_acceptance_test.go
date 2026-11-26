@@ -48,6 +48,29 @@ var _ = Describe("coach codesignal --project-config names why architecture.layer
 		})
 	})
 
+	DescribeTable("names the cause when a package sits under the required layer's prefix but not in the analysed program",
+		func(policy string, files map[string]string) {
+			repo := newTempGitRepo()
+			commitFile(repo, "go.mod", goModuleFile)
+			commitFile(repo, "pkg/handlers/handlers.go", handlerQueryingTheDatabaseDirectly)
+			for name, content := range files {
+				commitFile(repo, name, content)
+			}
+			commitFile(repo, "project.json", policy)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+
+			Expect(decodeCoachReport(stdout).Diagnostics).To(ContainElement(HaveField("Kind", requiredLayerUnmatchedKind)))
+		},
+		Entry("the policy's roots leave the package out",
+			`{"schema_version":"1","roots":["pkg/handlers"],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"service","prefixes":["pkg/service"]},{"name":"db","prefixes":["pkg/db"]}],"required_layer":"service"}`,
+			map[string]string{"pkg/service/svc.go": "package service\n\nfunc F() {}\n"}),
+		Entry("the only Go file is in a directory the go tool ignores",
+			goLayerBypassPolicyConfigJSON,
+			map[string]string{"pkg/service/_attic/old.go": "package attic\n\nfunc Old() {}\n"}),
+	)
+
 	When("the policy's required_layer matches a package that declares no function", func() {
 		It("does not claim that it matched no package", func() {
 			repo := newTempGitRepo()
