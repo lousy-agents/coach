@@ -130,4 +130,16 @@ var _ = Describe("the corpus manifest's scope", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
+
+	When("a repository's sample size is negative", func() {
+		It("refuses the manifest, naming the repository and the size", func() {
+			manifest := scopedCorpus()
+			firstRepository(manifest)["sample"] = map[string]any{"seed": 7, "size": -1}
+
+			_, err := evalcensus.LoadCensusCorpus(writeJSON(manifest))
+
+			Expect(err).To(MatchError(ContainSubstring(`"coach"`)))
+			Expect(err).To(MatchError(ContainSubstring("size")))
+		})
+	})
 })

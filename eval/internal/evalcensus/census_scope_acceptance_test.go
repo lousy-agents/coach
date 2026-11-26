@@ -247,4 +247,13 @@ var _ = Describe("the census's path scope and sample", func() {
 			Expect(statusFor(statuses, scopedRule)["sampled_keys"]).To(Equal([]any{"fp00", "fp01", "fp02", "fp03", "fp04", "fp05", "fp06", "fp07", "fp09", "fp10", "fp11", "fp12", "fp13", "fp14", "fp15", "fp16", "fp17", "fp18", "fp19", "fp20", "fp21", "fp22", "fp23", "fp24", "fp25", "fp26", "fp27", "fp28", "fp29", "fp30"}))
 		})
 	})
+
+	When("the manifest names a sample size of 5 and a rule has 31 findings", func() {
+		It("draws 5 of them, not one fewer than the rule has", func() {
+			statuses := statusesOf(map[string]any{"sample": map[string]any{"seed": 7, "size": 5}},
+				findingsReport(manyFindings(31)...))
+
+			Expect(statusFor(statuses, scopedRule)["sampled_keys"]).To(HaveLen(5))
+		})
+	})
 })
