@@ -126,4 +126,19 @@ var _ = Describe("eval-compare", func() {
 			Expect(outcome.stderr).To(ContainSubstring("run-missing"))
 		})
 	})
+
+	When("a dirty run is also not complete", func() {
+		It("exits 4 with only the state message on stderr, and no warning", func() {
+			dirty := withPath(withPath(completeRecord("run-a"), "worktree_dirty", true), "state", "paused")
+			writeRunRecord(stateRoot, "run-a", dirty)
+			writeRunRecord(stateRoot, "run-b", completeRecord("run-b"))
+
+			outcome := runCompare(stateRoot, "run-a", "run-b")
+
+			Expect(outcome.exitCode).To(Equal(4), outcome.stderr)
+			Expect(outcome.stdout).To(BeEmpty())
+			Expect(outcome.stderr).To(ContainSubstring("run-a is paused"))
+			Expect(outcome.stderr).NotTo(ContainSubstring("warning:"), "text output on exit 4 keeps the state message alone")
+		})
+	})
 })

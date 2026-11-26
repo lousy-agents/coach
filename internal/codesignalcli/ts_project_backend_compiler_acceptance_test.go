@@ -91,7 +91,8 @@ var _ = Describe("tsProjectBackend compiler resolution from a subdirectory invoc
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.HeadCoverage).NotTo(BeNil())
-			Expect(result.HeadCoverage.Complete).To(BeTrue(), "the compiler must be resolved via repository-root-relative resolution regardless of invocation subdirectory")
+			Expect(result.CompilerVersion).To(Equal(version), "the compiler must be resolved via repository-root-relative resolution regardless of invocation subdirectory")
+			Expect(result.CompilerOrigin).To(Equal(tstoolchain.OriginProject))
 		})
 	})
 })
