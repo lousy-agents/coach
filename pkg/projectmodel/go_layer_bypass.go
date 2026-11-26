@@ -100,7 +100,7 @@ func BuildGoLayerBypass(ctx context.Context, snapshot fs.FS, opts LayerBypassOpt
 		memDelta = 0
 	}
 
-	return assembleLayerBypassResult(loaded, callGraph, sources, sinks, requiredLayerNodes, search, sourceDiagnostics, dirDiagnostics, sourcesComplete, dirsComplete, layerAmbiguity{ambiguous: ambiguousLayer, unmatched: ambiguousLayer && !goLayerHasPackage(snapshot, opts.RequiredLayer)}, opts, start, memDelta), nil
+	return assembleLayerBypassResult(loaded, callGraph, sources, sinks, requiredLayerNodes, search, sourceDiagnostics, dirDiagnostics, sourcesComplete, dirsComplete, layerAmbiguity{ambiguous: ambiguousLayer, unmatched: ambiguousLayer && !goLayerHasPackage(snapshot, opts.RequiredLayer, opts.Roots)}, opts, start, memDelta), nil
 }
 
 func searchLayerBypassWitnesses(ctx context.Context, sources, sinks []string, bypassAdjacency map[string][]string, nodePositions map[string]layerBypassNodePosition, opts LayerBypassOptions, callGraphIncomplete, dirsComplete, ambiguousLayer bool) layerBypassSearch {

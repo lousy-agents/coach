@@ -80,7 +80,7 @@ func (c packageCase) run(t *testing.T) {
 
 func expectLayerHasPackage(t *testing.T, files []string, layer BypassLayer, want bool) {
 	t.Helper()
-	if got := goLayerHasPackage(snapshotOf(files), layer); got != want {
+	if got := goLayerHasPackage(snapshotOf(files), layer, nil); got != want {
 		t.Fatalf("goLayerHasPackage(%v) = %v, want %v", files, got, want)
 	}
 }
@@ -99,4 +99,25 @@ func snapshotOf(files []string) fstest.MapFS {
 		snapshot[name] = &fstest.MapFile{Data: []byte("package x\n")}
 	}
 	return snapshot
+}
+
+func TestGoLayerHasPackageWithinRoots(t *testing.T) {
+	files := []string{"pkg/handlers/h.go", "pkg/service/svc.go"}
+	snapshot := snapshotOf(files)
+	for _, test := range []struct {
+		roots []string
+		want  bool
+	}{
+		{nil, true},
+		{[]string{"."}, true},
+		{[]string{"pkg/handlers", "pkg/service"}, true},
+		{[]string{"pkg/handlers"}, false},
+		{[]string{"pkg/missing"}, false},
+		{[]string{"./pkg/service"}, true},
+		{[]string{"pkg/service/"}, true},
+	} {
+		if got := goLayerHasPackage(snapshot, serviceLayer, test.roots); got != test.want {
+			t.Errorf("goLayerHasPackage(roots=%v) = %v, want %v", test.roots, got, test.want)
+		}
+	}
 }
