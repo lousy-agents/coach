@@ -358,6 +358,15 @@ Generated code is trusted, so **it runs natively, without Docker**. Docker isola
 
 **Caching.** Fixtures are **cached, not committed**, under `$XDG_CACHE_HOME/coach-eval/fixtures/<key>`. The key is a hash of the generator version, operators, seed, **`coach` binary hash** and **detector versions**. Detection needs no Docker.
 
+### Pattern profiles and profile-derived fixtures (#872)
+
+**Profile-derived fixtures are the primary measure of Coach**, run by `coach-eval antipatterns` beside #871's hand-authored pack. **The real-code census (#864, #260) is kept as a secondary measure**, in section 13a's terms: detector agreement and the `eval-history` association, because an automated path cannot establish precision on real code.
+
+- **Profiles.** `coach-eval patterns` reads each entry of `eval/patterns/references.json` from a fresh isolated checkout of the local clone named on the command line, as the census does. It parses Go with `go/parser` only: no type-checking, no module download, no network and no model. It writes `eval/patterns/profiles/<label>.profile.json`, which holds derived statistics only (layers, roles, entry kinds, call depth, nesting, cognitive complexity, branch density, constructor shape, and the values outside the generator's ranges, each with a reason), plus the label, SHA, licence and extractor version. Each profile validates against the closed `eval/internal/evalpatterns/profile.schema.json`. Its identity is the sha256 of its canonical JSON without the `identity` field.
+- **Fixtures.** `coach-eval patterns fixtures` turns each profile into fixtures in #871's layout and `expect.json` format, under `eval/fixtures/antipatterns-derived/<label>/<id>/`. It writes one fixture per #871 pattern whose shape the profile observed: arrow code, a spaghetti conditional, a god file, and a constructor that does real work. The bad variant is scaled to the profile's most frequent value at or over Coach's threshold, capped; the constructor template is not scaled. The `note` records the value and any cap. The good variant is #871's fix. Expectations come from each template's own declaration, never from Coach. `seed` is `profile:<identity>`, and `source` cites the #871 entry. A fixture whose variant fails `go vet` is left out, the others are written, and the run exits 3, naming it. Only `<label>/` is ever cleared, after it is confirmed to lie inside the output root. The other #871 patterns have no shape in a syntax-only profile; the layer patterns are #900.
+- **Units.** A profile counts nested `if`, `for`, `range`, `switch`, type `switch` and `select` statements. Coach counts every block in a function, the body included. Through `if`, `for` and `range` bodies, Coach's nesting depth is therefore the profile's plus one. Each `switch` or `select` on the way adds a level to the profile but not to Coach, and a bare block or a function literal adds one to Coach but not to the profile. The arrow template nests only `if`, `for` and `range`.
+- **Isolation.** It writes no census record, and no census or history ledger line. No code, identifier, path or name from a reference reaches a profile or a fixture.
+
 ### Protection against "pass by deleting code"
 
 | Shortcut | Caught by |
@@ -627,7 +636,7 @@ Coach's version and configuration are printed with every result (c.5).
   | `eval/internal/evalgen` | generation |
   | `eval/internal/evaldetect` (the layer-graph check for Go and TS; the gocognit adapter) | detection |
   | `eval/internal/evalgrade` | grading |
-  | `eval/internal/evalhistory`, `eval/internal/evalcensus` | real-code |
+  | `eval/internal/evalhistory`, `eval/internal/evalcensus`, `eval/internal/evalpatterns` | real-code |
 
 - **Import rules.**
   - Generation and detection never import each other.
@@ -690,6 +699,8 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 | `eval-agent-study` | The study (section 5) | 0 complete · 1 a harness-caused event (R) · 2 a refusal: input missing or invalid, the commit not clean, the 15.15 record absent, the credential expires before the projected end · 5 killed (R; `--supervise` relaunches) · 6 the checkpoint said stop, or a cap was reached, including `run_hours` (R after the caps are raised) · 7 invalid: the model, CLI or credential identity changed (not resumable) |
 | `eval-census` | #260's census | 0 · 2 a SHA is unreachable, an input is unusable, or a repository is TypeScript (until the pinned image, #832) · 3 a repository's analysis failed (`coach` non-zero, or a report that cannot be read), after every repository is recorded |
 | `eval-history` | The association (section 13a), offline only | 0 · 2 an input is unusable (no `--seed`, no `history_until`, a repository path that is not a local directory, a SHA that is unreachable or does not descend from the census SHA, or a TypeScript repository until #832), or `--online` · 3 a repository's analysis failed, after every repository is recorded |
+| `eval-patterns` | Pattern profiles from the reference manifest, then their #871-format fixtures (#872); offline, no model. The fixtures step runs only when every profile is written | 0 every profile and fixture written · 2 an input unusable: the manifest; a `--clone LABEL=PATH` per entry, naming a local directory; a licence; a SHA not 40-hex or unreachable; a language other than Go; a reference whose checkout cannot be read (a symlinked file, an unreadable or invalid policy); a profile file not named after its label; a profile that fails the schema or is of another version; or an output that cannot be written · 3 a file does not parse, or a derived variant fails `go vet`, after every entry or profile is attempted |
+| `eval-antipatterns` | Coach, built from this checkout, over #871's hand-authored anti-pattern fixtures, bad and good variants (#871). A derived pack runs through the same command with `--fixtures eval/fixtures/antipatterns-derived/<label>` | 0 every fixture passes, with a known miss (`not_covered`) reported, not failed · 1 a fixture fails: a covered variant's findings differ from its `expect.json`, or a scan is incomplete where the fixture does not declare it · 2 unusable input: no `--coach`, `git` or `go` not on PATH, a fixtures directory that cannot be read or holds no fixture, an invalid `expect.json`, a variant that fails `go vet`, or `coach` exiting with neither 0 nor 3 |
 | `eval-harness-acceptance` | Harness tests | 0 · 1 a test failed · 2 no Docker |
 | `eval-compare` | Compares two runs | 0 comparable · 2 a run missing or invalid (fails the run schema) · 4 not comparable (a run not `complete`, or a comparable field differs) |
 | `eval-trend` | Trends one cell's metric from the ledger (#819) | 0 a trend prints · 2 a missing or invalid ledger, or an unknown cell · 4 no comparable adjacent pair |
@@ -762,6 +773,14 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 ```
 
 The join key is `(source.sha, rule_id, path, subject, lines)`. This repository's census manifest excludes `eval/**` and `vendor/`, and filters before sampling (c.2, c.3).
+
+### `eval/patterns/references.json` and the profile (#872)
+
+```json
+{ "schema_version": "1", "references": [ { "label": "a path segment, at most 64 characters", "sha": "40-hex", "language": "go", "licence": "non-empty" } ] }
+```
+
+The clone's path is never committed: `--clone <label>=<path>` names it for each run. In the profile schema, `eval/internal/evalpatterns/profile.schema.json`, the only free-text fields are the label and the licence. `not_covered` items are `{shape, reason, count}`, where `reason` is one of `out_of_range`, `no_total_order`, `policy_declares_no_layers` and `policy_layers_match_no_package`.
 
 ### `eval/protocol/<protocol_id>.json`
 

@@ -1,0 +1,78 @@
+package orders
+
+// Order is a customer's purchase.
+type Order struct {
+	Quantity int
+	Price    int
+}
+
+// This file holds every check of an order: one reason to change per check, all in one place.
+
+// Check1 scores one concern of an order.
+func Check1(o Order) int {
+	score := 0
+	if o.Quantity > 11 {
+		score++
+	}
+	if o.Quantity > 12 {
+		score++
+	}
+	if o.Quantity > 13 {
+		score++
+	}
+	return score
+}
+
+// Check2 scores one concern of an order.
+func Check2(o Order) int {
+	score := 0
+	if o.Quantity > 21 {
+		score++
+	}
+	if o.Quantity > 22 {
+		score++
+	}
+	if o.Quantity > 23 {
+		score++
+	}
+	return score
+}
+
+// Check3 scores one concern of an order.
+func Check3(o Order) int {
+	score := 0
+	if o.Quantity > 31 {
+		score++
+	}
+	if o.Quantity > 32 {
+		score++
+	}
+	if o.Quantity > 33 {
+		score++
+	}
+	return score
+}
+
+// Check4 scores one concern of an order.
+func Check4(o Order) int {
+	score := 0
+	if o.Quantity > 41 {
+		score++
+	}
+	if o.Quantity > 42 {
+		score++
+	}
+	if o.Quantity > 43 {
+		score++
+	}
+	return score
+}
+
+// Check5 scores one concern of an order.
+func Check5(o Order) int {
+	score := 0
+	if o.Quantity > 51 {
+		score++
+	}
+	return score
+}

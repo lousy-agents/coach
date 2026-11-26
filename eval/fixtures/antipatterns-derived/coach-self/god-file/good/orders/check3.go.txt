@@ -1,0 +1,16 @@
+package orders
+
+// Check3 scores one concern of an order.
+func Check3(o Order) int {
+	score := 0
+	if o.Quantity > 31 {
+		score++
+	}
+	if o.Quantity > 32 {
+		score++
+	}
+	if o.Quantity > 33 {
+		score++
+	}
+	return score
+}

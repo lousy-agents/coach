@@ -1,0 +1,16 @@
+package orders
+
+// Check1 scores one concern of an order.
+func Check1(o Order) int {
+	score := 0
+	if o.Quantity > 11 {
+		score++
+	}
+	if o.Quantity > 12 {
+		score++
+	}
+	if o.Quantity > 13 {
+		score++
+	}
+	return score
+}

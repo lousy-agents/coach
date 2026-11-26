@@ -56,8 +56,8 @@ var _ = Describe("the measures over #871's anti-pattern fixtures as stand-in ref
 			Expect(largestBucket(variantProfile(fixture, "bad"), "shapes", shape)).To(BeNumerically(">=", threshold))
 			Expect(largestBucket(variantProfile(fixture, "good"), "shapes", shape)).To(BeNumerically("<", threshold))
 		},
-		Entry("arrow code: nesting depth 4 or more", "arrow-code", "nesting", 4),
-		Entry("a spaghetti conditional: cognitive complexity over 15", "spaghetti-conditional", "cognitive", 16),
+		Entry("arrow code: three nested constructs, which Coach counts as depth 4 with the function body", "arrow-code", "nesting", 3),
+		Entry("a spaghetti conditional: cognitive complexity 15 or more", "spaghetti-conditional", "cognitive", 15),
 		Entry("a god file: 12 or more branch points in the file", "god-file", "branch_density", 12),
 	)
 

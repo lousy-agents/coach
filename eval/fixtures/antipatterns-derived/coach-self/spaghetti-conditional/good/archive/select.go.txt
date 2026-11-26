@@ -1,0 +1,34 @@
+package archive
+
+// File is a file in a directory listing, with the flags the deletion rules read.
+type File struct {
+	Name  string
+	Flags []bool
+}
+
+// Expired picks the files that any one deletion rule selects; each rule is a function of its own.
+func Expired(files []File) []string {
+	var names []string
+	for _, f := range files {
+		if rule1(f) || rule2(f) || rule3(f) || rule4(f) {
+			names = append(names, f.Name)
+		}
+	}
+	return names
+}
+
+func rule1(f File) bool {
+	return f.Flags[0] && f.Flags[1] || f.Flags[2] && f.Flags[3]
+}
+
+func rule2(f File) bool {
+	return f.Flags[4] && f.Flags[5] || f.Flags[6] && f.Flags[7]
+}
+
+func rule3(f File) bool {
+	return f.Flags[8] && f.Flags[9] || f.Flags[10] && f.Flags[11]
+}
+
+func rule4(f File) bool {
+	return f.Flags[12] && f.Flags[13] || f.Flags[14]
+}
