@@ -56,6 +56,21 @@ var _ = Describe("the unit inventory at since", func() {
 			Expect(inventory.Functions).To(ContainElement(evalhistory.Unit{Path: "p/p_test.go", Start: 3, End: 3}))
 			Expect(inventory.Files).To(ContainElement(evalhistory.Unit{Path: "p/p_test.go", Start: 1, End: 3}))
 		})
+
+		It("places a finding in a test file in that file's unit, so the census's test-file findings are placed", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{
+				"p/p.go":      baseSource,
+				"p/p_test.go": "package p\n\nfunc TestA() {}\n",
+			})
+			inventory, err := evalhistory.GoInventory(h.dir, since, evalcensus.Repository{})
+			Expect(err).NotTo(HaveOccurred())
+
+			flagged, err := evalhistory.FlaggedUnits(inventory, []evalhistory.Signal{{RuleID: "architecture.layer_violation", Path: "p/p_test.go", Subject: "architecture.layer_violation:p->q", StartRow: 1}}, "architecture.layer_violation")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(flagged.Units).To(HaveLen(1))
+			Expect(flagged.Unplaced).To(BeZero())
+		})
 	})
 
 	When("the repository names include and exclude globs", func() {
