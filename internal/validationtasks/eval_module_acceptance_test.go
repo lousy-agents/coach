@@ -81,5 +81,24 @@ var _ = Describe("the eval module", func() {
 
 			Expect(rootModuleImports(string(output))).To(BeEmpty())
 		})
+
+		It("keeps the generation ring off the real-code, detection and grading rings, so a profile reaches the generator only as validated JSON (#872)", func() {
+			command := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", "./internal/evalgen/...")
+			command.Dir = filepath.Join(moduleRoot, "eval")
+			output, err := command.Output()
+			Expect(err).NotTo(HaveOccurred(), "go list -deps must run in the eval module")
+
+			var crossings []string
+			for _, path := range strings.Fields(string(output)) {
+				for _, ring := range []string{"real-code", "detection", "grading"} {
+					for _, prefix := range evalRingPrefixes[ring] {
+						if path == evalModulePath+strings.TrimPrefix(prefix, "eval") {
+							crossings = append(crossings, path)
+						}
+					}
+				}
+			}
+			Expect(crossings).To(BeEmpty())
+		})
 	})
 })
