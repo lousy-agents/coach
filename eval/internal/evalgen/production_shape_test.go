@@ -42,11 +42,19 @@ func violationsOfCell(t *testing.T, index int, seed int64) []string {
 	}
 	var violations []string
 	for path, content := range program.Tree {
-		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
-			for _, violation := range shapeViolations(t, path, content) {
-				violations = append(violations, path+": "+violation)
-			}
-		}
+		violations = append(violations, productionViolations(t, path, content)...)
+	}
+	return violations
+}
+
+func productionViolations(t *testing.T, path string, content []byte) []string {
+	t.Helper()
+	if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+		return nil
+	}
+	var violations []string
+	for _, violation := range shapeViolations(t, path, content) {
+		violations = append(violations, path+": "+violation)
 	}
 	return violations
 }
