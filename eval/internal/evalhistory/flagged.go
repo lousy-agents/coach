@@ -1,6 +1,9 @@
 package evalhistory
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Signal is the part of a Coach finding the history needs. StartRow and
 // EndRow are Coach's 0-based rows; a metric or an import finding may carry
@@ -25,9 +28,10 @@ const (
 // Flagged is the units one rule's findings fall in, as indexes into the
 // inventory's Functions or Files, and how many findings fell in none.
 type Flagged struct {
-	Level    Level
-	Units    []int
-	Unplaced int
+	Level           Level
+	Units           []int
+	Unplaced        int
+	UnplacedReasons []string
 }
 
 // ruleLevels is the closed table of rules the history places, and the level
@@ -60,7 +64,7 @@ func FlaggedUnits(inventory Inventory, signals []Signal, ruleID string) (Flagged
 	if err != nil {
 		return Flagged{}, err
 	}
-	flagged := Flagged{Level: level}
+	flagged := Flagged{Level: level, UnplacedReasons: []string{}}
 	seen := map[int]bool{}
 	for _, signal := range signals {
 		if signal.RuleID != ruleID {
@@ -69,6 +73,7 @@ func FlaggedUnits(inventory Inventory, signals []Signal, ruleID string) (Flagged
 		index, ok := placeSignal(inventory, signal, level)
 		if !ok {
 			flagged.Unplaced++
+			flagged.UnplacedReasons = append(flagged.UnplacedReasons, unplacedReason(signal))
 			continue
 		}
 		if !seen[index] {
@@ -77,6 +82,15 @@ func FlaggedUnits(inventory Inventory, signals []Signal, ruleID string) (Flagged
 		}
 	}
 	return flagged, nil
+}
+
+// unplacedReason names why a finding falls in no unit of the inventory: a file in another language is not inventoried
+// at all, and a Go line that no unit holds is a line the inventory does not cover.
+func unplacedReason(signal Signal) string {
+	if !strings.HasSuffix(signal.Path, ".go") {
+		return "language not in the Go history inventory"
+	}
+	return "no unit of the Go history inventory holds its line"
 }
 
 func placeSignal(inventory Inventory, signal Signal, level Level) (int, bool) {

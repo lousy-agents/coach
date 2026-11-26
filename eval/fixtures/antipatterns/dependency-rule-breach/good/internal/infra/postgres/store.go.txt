@@ -1,0 +1,14 @@
+package postgres
+
+import "example.com/orders/internal/domain"
+
+// Store keeps orders in Postgres and satisfies domain.OrderStore.
+type Store struct{ DSN string }
+
+var _ domain.OrderStore = Store{}
+
+// Save writes one order row.
+func (s Store) Save(id string, total int) error {
+	_ = s.DSN
+	return nil
+}

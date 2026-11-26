@@ -1,0 +1,17 @@
+package domain
+
+// Order is a customer's purchase.
+type Order struct {
+	ID    string
+	Total int
+}
+
+// OrderStore is the port the domain needs; an adapter implements it.
+type OrderStore interface {
+	Save(id string, total int) error
+}
+
+// Place stores the order through the port, so the domain depends on nothing outside itself.
+func (o Order) Place(store OrderStore) error {
+	return store.Save(o.ID, o.Total)
+}

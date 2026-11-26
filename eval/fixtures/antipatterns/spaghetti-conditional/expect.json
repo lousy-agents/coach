@@ -1,0 +1,17 @@
+{
+  "id": "spaghetti-conditional",
+  "name": "Spaghetti conditional (high cognitive load)",
+  "source": "Cognitive complexity (Campbell, SonarSource, 2017): interleaved conditions, && / || chains, continue and break in one function; the fix is named predicates (Fowler, Refactoring, 'Decompose Conditional')",
+  "seed": "complexity.cognitive_complexity in unevaluatedTSEdgeDiagnostics and tsAssignsToName (a baseline scan of main at 6d98ea0)",
+  "status": "covered",
+  "expect": {
+    "bad": [
+      {
+        "rule_id": "complexity.cognitive_complexity",
+        "path": "archive/select.go",
+        "subject": "Expired"
+      }
+    ],
+    "good": "none"
+  }
+}
