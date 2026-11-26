@@ -36,6 +36,7 @@ const (
 
 type Config struct {
 	SchemaVersion    string            `json:"schema_version"`
+	Language         Language          `json:"language,omitempty"`
 	Roots            []string          `json:"roots"`
 	Layers           []Layer           `json:"layers,omitempty"`
 	ForbiddenImports []ForbiddenImport `json:"forbidden_imports,omitempty"`
