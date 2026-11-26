@@ -682,7 +682,7 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 | `eval-detection` | Per-rule H3 from cached fixtures; seconds to minutes | 0 · 1 a rule mismatch or a promoted `known_miss` · 2 a missing compiler or tool · 3 `coach` non-zero |
 | `eval-detection-selftest` | Mutation red tests | 0 every mutation turns H3 red · 1 one did not · 2 the override is absent |
 | `eval-hook-health` | Hook health plus the probe edit, on tuning cells; no model, no Docker needed | 0 · 1 a health or probe failure · 2 a missing tool |
-| `eval-generate` | Generation and validation, natively | 0 · 1 an error that is not a rejection, such as an unwritable cache · 2 a missing or invalid input or tool (Go, the gocognit pin, the eval module, `EVAL_ORACLE_DIR` for the held-out panel) · 8 the total rejection rate is above 50%, or a cell is rejected at every one of ten attempts (the report says which steps and which operators) |
+| `eval-generate` | Generation and validation, natively. With `--profile P --count N` (tuning panel only, #872), N distinct cells are drawn from a pattern profile by the run's seed, weighted by the profile's layers, packages per layer, entry kinds and call depth, with add-one smoothing so every cell stays possible | 0 · 1 an error that is not a rejection, such as an unwritable cache · 2 a missing or invalid input or tool (Go, the gocognit pin, the eval module, `EVAL_ORACLE_DIR` for the held-out panel), or a profile run that cannot be one: a profile that fails the schema or is of another version, `--profile` with `--panel held_out`, `--cell`, `--tuning` or a dimension flag, `--count` missing or outside 1 to 1,728, or `--count` without `--profile` · 8 the total rejection rate is above 50%, or a cell is rejected at every one of ten attempts (the report says which steps and which operators) |
 | `eval-replay` | The new `coach` and hook over the pilot's saved trees; diffs findings and messages | 0 · 2 no saved pilot trees |
 | `eval-precommit-agent` | Wiring; ≈ 10 min, ≈ 3 τ | 0 · 1 an integrity failure · 2 a refusal (no 15.15 record, no `sbx`, or a credential problem) |
 | `eval-agent-pilot` | 360 trials; writes the estimates | 0 · 1 a harness-caused event (R) · 2 a refusal · 5 killed (R) · 6 a cap reached (R after the caps are raised) |
@@ -720,7 +720,7 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 
 **The ledger,** `eval/ledger/runs.jsonl`, takes pre-run lines, study results, census and history runs, and `eval-detection --record-baseline` runs. Each line is self-contained: `{schema_version, kind, recorded, cell, run}`, where `run` is validated against the schema for its kind: `census_run.schema.json` for `census`, `history_run.schema.json` for `history`, and `run.schema.json` otherwise. A census or history line names `coach` by base name, with its sha256 as its identity. A census or history run appends its records and its ledger line as one unit: it takes the ledger's lock and then the records' lock, reads the clock once for both dates, and cuts the records back if the line cannot be written. The line schema is committed as `eval/internal/evalharness/ledger_line.schema.json`. `kind` is `pre_run`, `study`, `census`, `history` or `baseline`. `eval-trend` reads `pre_run`, `study` and `baseline` lines, and never a local `run.json`. A census or history line is committed only together with the records of the run that wrote it. The ledger is append-only, so for one corpus the last census line and the last history line in file order are the current runs; earlier lines stay as history. No tool reads this rule yet; it is the convention for readers.
 
-**`eval-compare`** pairs runs by cell (a.7, b.1). It returns exit 4 on any difference in solver, model, CLI, isolation, image, runtime, architecture, grader versions, caps, prompt, oracle or parameters.
+**`eval-compare`** pairs runs by cell (a.7, b.1). It returns exit 4 on any difference in solver, model, CLI, isolation, image, runtime, architecture, grader versions, caps, prompt, oracle, parameters or profile, including one run with a profile and one without.
 
 ## 11. Manifest, protocol and census schemas
 
@@ -732,7 +732,7 @@ Each exit code below maps one condition. "R" means the run can be resumed.
   "id": "string",
   "kind": "detection_fixture | feature_template_instance | refactor_template_instance | census_repo",
   "language": ["go"],
-  "program": { "program_id": "string", "generator_version": "string", "cell": {}, "seed_hash": "string", "panel": "tuning | held_out" },
+  "program": { "program_id": "string", "generator_version": "string", "cell": {}, "seed_hash": "string", "panel": "tuning | held_out", "profile": "profile identity; absent without one" },
   "source": { "repo": "string (census only)", "sha": "string", "base_sha": "string", "mutated_sha": "string", "include": ["glob"], "exclude": ["glob"], "licence": "string (census only)" },
   "operators": [{ "name": "string", "params": {}, "seed": 0, "declared_rules": ["string"] }],
   "validation": { "mutation_score": 0, "not_covered_share": 0, "baselines_failed": true, "detectors_exact": true, "coach_base_fp": 0 },
