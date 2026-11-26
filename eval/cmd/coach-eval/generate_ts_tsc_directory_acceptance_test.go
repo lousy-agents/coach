@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("coach-eval generate --language typescript, with EVAL_TSC naming a directory (781b)", func() {
+var _ = Describe("coach-eval generate --language typescript, with EVAL_TSC naming a directory (781b)", Label(typeScriptLabel), func() {
 	cell := typeScriptCellFlags(programCells[0])
 
 	It("uses the typescript package directory as the compiler it holds", func() {

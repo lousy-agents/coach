@@ -22,7 +22,7 @@ type typeScriptPolicy struct {
 
 var leakageWords = regexp.MustCompile(`(?i)\b(oracle|hidden|FAIL_TO_PASS|trap|seed|solution|operator)\b|tests/feature`)
 
-var _ = Describe("a generated TypeScript program tree", func() {
+var _ = Describe("a generated TypeScript program tree", Label(typeScriptLabel), func() {
 	cell := programCells[1]
 	flags := append(typeScriptCellFlags(cell), "--seed", "4")
 

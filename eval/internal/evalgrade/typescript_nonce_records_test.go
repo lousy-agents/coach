@@ -42,3 +42,29 @@ func TestARunThatWritesFarMoreRecordsThanAnyProgramHoldsKeepsOnlyABoundedNumberA
 		t.Fatalf("kept %d and counted %d past the cap, want all %d accounted for", len(run.Records), run.Malformed, written)
 	}
 }
+
+func TestTheRecordCapKeepsExactlyThatManyAndCountsTheNextOneAsMalformed(t *testing.T) {
+	var lines strings.Builder
+	for i := 0; i <= maxRecords; i++ {
+		fmt.Fprintf(&lines, `{"nonce":"n","id":"a.test.ts::t%d","status":"pass"}`+"\n", i)
+	}
+
+	run := readRecords(strings.NewReader(lines.String()))
+
+	if len(run.Records) != maxRecords || run.Malformed != 1 {
+		t.Fatalf("kept %d and counted %d malformed, want exactly %d kept and the one past the cap counted", len(run.Records), run.Malformed, maxRecords)
+	}
+}
+
+func TestExactlyTheCapOfRecordsAreAllKept(t *testing.T) {
+	var lines strings.Builder
+	for i := 0; i < maxRecords; i++ {
+		fmt.Fprintf(&lines, `{"nonce":"n","id":"a.test.ts::t%d","status":"pass"}`+"\n", i)
+	}
+
+	run := readRecords(strings.NewReader(lines.String()))
+
+	if len(run.Records) != maxRecords || run.Malformed != 0 {
+		t.Fatalf("kept %d and counted %d malformed, want all %d kept", len(run.Records), run.Malformed, maxRecords)
+	}
+}

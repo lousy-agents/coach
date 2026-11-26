@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("the eval-generate mise task for a TypeScript program", func() {
+var _ = Describe("the eval-generate mise task for a TypeScript program", Label(typeScriptLabel), func() {
 	It("reaches the generate command with --language (781)", func() {
 		cmd := exec.Command("mise", "run", "eval-generate", "--", "--language", "typescript", "--cell", "0", "--seed", "1")
 		cmd.Dir = repositoryRoot()

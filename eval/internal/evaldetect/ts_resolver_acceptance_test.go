@@ -81,6 +81,25 @@ var _ = Describe("the TypeScript import resolver", func() {
 		}),
 	)
 
+	DescribeTable("a refused baseUrl names the config file that sets it",
+		func(files map[string]string, configFile string) {
+			_, err := tsViolations(tsTree(files))
+			Expect(err).To(MatchError(evaldetect.ErrRefused))
+			Expect(err).To(MatchError(ContainSubstring(configFile)))
+		},
+		Entry("the root config", map[string]string{
+			"tsconfig.json": `{"compilerOptions":{"baseUrl":"."}}`,
+		}, "tsconfig.json"),
+		Entry("an extended config at the root", map[string]string{
+			"tsconfig.base.json": `{"compilerOptions":{"baseUrl":"src"}}`,
+			"tsconfig.json":      `{"extends":"./tsconfig.base.json"}`,
+		}, "tsconfig.base.json"),
+		Entry("an extended config in a subdirectory", map[string]string{
+			"config/tsconfig.base.json": `{"compilerOptions":{"baseUrl":"."}}`,
+			"tsconfig.json":             `{"extends":"./config/tsconfig.base.json"}`,
+		}, "config/tsconfig.base.json"),
+	)
+
 	DescribeTable("an unsupported form is refused with a named reason",
 		func(files map[string]string, reason string) {
 			_, err := tsViolations(tsTree(files))
@@ -104,6 +123,13 @@ var _ = Describe("the TypeScript import resolver", func() {
 		Entry("baseUrl in an extended config", map[string]string{
 			"tsconfig.base.json": `{"compilerOptions":{"baseUrl":"src"}}`,
 			"tsconfig.json":      `{"extends":"./tsconfig.base.json"}`,
+		}, "baseUrl"),
+		Entry("an empty baseUrl, which TypeScript 7 refuses by its presence", map[string]string{
+			"tsconfig.json": `{"compilerOptions":{"baseUrl":""}}`,
+		}, "baseUrl"),
+		Entry("a baseUrl in a subdirectory config reached through extends", map[string]string{
+			"config/tsconfig.base.json": `{"compilerOptions":{"baseUrl":"src"}}`,
+			"tsconfig.json":             `{"extends":"./config/tsconfig.base.json"}`,
 		}, "baseUrl"),
 		Entry("a paths pattern with more than one wildcard", map[string]string{
 			"tsconfig.json": `{"compilerOptions":{"paths":{"@x/*/y/*":["src/*/z/*"]}}}`,
