@@ -49,7 +49,7 @@ var _ = Describe("loading the project when no backend can run the policy", func(
 			return &codesignalcli.ProjectBackendUnavailableError{Message: "not here"}
 		}
 		earlier := codesignal.Diagnostic{Kind: "project_config_deprecated", Path: "project.json"}
-		content := json.RawMessage(`{}`)
+		content := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
 		onDisk := projectconfig.DiskSelection{Path: "project.json", Digest: projectconfig.Digest(content), Content: content}
 
 		prepared, err := loadPreparedProject(GinkgoT().TempDir(), "rev", policyref.Discovered("project.json"), projectLanguageFlag{value: "go"}, []codesignal.Diagnostic{earlier}, onDisk, ports)
