@@ -61,7 +61,7 @@ func recordRun(parsed censusArgs, summary Summary, exit int, ledgerLine LedgerLi
 }
 
 func runCorpus(corpusPath, coach string) (Summary, error) {
-	corpus, err := LoadCorpus(corpusPath)
+	corpus, err := LoadCensusCorpus(corpusPath)
 	if err != nil {
 		return Summary{}, err
 	}

@@ -106,9 +106,19 @@ func writeCorpus(repos ...corpusRepo) string {
 
 // writeCorpusFor writes a manifest that censuses one rule in one language.
 func writeCorpusFor(ruleID, language string, repos ...corpusRepo) string {
+	entries := make([]map[string]any, 0, len(repos))
+	for _, repo := range repos {
+		raw, err := json.Marshal(repo)
+		Expect(err).NotTo(HaveOccurred())
+		var entry map[string]any
+		Expect(json.Unmarshal(raw, &entry)).To(Succeed())
+		entry["licence"] = "MIT"
+		entry["sample"] = map[string]any{"seed": 7}
+		entries = append(entries, entry)
+	}
 	manifest := map[string]any{
 		"corpus_id":    "fixture",
-		"repositories": repos,
+		"repositories": entries,
 		"rules":        []any{map[string]any{"rule_id": ruleID, "languages": []string{language}}},
 	}
 	raw, err := json.Marshal(manifest)
