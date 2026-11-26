@@ -1,0 +1,287 @@
+package main_test
+
+import (
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+var (
+	antipatternCoachOnce sync.Once
+	antipatternCoachPath string
+)
+
+// antipatternCoach is the coach built from this checkout, once per run.
+func antipatternCoach() string {
+	antipatternCoachOnce.Do(func() {
+		antipatternCoachPath = filepath.Join(buildDir, "coach-antipatterns")
+		build := exec.Command("go", "build", "-o", antipatternCoachPath, "./cmd/coach")
+		build.Dir = repositoryRoot()
+		output, err := build.CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), string(output))
+	})
+	return antipatternCoachPath
+}
+
+const (
+	validMain = "package main\n\nfunc main() {}\n"
+	validMod  = "module example.com/fixture\n\ngo 1.26.0\n"
+)
+
+// cannedCoach is a coach that prints the report.json in the directory it is run in, so that each variant carries the
+// report the real coach would give it.
+func cannedCoach() string {
+	path := filepath.Join(GinkgoT().TempDir(), "coach")
+	Expect(os.WriteFile(path, []byte("#!/bin/sh\ncat report.json\n"), 0o755)).To(Succeed())
+	return path
+}
+
+func reportOf(signals ...string) string {
+	var entries []string
+	for _, signal := range signals {
+		parts := strings.SplitN(signal, "|", 3)
+		entries = append(entries, `{"rule_id":"`+parts[0]+`","path":"`+parts[1]+`","subject":"`+parts[2]+`"}`)
+	}
+	return `{"signals":[` + strings.Join(entries, ",") + `]}`
+}
+
+func variantFiles(report string, extra map[string]string) map[string]string {
+	files := map[string]string{"go.mod": validMod, "main.go": validMain, "report.json": report}
+	for name, content := range extra {
+		files[name] = content
+	}
+	return files
+}
+
+// writeFixture writes fixtures/<id>/{expect.json,bad,good}; an empty expect writes no expect.json.
+func writeFixture(root, id, expect string, bad, good map[string]string) {
+	dir := filepath.Join(root, id)
+	if expect != "" {
+		Expect(os.MkdirAll(dir, 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(dir, "expect.json"), []byte(expect), 0o644)).To(Succeed())
+	}
+	for variant, files := range map[string]map[string]string{"bad": bad, "good": good} {
+		for name, content := range files {
+			target := filepath.Join(dir, variant, name)
+			Expect(os.MkdirAll(filepath.Dir(target), 0o755)).To(Succeed())
+			Expect(os.WriteFile(target, []byte(content), 0o644)).To(Succeed())
+		}
+	}
+}
+
+const layerExpect = `{"id":"layer","name":"Layer breach","source":"Martin","seed":"none","status":"covered",
+ "expect":{"bad":[{"rule_id":"architecture.layer_violation","path":"internal/domain/order.go","subject":"architecture.layer_violation:internal/domain->internal/infra"}],"good":"none"}}`
+
+var layerSignal = "architecture.layer_violation|internal/domain/order.go|architecture.layer_violation:internal/domain->internal/infra"
+
+func runAntipatterns(fixtures, coach string, extraArgs ...string) generateOutcome {
+	args := []string{"antipatterns", "--fixtures", fixtures}
+	if coach != "" {
+		args = append(args, "--coach", coach)
+	}
+	cmd := exec.Command(coachEvalBinary, append(args, extraArgs...)...)
+	cmd.Env = os.Environ()
+	return runGenerateCommand(cmd)
+}
+
+type antipatternTable struct {
+	Fixtures []struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+		Bad    struct {
+			Result string `json:"result"`
+			Scan   string `json:"scan"`
+		} `json:"bad"`
+		Good struct {
+			Result string `json:"result"`
+			Scan   string `json:"scan"`
+		} `json:"good"`
+	} `json:"fixtures"`
+	Summary struct {
+		Pass       int      `json:"pass"`
+		Fail       int      `json:"fail"`
+		NotCovered []string `json:"not_covered"`
+	} `json:"summary"`
+}
+
+func decodeTable(stdout string) antipatternTable {
+	var table antipatternTable
+	ExpectWithOffset(1, json.Unmarshal([]byte(stdout), &table)).To(Succeed(), stdout)
+	return table
+}
+
+var _ = Describe("coach-eval antipatterns (#871)", func() {
+	var fixtures string
+
+	BeforeEach(func() { fixtures = GinkgoT().TempDir() })
+
+	It("passes a fixture whose bad variant has the expected finding and whose good variant has none, and prints the table", func() {
+		writeFixture(fixtures, "layer", layerExpect, variantFiles(reportOf(layerSignal), nil), variantFiles(reportOf(), nil))
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		table := decodeTable(outcome.stdout)
+		Expect(table.Fixtures).To(HaveLen(1))
+		Expect(table.Fixtures[0].ID).To(Equal("layer"))
+		Expect(table.Fixtures[0].Bad.Result).To(Equal("pass"))
+		Expect(table.Fixtures[0].Good.Result).To(Equal("pass"))
+		Expect(table.Summary.Pass).To(Equal(1))
+	})
+
+	DescribeTable("exits 1 and names the fixture, the variant and the rule when a covered fixture fails",
+		func(bad, good string, variant string) {
+			writeFixture(fixtures, "layer", layerExpect, variantFiles(bad, nil), variantFiles(good, nil))
+
+			outcome := runAntipatterns(fixtures, cannedCoach())
+
+			Expect(outcome.exitCode).To(Equal(1), outcome.stderr)
+			Expect(outcome.stderr).To(ContainSubstring("layer"))
+			Expect(outcome.stderr).To(ContainSubstring(variant))
+			Expect(outcome.stderr).To(ContainSubstring("architecture.layer_violation"))
+			Expect(decodeTable(outcome.stdout).Summary.Fail).To(Equal(1))
+		},
+		Entry("the bad variant is silent", reportOf(), reportOf(), "bad"),
+		Entry("the good variant reports the rule", reportOf(layerSignal), reportOf(layerSignal), "good"),
+		Entry("the bad variant reports the rule at another path", reportOf("architecture.layer_violation|internal/domain/other.go|architecture.layer_violation:internal/domain->internal/infra"), reportOf(), "bad"),
+		Entry("the bad variant reports it with another subject", reportOf("architecture.layer_violation|internal/domain/order.go|architecture.layer_violation:internal/domain->internal/other"), reportOf(), "bad"),
+	)
+
+	It("exits 1 when the bad variant also reports a rule nobody expected", func() {
+		extra := "complexity.branch_density|internal/domain/order.go|complexity.branch_density:order"
+		writeFixture(fixtures, "layer", layerExpect, variantFiles(reportOf(layerSignal, extra), nil), variantFiles(reportOf(), nil))
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(1), outcome.stderr)
+		Expect(outcome.stderr).To(ContainSubstring("complexity.branch_density"))
+	})
+
+	It("exits 1 when the good variant reports a rule nobody expected", func() {
+		extra := "complexity.branch_density|internal/domain/order.go|complexity.branch_density:order"
+		writeFixture(fixtures, "layer", layerExpect, variantFiles(reportOf(layerSignal), nil), variantFiles(reportOf(extra), nil))
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(1), outcome.stderr)
+		Expect(outcome.stderr).To(ContainSubstring("good"))
+	})
+
+	const missExpect = `{"id":"global","name":"Global mutable state","source":"none","seed":"none","status":"not_covered",
+ "expect":{"bad":"none","good":"none"}}`
+
+	It("reports a known miss as not_covered, lists it in the summary, and does not fail the run for it", func() {
+		writeFixture(fixtures, "layer", layerExpect, variantFiles(reportOf(layerSignal), nil), variantFiles(reportOf(), nil))
+		writeFixture(fixtures, "global", missExpect, variantFiles(reportOf(), nil), variantFiles(reportOf(), nil))
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		table := decodeTable(outcome.stdout)
+		Expect(table.Summary.NotCovered).To(Equal([]string{"global"}))
+		for _, fixture := range table.Fixtures {
+			if fixture.ID == "global" {
+				Expect(fixture.Status).To(Equal("not_covered"))
+				Expect(fixture.Bad.Result).To(Equal("not_covered"))
+			}
+		}
+		Expect(table.Summary.Pass).To(Equal(1), "a known miss is never counted as a pass")
+	})
+
+	It("says so, without failing, when Coach starts to report on a known miss", func() {
+		writeFixture(fixtures, "global", missExpect,
+			variantFiles(reportOf("state.hidden_input_mutation|main.go|state.hidden_input_mutation:x"), nil), variantFiles(reportOf(), nil))
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		Expect(decodeTable(outcome.stdout).Fixtures[0].Bad.Result).To(Equal("now_covered"))
+	})
+
+	It("scans each variant with --baseline, and with --project-config only when the variant has a policy", func() {
+		withPolicy := variantFiles(reportOf(layerSignal), map[string]string{".lousy-agents/coach.json": `{"schema_version":"1","roots":["."]}`})
+		writeFixture(fixtures, "layer", layerExpect, withPolicy, variantFiles(reportOf(), nil))
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		table := decodeTable(outcome.stdout)
+		Expect(table.Fixtures[0].Bad.Scan).To(ContainSubstring("--baseline"))
+		Expect(table.Fixtures[0].Bad.Scan).To(ContainSubstring("--project-config .lousy-agents/coach.json"))
+		Expect(table.Fixtures[0].Good.Scan).To(ContainSubstring("--baseline"))
+		Expect(table.Fixtures[0].Good.Scan).NotTo(ContainSubstring("--project-config"))
+	})
+
+	It("reads a variant stored with .txt suffixes on its sources, so the repository's own scan never sees it", func() {
+		bad := map[string]string{"go.mod.txt": validMod, "main.go.txt": validMain, "report.json": reportOf(layerSignal)}
+		good := map[string]string{"go.mod.txt": validMod, "main.go.txt": validMain, "report.json": reportOf()}
+		writeFixture(fixtures, "layer", layerExpect, bad, good)
+
+		outcome := runAntipatterns(fixtures, cannedCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+	})
+
+	DescribeTable("exits 2 and names the fixture when its input is unusable",
+		func(expect string, bad map[string]string, mentions string) {
+			writeFixture(fixtures, "layer", expect, bad, variantFiles(reportOf(), nil))
+
+			outcome := runAntipatterns(fixtures, cannedCoach())
+
+			Expect(outcome.exitCode).To(Equal(2), outcome.stderr)
+			Expect(outcome.stdout).To(BeEmpty())
+			Expect(outcome.stderr).To(ContainSubstring("layer"))
+			Expect(outcome.stderr).To(ContainSubstring(mentions))
+		},
+		Entry("no expect.json", "", variantFiles(reportOf(layerSignal), nil), "expect.json"),
+		Entry("an expect.json that is not JSON", "{", variantFiles(reportOf(layerSignal), nil), "expect.json"),
+		Entry("an expect.json with an unknown status", `{"id":"layer","status":"maybe","expect":{"bad":"none","good":"none"}}`, variantFiles(reportOf(layerSignal), nil), "status"),
+		Entry("an expect.json whose id is not the directory's", `{"id":"other","status":"covered","expect":{"bad":"none","good":"none"}}`, variantFiles(reportOf(layerSignal), nil), "id"),
+		Entry("a bad variant that fails go vet", layerExpect, variantFiles(reportOf(layerSignal), map[string]string{"main.go": "package main\n\nfunc main() { var unused int }\n"}), "go vet"),
+		Entry("a bad variant with no go.mod", layerExpect, map[string]string{"main.go": validMain, "report.json": reportOf(layerSignal)}, "bad"),
+	)
+
+	It("passes every committed fixture against the real coach: Coach reports each anti-pattern on bad and stays silent on good", func() {
+		root := filepath.Join(repositoryRoot(), "eval", "fixtures", "antipatterns")
+
+		outcome := runAntipatterns(root, antipatternCoach())
+
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		table := decodeTable(outcome.stdout)
+		Expect(table.Summary.Fail).To(BeZero())
+		covered := map[string]bool{}
+		for _, fixture := range table.Fixtures {
+			if fixture.Status == "covered" {
+				covered[fixture.ID] = true
+				Expect(fixture.Bad.Result).To(Equal("pass"), fixture.ID)
+				Expect(fixture.Good.Result).To(Equal("pass"), fixture.ID)
+			}
+		}
+		Expect(covered).To(HaveKey("dependency-rule-breach"))
+		Expect(covered).To(HaveKey("skipped-layer"))
+		Expect(covered).To(HaveKey("arrow-code"))
+		Expect(covered).To(HaveKey("spaghetti-conditional"))
+	})
+
+	DescribeTable("exits 2 for a missing tool or fixture directory",
+		func(args func() (string, string), mentions string) {
+			dir, coach := args()
+
+			outcome := runAntipatterns(dir, coach)
+
+			Expect(outcome.exitCode).To(Equal(2), outcome.stderr)
+			Expect(outcome.stdout).To(BeEmpty())
+			Expect(outcome.stderr).To(ContainSubstring(mentions))
+		},
+		Entry("no --coach", func() (string, string) { return GinkgoT().TempDir(), "" }, "--coach"),
+		Entry("a coach that does not exist", func() (string, string) { return GinkgoT().TempDir(), "/nonexistent/coach" }, "/nonexistent/coach"),
+		Entry("a fixtures directory that does not exist", func() (string, string) { return "/nonexistent/fixtures", cannedCoach() }, "/nonexistent/fixtures"),
+		Entry("a fixtures directory with no fixture", func() (string, string) { return GinkgoT().TempDir(), cannedCoach() }, "no fixture"),
+	)
+})
