@@ -94,6 +94,9 @@ var _ = Describe("the Go layer-bypass detector", func() {
 		Entry("an explicitly instantiated generic function", map[string]string{
 			"pkg/api/via.go": "package api\n\nimport \"example.com/fx/pkg/store\"\n\nfunc via[T any](t T) { store.Save(\"x\") }\n\nfunc Viageneric() { via[int](1) }\n",
 		}, "example.com/fx/pkg/api.Viageneric", []string{"example.com/fx/pkg/api.Viageneric", "example.com/fx/pkg/api.via", storeSave}),
+		Entry("a generic function instantiated with two type arguments", map[string]string{
+			"pkg/api/pair.go": "package api\n\nimport \"example.com/fx/pkg/store\"\n\nfunc pair[K comparable, V any](k K, v V) { store.Save(\"x\") }\n\nfunc Viapair() { pair[string, int](\"k\", 1) }\n",
+		}, "example.com/fx/pkg/api.Viapair", []string{"example.com/fx/pkg/api.Viapair", "example.com/fx/pkg/api.pair", storeSave}),
 	)
 
 	When("two calls on one line both reach the downstream layer", func() {

@@ -16,8 +16,9 @@ const (
 )
 
 // resolveCall resolves call statically to a local function or concrete
-// method. A call through an interface or a function value is unresolved; a
-// builtin, a conversion or a call into another module is ignored.
+// method, taking a generic instantiation to its declaration. A call through
+// an interface or a function value is unresolved; a builtin, a conversion or
+// a call into another module is ignored.
 func resolveCall(program goProgram, pkg *goPackage, rel string, call *ast.CallExpr) (callSite, callOutcome) {
 	callee, resolved := calledObject(pkg.info, call.Fun)
 	if !resolved {
@@ -27,6 +28,7 @@ func resolveCall(program goProgram, pkg *goPackage, rel string, call *ast.CallEx
 	if !ok {
 		return callSite{}, callIgnored
 	}
+	function = function.Origin()
 	if receiver := function.Type().(*types.Signature).Recv(); receiver != nil && types.IsInterface(receiver.Type()) {
 		return callSite{}, callUnresolved
 	}
@@ -37,8 +39,9 @@ func resolveCall(program goProgram, pkg *goPackage, rel string, call *ast.CallEx
 	return callSite{callee: function.FullName(), file: path.Clean(rel), line: position.Line, column: position.Column}, callResolved
 }
 
-// calledObject names what a call's function expression refers to. It
-// reports false for a call through a value: a variable, a field, a function
+// calledObject names what a call's function expression refers to, looking
+// through an explicit instantiation. It reports false for a call through a
+// value: a variable, a field, an element of a map or slice, a function
 // literal or any other expression.
 func calledObject(info *types.Info, fun ast.Expr) (types.Object, bool) {
 	switch expr := ast.Unparen(fun).(type) {
@@ -52,7 +55,11 @@ func calledObject(info *types.Info, fun ast.Expr) (types.Object, bool) {
 			return selection.Obj(), true
 		}
 		return objectOrFalse(info.Uses[expr.Sel])
-	case *ast.IndexExpr, *ast.IndexListExpr, *ast.ArrayType, *ast.MapType, *ast.ChanType, *ast.FuncType, *ast.InterfaceType, *ast.StructType:
+	case *ast.IndexExpr:
+		return calledObject(info, expr.X)
+	case *ast.IndexListExpr:
+		return calledObject(info, expr.X)
+	case *ast.ArrayType, *ast.MapType, *ast.ChanType, *ast.FuncType, *ast.InterfaceType, *ast.StructType:
 		return nil, true
 	}
 	return nil, false

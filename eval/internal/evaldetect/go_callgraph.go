@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
-	"sort"
 )
 
 // callSite is one statically resolved call, at its file, line and column.
@@ -15,7 +14,8 @@ type callSite struct {
 	column int
 }
 
-// funcNode is one declared function or method.
+// funcNode is one declared function or method, with its calls in source
+// order: ast.Inspect visits a body by position.
 type funcNode struct {
 	name   string
 	dir    string
@@ -24,8 +24,8 @@ type funcNode struct {
 }
 
 // callGraph is every local function, keyed by its full name, and the count
-// of calls no static resolution reaches: through an interface or a function
-// value.
+// of calls the search cannot follow: through an interface or a function
+// value, or to a function declared without a body.
 type callGraph struct {
 	nodes      map[string]*funcNode
 	unresolved int
@@ -42,20 +42,25 @@ func buildCallGraph(program goProgram) (callGraph, error) {
 	if len(graph.nodes) > maxCallGraphNodes {
 		return callGraph{}, fmt.Errorf("%w: the call graph has more than %d functions (%d)", ErrRefused, maxCallGraphNodes, len(graph.nodes))
 	}
-	for _, node := range graph.nodes {
-		sort.Slice(node.calls, func(i, j int) bool { return node.calls[i].before(node.calls[j]) })
-	}
+	graph.dropCallsOutsideTheGraph()
 	return graph, nil
 }
 
-func (site callSite) before(other callSite) bool {
-	if site.file != other.file {
-		return site.file < other.file
+// dropCallsOutsideTheGraph counts a call to a function that has no node,
+// such as one declared without a body, as unresolved, so the search only
+// follows calls it can continue from.
+func (graph *callGraph) dropCallsOutsideTheGraph() {
+	for _, node := range graph.nodes {
+		kept := node.calls[:0]
+		for _, call := range node.calls {
+			if graph.nodes[call.callee] == nil {
+				graph.unresolved++
+				continue
+			}
+			kept = append(kept, call)
+		}
+		node.calls = kept
 	}
-	if site.line != other.line {
-		return site.line < other.line
-	}
-	return site.column < other.column
 }
 
 func (graph *callGraph) addFile(program goProgram, pkg *goPackage, rel string, file *ast.File) {

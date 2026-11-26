@@ -4,9 +4,9 @@ import "sort"
 
 // searchBypasses walks out from every source in an upstream layer, never
 // entering a function in the required layer, and records each first
-// function reached in a downstream layer. Breadth-first order over call
-// sites sorted by file, line and column makes each witness the shortest
-// path, with ties going to the earlier call.
+// function reached in a downstream layer. Breadth-first order over each
+// function's calls in source order makes each witness the shortest path,
+// with ties going to the earlier call.
 func searchBypasses(graph callGraph, policy Policy) []Bypass {
 	upstream, downstream := policy.bypassLayers()
 	layerOf := func(node *funcNode) string { name, _ := policy.layerOf(node.dir); return name }

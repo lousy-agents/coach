@@ -22,6 +22,7 @@ type goPackage struct {
 	fileNames  []string
 	pkg        *types.Package
 	info       *types.Info
+	checking   bool
 }
 
 // goProgram is every production Go package under a root, type-checked
