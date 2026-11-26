@@ -80,6 +80,7 @@ var _ = Describe("the profile schema's required keys and types (AC-1.4)", func()
 		Entry("a constructor count as a string", "shapes.constructor.assigns_only", "1"),
 		Entry("a constructor count below zero", "shapes.constructor.does_work", -1),
 		Entry("not_covered as an object", "not_covered", map[string]any{}),
+		Entry("a not-covered item as a string", "not_covered", []any{"layers"}),
 		Entry("a not-covered count of zero", "not_covered.0.count", 0),
 		Entry("a not-covered count as a string", "not_covered.0.count", "1"),
 	)

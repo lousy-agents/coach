@@ -149,6 +149,27 @@ var _ = Describe("extracting a profile from a checkout (#872 Task 2)", func() {
 		})
 	})
 
+	When("the checkout directory's own name starts with _", func() {
+		It("still reads it: only directories inside the checkout are ignored by name", func() {
+			parent := GinkgoT().TempDir()
+			root := filepath.Join(parent, "_checkout")
+			Expect(os.Rename(standInTree(), root)).To(Succeed())
+
+			Expect(decodeProfile(extract(root))["shapes"].(map[string]any)["branch_density"]).To(Equal(map[string]any{"3": 1.0, "4": 1.0}))
+		})
+	})
+
+	When("the entry's label passes Check but not the profile schema", func() {
+		It("refuses to return a profile that does not validate", func() {
+			reference := standInReference()
+			reference.Label = "Not A Path Segment"
+
+			_, err := evalpatterns.ExtractProfile(reference, standInTree())
+
+			Expect(err).To(MatchError(ContainSubstring("the profile does not validate")))
+		})
+	})
+
 	When("the entry itself is refused", func() {
 		It("refuses before reading the checkout", func() {
 			reference := standInReference()
