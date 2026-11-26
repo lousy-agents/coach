@@ -17,6 +17,7 @@ Track (a) of the Coach evaluation design: how to build and grade an evaluation i
   - Report pass^k as well as the mean.
   - Calibrate any LLM judge against human labels, one dimension at a time.
   - Read a sample of transcripts before trusting the numbers.
+- Superseded: parts of this implication are replaced by automation in `agentic-eval-design.md` §1, "Departures from the sources".
 
 ## a.2 Anthropic docs, "Define success criteria and build evaluations"
 
@@ -30,6 +31,7 @@ Track (a) of the Coach evaluation design: how to build and grade an evaluation i
   - The refactor task must look like real pilot work, a plausible change to a real-looking repository.
   - Any LLM judge must be a different model from the agent under test.
   - Each judge gets a closed label set with a rubric, and is tested for reliability before it is used at scale.
+- Superseded: parts of this implication are replaced by automation in `agentic-eval-design.md` §1, "Departures from the sources".
 
 ## a.3 Inspect AI documentation (UK AI Security Institute)
 
@@ -70,6 +72,7 @@ Track (a) of the Coach evaluation design: how to build and grade an evaluation i
   - Every fixture and its target state need human validation before use, with at least two independent humans and the stricter label kept.
   - The target checks must accept every valid refactor, not only the one the author had in mind.
   - Fixtures are written fresh for this eval, so they are not in any training set.
+- Superseded: parts of this implication are replaced by automation in `agentic-eval-design.md` §1, "Departures from the sources".
 
 ## a.6 Zhu et al., "Establishing Best Practices for Building Rigorous Agentic Benchmarks" (the Agentic Benchmark Checklist, ABC)
 

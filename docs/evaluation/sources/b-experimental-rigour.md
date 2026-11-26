@@ -73,6 +73,7 @@ Key findings:
 4. **Isolation and size.** Each trial should be "isolated" by starting from a clean environment, and "20-50 simple tasks drawn from real failures is a great start". The post gives no recommended number of trials or value of k.
 
 **Design implication for Coach's eval:** every trial starts from a fresh copy of the fixture with no state carried over; a fixture nobody (Coach arm or control) can pass is investigated as a broken fixture before it is counted; and a human reads a sample of transcripts from both arms before any number is published.
+- Superseded: parts of this implication are replaced by automation in `agentic-eval-design.md` §1, "Departures from the sources".
 
 ## 5. Kapoor et al., "AI Agents That Matter"
 
