@@ -69,7 +69,40 @@ var _ = Describe("a record for a target the ledger already holds", func() {
 			record.Source = evalcensus.Source{Kind: "detector", Ref: "gocognit v2.0.0"}
 			return record
 		}()),
+		Entry("only the measure, from the same source", func() evalcensus.Record {
+			record := automatedRecord("second", `1`)
+			record.Measure = "flagged_vs_unflagged_association"
+			return record
+		}()),
 	)
+
+	It("does not supersede a record that an earlier correction already supersedes", func() {
+		root := GinkgoT().TempDir()
+		correction := automatedRecord("correction", `"disagree"`)
+		correction.Source = evalcensus.Source{Kind: "detector", Ref: "gocognit v2.0.0"}
+		correction.Supersedes = strPtr("first")
+		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{automatedRecord("first", `"agree"`)})).To(Succeed())
+		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{correction})).To(Succeed())
+
+		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{automatedRecord("third", `"agree"`)})).To(Succeed())
+
+		records := recordsOf(root)
+		Expect(records).To(HaveLen(3))
+		Expect(records[2].Supersedes).To(BeNil(), "the first record is already superseded, and the correction is from another source")
+	})
+
+	It("supersedes the latest of two current records for one target, and leaves the earlier one as it was", func() {
+		path := writeLedger(recordLine(automatedRecord("earlier", `"agree"`)) + "\n" + recordLine(automatedRecord("later", `"agree"`)) + "\n")
+
+		Expect(evalcensus.AppendRecords(path, []evalcensus.Record{automatedRecord("third", `"agree"`)})).To(Succeed())
+
+		records, err := evalcensus.LoadRecords(path)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(records).To(HaveLen(3))
+		Expect(records[0].Supersedes).To(BeNil())
+		Expect(records[1].Supersedes).To(BeNil())
+		Expect(records[2].Supersedes).To(Equal(strPtr("later")))
+	})
 })
 
 var _ = Describe("the records a reader counts", func() {
