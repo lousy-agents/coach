@@ -36,4 +36,53 @@ var _ = Describe("a run's records and ledger line, written as one unit", func() 
 			Expect(records[0].RecordID).To(Equal("other"))
 		})
 	})
+
+	When("another run appends to the same ledger while this run's ledger line is being written and then fails", func() {
+		It("keeps the other run's ledger line, because each run holds the ledger lock across its own write", func() {
+			root := GinkgoT().TempDir()
+			ledger := filepath.Join(root, "ledger", "runs.jsonl")
+			done := make(chan error, 1)
+			restore := evalcensus.FailFirstWriteTo(ledger, 3, func() {
+				go func() {
+					done <- evalcensus.AppendRun(ledger, []byte("{\"other\":1}\n"), root, "other", []evalcensus.Record{recordIn("other")})
+				}()
+				time.Sleep(200 * time.Millisecond)
+			})
+
+			err := evalcensus.AppendRun(ledger, []byte("{\"run\":1}\n"), root, "pilot", []evalcensus.Record{automatedRecord("run", `"agree"`)})
+			Expect(<-done).To(Succeed())
+			restore()
+
+			Expect(err).To(HaveOccurred())
+			Expect(readFile(ledger)).To(Equal("{\"other\":1}\n"))
+		})
+	})
+
+	DescribeTable("a run whose records do not belong to its corpus writes nothing",
+		func(corpusID string, records []evalcensus.Record) {
+			base := GinkgoT().TempDir()
+			root, ledger := filepath.Join(base, "census"), filepath.Join(base, "ledger", "runs.jsonl")
+
+			err := evalcensus.AppendRun(ledger, []byte("{}\n"), root, corpusID, records)
+
+			Expect(err).To(HaveOccurred())
+			Expect(ledger).NotTo(BeAnExistingFile())
+			entries, readErr := os.ReadDir(base)
+			Expect(readErr).NotTo(HaveOccurred())
+			for _, entry := range entries {
+				Expect(entry.Name()).To(Equal("ledger"), "nothing is written for the corpus, inside the census root or out of it")
+			}
+		},
+		Entry("a record that names another corpus", "pilot", []evalcensus.Record{recordIn("other")}),
+		Entry("a corpus_id of ..", "..", []evalcensus.Record{recordIn("..")}),
+		Entry("a corpus_id holding a slash", "a/b", []evalcensus.Record{recordIn("a/b")}),
+		Entry("an empty corpus_id", "", []evalcensus.Record{recordIn("")}),
+	)
 })
+
+// recordIn is a valid automated record that belongs to corpusID.
+func recordIn(corpusID string) evalcensus.Record {
+	record := automatedRecord("r-"+corpusID, `"agree"`)
+	record.Target.CorpusID = corpusID
+	return record
+}

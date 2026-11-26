@@ -18,15 +18,11 @@ import (
 func historySource(edit string) string {
 	source := complexFunctions(2)
 	for g := 0; g < 3; g++ {
-		source += "\nfunc G" + strconv.Itoa(g) + "() int {\n\ty := 0\n"
-		for i := 0; i < 40; i++ {
-			line := "\ty++\n"
-			if g == 0 && i == 0 && edit != "" {
-				line = edit
-			}
-			source += line
+		first := "\ty++\n"
+		if g == 0 && edit != "" {
+			first = edit
 		}
-		source += "\treturn y\n}\n"
+		source += "\nfunc G" + strconv.Itoa(g) + "() int {\n\ty := 0\n" + first + strings.Repeat("\ty++\n", 39) + "\treturn y\n}\n"
 	}
 	return source
 }
@@ -109,5 +105,34 @@ func historyRunRecord(runID string) record {
 		"statement":            "association, not causation",
 		"repositories":         []any{},
 		"exit":                 0,
+	}
+}
+
+// historyArgsWithout is a history command line with each flag in flags,
+// leaving out drop, or with the manifest twice when drop is "one manifest".
+func historyArgsWithout(drop string, flags map[string]string, corpus string) []string {
+	args := []string{"history", "--seed", "7"}
+	for _, flag := range []string{"--coach", "--census-root", "--ledger"} {
+		if flag != drop {
+			args = append(args, flag, flags[flag])
+		}
+	}
+	args = append(args, corpus)
+	if drop == "one manifest" {
+		args = append(args, corpus)
+	}
+	return args
+}
+
+// expectOnlyLocalGit fails on any logged git call that reaches a network:
+// a fetch, pull, push, remote listing, a URL, or a clone of anything but
+// the local directory.
+func expectOnlyLocalGit(calls []string, localPath string) {
+	for _, call := range calls {
+		Expect(call).NotTo(MatchRegexp(`\b(fetch|pull|push|ls-remote|remote-https?)\b`), call)
+		Expect(call).NotTo(ContainSubstring("://"), call)
+		if strings.Contains(call, " clone ") || strings.HasPrefix(call, "clone ") {
+			Expect(call).To(ContainSubstring(localPath), call)
+		}
 	}
 }

@@ -24,6 +24,9 @@ var _ = Describe("the instant a ledger line records", func() {
 			Expect(json.Unmarshal(data, &line)).To(Succeed())
 			Expect(line["recorded"]).To(Equal("2001-02-03"))
 			Expect(line["run"].(map[string]any)["run_id"]).To(Equal(prefix + "-20010203T235959.000000999Z"))
+			if prefix == "history" {
+				Expect(line["run"].(map[string]any)["fix_pattern"]).To(Equal("fix"), "the summary's fix pattern, not a fixed one")
+			}
 		},
 		Entry("a census line", func() ([]byte, error) {
 			return evalharness.CensusLine(evalcensus.Summary{CorpusID: "pilot", Coach: coach, Repositories: []evalcensus.RepositoryResult{}}, 0, instant)
