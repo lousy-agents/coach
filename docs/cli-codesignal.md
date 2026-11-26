@@ -986,7 +986,7 @@ not change it:
 | `complexity.cognitive_complexity` | `cognitive_complexity=N` | 15 | 30 |
 | `complexity.max_nesting_depth` | `max_nesting_depth=N` | 4 | 8 |
 | `complexity.branch_density` | `branch_sum=N` | 12 | never; always `medium` |
-| `coupling.deep_relative_import` | `..` segments in the import path | 3 | never; always `medium` |
+| `coupling.deep_relative_import` | `..` segments in a relative import path; fires at 3 or more | 3 | never; always `medium` |
 
 `complexity.branch_density` does not escalate because `branch_sum` is a
 whole-file additive total: it grows with file length and a split clears it, so
