@@ -7,6 +7,8 @@ import "github.com/lousy-agents/coach/pkg/semantics"
 // signal.
 const deepRelativeImportDepthThreshold = 3
 
+const deepRelativeImportRuleID = "coupling.deep_relative_import"
+
 const deepRelativeImportWhyItMatters = "A deep relative import (\"../../../\") tightly couples a module to another module's exact directory location, so moving or renaming either side breaks the import and makes refactors brittle."
 
 const deepRelativeImportRecommendation = "Introduce a path alias or restructure toward a shared module boundary instead of climbing many directories with relative imports."
@@ -49,7 +51,7 @@ func signalsFromImports(path string, language semantics.Language, imports []sema
 	var signals []Signal
 	for _, imp := range imports {
 		depth, isRelative := deepRelativeImportDepth(imp.Path)
-		if !isRelative || depth < deepRelativeImportDepthThreshold {
+		if !isRelative || depth < ruleThreshold(deepRelativeImportRuleID, deepRelativeImportDepthThreshold) {
 			continue
 		}
 		signals = append(signals, newDeepRelativeImportSignal(path, imp))
@@ -59,7 +61,7 @@ func signalsFromImports(path string, language semantics.Language, imports []sema
 
 func newDeepRelativeImportSignal(path string, imp semantics.ImportFeature) Signal {
 	return Signal{
-		RuleID:         "coupling.deep_relative_import",
+		RuleID:         deepRelativeImportRuleID,
 		RuleVersion:    "1",
 		Kind:           "deep_relative_import",
 		Category:       "coupling",

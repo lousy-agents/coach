@@ -12,6 +12,8 @@ const reactOrchestrationWhyItMatters = "This component coordinates several indep
 
 const reactOrchestrationRecommendation = "Preserve the public component boundary. First extract one cohesive workspace or panel, then move only its local interaction state and derived data into that module or a dedicated hook. Keep cross-workspace state in the parent. Do not split by line count; derive explicit state-transition actions before moving state."
 
+const reactOrchestrationDensityRuleID = "structure.react_component_orchestration_density"
+
 const (
 	reactStateDomainMinUnique      = 3
 	reactStateDomainMinTransitions = 1
@@ -82,9 +84,9 @@ func signalsFromReactOrchestration(path string, records []semantics.ReactCompone
 }
 
 func reactOrchestrationRequiredMet(rec semantics.ReactComponentFacts) bool {
-	return len(uniqueStateDomains(rec)) >= reactStateDomainMinUnique &&
-		len(rec.CoordinatedTransitions) >= reactStateDomainMinTransitions &&
-		len(rec.WorkspaceBranches) >= reactStateDomainMinBranches
+	return len(uniqueStateDomains(rec)) >= ruleThreshold(reactOrchestrationDensityRuleID+".state_domains", reactStateDomainMinUnique) &&
+		len(rec.CoordinatedTransitions) >= ruleThreshold(reactOrchestrationDensityRuleID+".transitions", reactStateDomainMinTransitions) &&
+		len(rec.WorkspaceBranches) >= ruleThreshold(reactOrchestrationDensityRuleID+".branches", reactStateDomainMinBranches)
 }
 
 func reactOrchestrationSupportingMet(rec semantics.ReactComponentFacts) bool {
@@ -105,7 +107,7 @@ func reactHasSupportingTransition(transitions []semantics.ReactCoordinatedTransi
 
 func newReactOrchestrationSignal(path string, rec semantics.ReactComponentFacts) Signal {
 	return Signal{
-		RuleID:         "structure.react_component_orchestration_density",
+		RuleID:         reactOrchestrationDensityRuleID,
 		RuleVersion:    "1",
 		Kind:           "react_component_orchestration_density",
 		Category:       "structure",
