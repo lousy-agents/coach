@@ -79,7 +79,7 @@ var _ = Describe("a record for a target the ledger already holds", func() {
 	It("does not supersede a record that an earlier correction already supersedes", func() {
 		root := GinkgoT().TempDir()
 		correction := automatedRecord("correction", `"disagree"`)
-		correction.Source = evalcensus.Source{Kind: "detector", Ref: "gocognit v2.0.0"}
+		correction.Source = evalcensus.Source{Kind: "census", Ref: "gocognit v2.0.0"}
 		correction.Supersedes = strPtr("first")
 		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{automatedRecord("first", `"agree"`)})).To(Succeed())
 		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{correction})).To(Succeed())
@@ -88,7 +88,7 @@ var _ = Describe("a record for a target the ledger already holds", func() {
 
 		records := recordsOf(root)
 		Expect(records).To(HaveLen(3))
-		Expect(records[2].Supersedes).To(BeNil(), "the first record is already superseded, and the correction is from another source")
+		Expect(records[2].Supersedes).To(BeNil(), "the first record is already superseded, and the correction is from another source kind")
 	})
 
 	It("supersedes the latest of two current records for one target, and leaves the earlier one as it was", func() {
