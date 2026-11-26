@@ -11,7 +11,7 @@ import (
 // ExtractProfile measures the production Go files of the checkout at root
 // with go/parser alone, and returns the entry's profile as canonical JSON.
 // It runs no command and writes nothing. A file that does not parse
-// refuses the entry with exit 3.
+// refuses the entry with exit 3, and a policy that is not JSON with exit 2.
 func ExtractProfile(reference Reference, root string) ([]byte, error) {
 	if err := reference.Check(); err != nil {
 		return nil, err
@@ -22,13 +22,21 @@ func ExtractProfile(reference Reference, root string) ([]byte, error) {
 	}
 	p := newProfile(reference)
 	fset := token.NewFileSet()
+	packages := map[string][]*ast.File{}
 	for _, rel := range files {
 		file, err := parser.ParseFile(fset, filepath.Join(root, filepath.FromSlash(rel)), nil, parser.SkipObjectResolution)
 		if err != nil {
 			return nil, Refusal{Label: reference.Label, Exit: AnalysisFailed, Reason: fmt.Sprintf("file %s does not parse: %v", rel, err)}
 		}
 		p.measureFile(fset, file)
+		packages[packageDir(rel)] = append(packages[packageDir(rel)], file)
 	}
+	shape, err := layersOf(root, sortedDirs(packages))
+	if err != nil {
+		return nil, reference.refuse(err.Error())
+	}
+	p.recordDepths(entryDepths(modulePath(root), packages))
+	p.recordLayers(shape)
 	raw, err := sealed(p)
 	if err != nil {
 		return nil, err
