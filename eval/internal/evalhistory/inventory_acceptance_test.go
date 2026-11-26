@@ -36,6 +36,24 @@ var _ = Describe("the unit inventory at since", func() {
 		})
 	})
 
+	When("two files' functions interleave by line number", func() {
+		It("orders units by path, then by first line, so a seeded draw sees the same order", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{
+				"a.go": "package p\n\nfunc A1() {}\n\n\n\n\n\n\nfunc A2() {}\n",
+				"b.go": "package p\n\n\n\nfunc B1() {}\n",
+			})
+
+			inventory, err := evalhistory.GoInventory(h.dir, since)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(inventory.Functions).To(Equal([]evalhistory.Unit{
+				{Path: "a.go", Start: 3, End: 3},
+				{Path: "a.go", Start: 10, End: 10},
+				{Path: "b.go", Start: 5, End: 5},
+			}))
+		})
+	})
+
 	When("a Go file at since does not parse", func() {
 		It("refuses, naming the file", func() {
 			h := newHistory()
@@ -97,6 +115,18 @@ var _ = Describe("mapping Coach's findings to units", func() {
 		Expect(flagged.Units).To(Equal([]int{1}))
 		Expect(flagged.Unplaced).To(Equal(1))
 	})
+
+	DescribeTable("a function finding in a gap between units is unplaced, not given to the next unit",
+		func(startRow int) {
+			signals := []evalhistory.Signal{{RuleID: "complexity.cognitive_complexity", Path: "p/p.go", Subject: "X", StartRow: startRow, EndRow: startRow}}
+
+			flagged := evalhistory.FlaggedUnits(inventory, signals, "complexity.cognitive_complexity")
+			Expect(flagged.Units).To(BeEmpty())
+			Expect(flagged.Unplaced).To(Equal(1))
+		},
+		Entry("before the first function", 1),
+		Entry("between two functions", 5),
+	)
 
 	It("lists a unit flagged twice once", func() {
 		signals := []evalhistory.Signal{
