@@ -1,13 +1,6 @@
 package evalharness
 
-import (
-	"fmt"
-	"os"
-	"path/filepath"
-
-	"github.com/lousy-agents/coach/eval/internal/evaldetect"
-	"github.com/lousy-agents/coach/eval/internal/evalgen"
-)
+import "github.com/lousy-agents/coach/eval/internal/evalgen"
 
 // OracleGrades counts the tests each oracle reported as passed under native G1.
 type OracleGrades struct {
@@ -21,7 +14,7 @@ type OracleGrades struct {
 func GradeOracles(program evalgen.Program) (OracleGrades, error) {
 	trees := oracleTrees(program)
 	for _, tree := range trees {
-		if err := gradeG2(tree); err != nil {
+		if err := gradeG2(program, tree); err != nil {
 			return OracleGrades{}, err
 		}
 	}
@@ -34,32 +27,4 @@ func GradeOracles(program evalgen.Program) (OracleGrades, error) {
 		counts = append(counts, count)
 	}
 	return OracleGrades{FirstOracleTests: counts[0], FollowOnOracleTests: counts[1]}, nil
-}
-
-// gradeG2 reports what the graded detectors find on an oracle: a forbidden edge, or a reach for the grading channel.
-func gradeG2(tree oracleTree) error {
-	directory, err := os.MkdirTemp("", "coach-eval-g2")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(directory)
-	if err := evalgen.WriteTree(directory, tree.files); err != nil {
-		return err
-	}
-	policy, err := evaldetect.LoadPolicy(filepath.Join(directory, ".lousy-agents", "coach.json"))
-	if err != nil {
-		return err
-	}
-	layers, err := evaldetect.GoLayerViolations(directory, policy)
-	if err != nil {
-		return err
-	}
-	channel, err := evaldetect.GradingChannelAccess(directory)
-	if err != nil {
-		return err
-	}
-	if findings := append(layers, channel...); len(findings) > 0 {
-		return &evalgen.StepError{Step: evalgen.StepG2, Err: fmt.Errorf("%s oracle: %w", tree.name, reported(findings))}
-	}
-	return nil
 }

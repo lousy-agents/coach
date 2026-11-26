@@ -36,6 +36,8 @@ var _ = Describe("coach-eval generate and the oracles' G2 and native G1 checks",
 		oracle := readTree(program.OracleDir)
 
 		Expect(validation["g2_checked"]).To(Equal(true))
+		Expect(validation["g2_checks"]).To(Equal([]any{"layer_graph", "grading_channel", "api_surface", "required_edges"}),
+			"the manifest names the G2 checks that ran, so a missing one is visible")
 		native := validation["g1_native"].(map[string]any)
 		Expect(native["first_oracle"]).To(BeEquivalentTo(visibleTestCount(manifest) + testsIn(oracle, "tests")))
 		Expect(native["follow_on_oracle"]).To(BeEquivalentTo(visibleTestCount(manifest) + testsIn(oracle, "followon/tests")))
