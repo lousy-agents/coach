@@ -10,18 +10,32 @@ import (
 // the constructor, so they do not make it do work.
 var allocatingBuiltins = map[string]bool{"append": true, "cap": true, "len": true, "make": true, "new": true}
 
-// countConstructor classifies a New… function: assigns_only when its body
+const (
+	constructorAssignsOnly = "assigns_only"
+	constructorDoesWork    = "does_work"
+)
+
+// constructorShapeOf classifies a New… function: assigns_only when its body
 // is only assignments and returns with no call but an allocating builtin,
-// does_work otherwise (Hevery's "constructor does real work").
-func countConstructor(shapes *constructorShapes, function *ast.FuncDecl) {
-	if !isConstructorName(function) {
-		return
+// does_work otherwise (Hevery's "constructor does real work"). Any other
+// function is no constructor, "".
+func constructorShapeOf(function *ast.FuncDecl) string {
+	switch {
+	case !isConstructorName(function):
+		return ""
+	case onlyAssigns(function.Body):
+		return constructorAssignsOnly
 	}
-	if onlyAssigns(function.Body) {
-		shapes.AssignsOnly++
-		return
+	return constructorDoesWork
+}
+
+func (c *constructorShapes) add(shape string) {
+	switch shape {
+	case constructorAssignsOnly:
+		c.AssignsOnly++
+	case constructorDoesWork:
+		c.DoesWork++
 	}
-	shapes.DoesWork++
 }
 
 func isConstructorName(function *ast.FuncDecl) bool {
