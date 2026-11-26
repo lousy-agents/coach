@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -116,11 +117,24 @@ var _ = Describe("a real-mise spec that cannot run says why, and cannot silently
 			Expect(probeRegistry(&http.Client{Timeout: 50 * time.Millisecond}, server.URL)).To(MatchError(ContainSubstring(server.URL)))
 		})
 
-		It("answers with a server error: an error naming the registry and the status", func() {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) }))
-			DeferCleanup(server.Close)
+		DescribeTable("answers with a status",
+			func(status int, unavailable bool) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) }))
+				DeferCleanup(server.Close)
 
-			Expect(probeRegistry(server.Client(), server.URL)).To(MatchError(And(ContainSubstring(server.URL), ContainSubstring("502"))))
-		})
+				err := probeRegistry(server.Client(), server.URL)
+
+				if !unavailable {
+					Expect(err).To(Succeed())
+					return
+				}
+				Expect(err).To(MatchError(And(ContainSubstring(server.URL), ContainSubstring(strconv.Itoa(status)))))
+			},
+			Entry("304, below any error: reachable", http.StatusNotModified, false),
+			Entry("400, the lowest error: unavailable, because the control would run and fail as a false red", http.StatusBadRequest, true),
+			Entry("404, a mirror without the package: unavailable", http.StatusNotFound, true),
+			Entry("429, rate limited: unavailable", http.StatusTooManyRequests, true),
+			Entry("502, a server error: unavailable", http.StatusBadGateway, true),
+		)
 	})
 })
