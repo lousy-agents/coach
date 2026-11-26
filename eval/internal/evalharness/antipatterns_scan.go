@@ -59,8 +59,8 @@ func readFindings(report string) ([]observedFinding, error) {
 	return parsed.Signals, nil
 }
 
-// materialise copies a variant into dir, reading a source stored with a .txt suffix (main.go.txt, go.mod.txt) as the
-// source itself, so that a deliberately bad variant is not Go code in the repository that holds it.
+// materialise copies a variant into dir, reading a source stored with a .txt suffix (main.go.txt, go.mod.txt,
+// .lousy-agents/coach.json.txt) as the file itself, so that a deliberately bad variant is not Go code in the repository that holds it.
 func materialise(from, to string) error {
 	return filepath.WalkDir(from, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -81,7 +81,7 @@ func materialise(from, to string) error {
 
 func strippedSuffix(rel string) string {
 	base, found := strings.CutSuffix(rel, ".txt")
-	if found && (strings.HasSuffix(base, ".go") || strings.HasSuffix(base, "go.mod") || strings.HasSuffix(base, "go.sum")) {
+	if found && (strings.HasSuffix(base, ".go") || base == "go.mod" || base == "go.sum" || base == policyPath) {
 		return base
 	}
 	return rel
