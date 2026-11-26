@@ -39,6 +39,24 @@ func rootModuleImports(goListOutput string) []string {
 	return imports
 }
 
+// ringImports lists the import paths from go list output that are packages of
+// the named eval rings.
+func ringImports(goListOutput string, rings ...string) []string {
+	ringPaths := map[string]bool{}
+	for _, ring := range rings {
+		for _, prefix := range evalRingPrefixes[ring] {
+			ringPaths[evalModulePath+strings.TrimPrefix(prefix, "eval")] = true
+		}
+	}
+	var imports []string
+	for _, path := range strings.Fields(goListOutput) {
+		if ringPaths[path] {
+			imports = append(imports, path)
+		}
+	}
+	return imports
+}
+
 func evalModulePackageDirs(moduleRoot string) []string {
 	var dirs []string
 	for _, dir := range goPackageDirs(filepath.Join(moduleRoot, "eval")) {
@@ -88,17 +106,7 @@ var _ = Describe("the eval module", func() {
 			output, err := command.Output()
 			Expect(err).NotTo(HaveOccurred(), "go list -deps must run in the eval module")
 
-			var crossings []string
-			for _, path := range strings.Fields(string(output)) {
-				for _, ring := range []string{"real-code", "detection", "grading"} {
-					for _, prefix := range evalRingPrefixes[ring] {
-						if path == evalModulePath+strings.TrimPrefix(prefix, "eval") {
-							crossings = append(crossings, path)
-						}
-					}
-				}
-			}
-			Expect(crossings).To(BeEmpty())
+			Expect(ringImports(string(output), "real-code", "detection", "grading")).To(BeEmpty())
 		})
 	})
 })
