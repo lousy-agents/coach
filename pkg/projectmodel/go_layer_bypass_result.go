@@ -5,15 +5,11 @@ import (
 	"time"
 )
 
-func assembleLayerBypassResult(loaded *loadedGoSnapshot, callGraph CallGraphResult, sources, sinks []string, requiredLayerNodes map[string]bool, search layerBypassSearch, sourceDiagnostics, dirDiagnostics []Diagnostic, sourcesComplete, dirsComplete, ambiguousLayer bool, opts LayerBypassOptions, start time.Time, memDelta int64) LayerBypassResult {
+func assembleLayerBypassResult(loaded *loadedGoSnapshot, callGraph CallGraphResult, sources, sinks []string, requiredLayerNodes map[string]bool, search layerBypassSearch, sourceDiagnostics, dirDiagnostics []Diagnostic, sourcesComplete, dirsComplete bool, ambiguity layerAmbiguity, opts LayerBypassOptions, start time.Time, memDelta int64) LayerBypassResult {
 	diagnostics := append([]Diagnostic{}, callGraph.Coverage.Diagnostics...)
 	diagnostics = append(diagnostics, sourceDiagnostics...)
 	diagnostics = append(diagnostics, dirDiagnostics...)
-	if ambiguousLayer {
-		diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassAmbiguousLayer}, requiredLayerUnmatchedDiagnostic(opts.RequiredLayer))
-	} else if search.unclassifiedNodeSeen && !containsDiagnosticCode(diagnostics, DiagLayerBypassAmbiguousLayer) {
-		diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassAmbiguousLayer})
-	}
+	diagnostics = ambiguity.diagnostics(diagnostics, opts.RequiredLayer, search.unclassifiedNodeSeen)
 	if search.truncatedSearch && !containsDiagnosticCode(diagnostics, DiagLayerBypassBudgetExceeded) {
 		diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassBudgetExceeded})
 	}
