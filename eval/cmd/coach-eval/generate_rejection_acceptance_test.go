@@ -58,6 +58,8 @@ var _ = Describe("coach-eval generate rejection and replacement", Ordered, Conti
 		Entry("follow-on stub", "followon_stub"),
 		Entry("follow-on delete baseline", "followon_delete_baseline"),
 		Entry("follow-on oracle", "followon_oracle"),
+		Entry("G2 on the oracles", "g2"),
+		Entry("native G1 on the oracles", "g1_native"),
 	)
 
 	It("exits 0 at a rejection rate of exactly 50% (AC-15)", func() {
@@ -86,6 +88,8 @@ var _ = Describe("coach-eval generate rejection and replacement", Ordered, Conti
 		Entry("follow-on stub", "followon_stub"),
 		Entry("follow-on delete baseline", "followon_delete_baseline"),
 		Entry("follow-on oracle", "followon_oracle"),
+		Entry("G2 on the oracles", "g2"),
+		Entry("native G1 on the oracles", "g1_native"),
 	)
 
 	It("gives up after ten attempts in one cell and exits 8 (AC-15)", func() {
