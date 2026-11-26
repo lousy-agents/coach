@@ -1,8 +1,6 @@
 package evalhistory
 
 import (
-	"slices"
-
 	"github.com/lousy-agents/coach/eval/internal/evalcensus"
 )
 
@@ -33,6 +31,10 @@ func repositoryHistory(corpus evalcensus.Corpus, repo evalcensus.Repository, coa
 }
 
 func (result *RepositoryHistory) compare(corpus evalcensus.Corpus, dir string, findings []finding, seed int64) error {
+	ruleIDs, err := goRuleIDs(corpus)
+	if err != nil {
+		return err
+	}
 	inventory, err := GoInventory(dir, result.Since)
 	if err != nil {
 		return err
@@ -46,16 +48,11 @@ func (result *RepositoryHistory) compare(corpus evalcensus.Corpus, dir string, f
 		return err
 	}
 	result.countFixes(scan, involved)
-	for _, rule := range corpus.Rules {
-		if !slices.Contains(rule.Languages, "go") {
-			continue
-		}
-		ruleResult, placed, err := compareRule(inventory, involved, findings, rule.RuleID, seed)
-		if err != nil {
-			return err
-		}
-		result.Rules = append(result.Rules, ruleResult)
-		result.findings = append(result.findings, placed...)
+	rules, placed, err := compareRules(ruleIDs, inventory, involved, findings, seed)
+	if err != nil {
+		return err
 	}
+	result.Rules = append(result.Rules, rules...)
+	result.findings = append(result.findings, placed...)
 	return nil
 }
