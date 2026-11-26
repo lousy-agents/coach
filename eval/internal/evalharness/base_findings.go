@@ -19,24 +19,30 @@ const (
 	baseFindingsReason = "coach_base_fp_reason"
 )
 
-// recordBaseFindings puts what coach reports on the unmutated base into the manifest. It never rejects a
-// program: a count is recorded, and a coach that is absent or fails is recorded as null with the reason
-// (design §6, "coach_base_fp").
-func recordBaseFindings(coach coachBinary, program *evalgen.Program) {
-	if program.Manifest.Validation == nil {
-		program.Manifest.Validation = map[string]any{}
+// withBaseFindings returns the program with what coach reports on its unmutated base in the manifest. It never
+// rejects a program: a count is recorded, and a coach that is absent or fails is recorded as null with the
+// reason (design §6, "coach_base_fp").
+func withBaseFindings(coach coachBinary, program evalgen.Program) evalgen.Program {
+	validation := make(map[string]any, len(program.Manifest.Validation)+2)
+	for key, value := range program.Manifest.Validation {
+		validation[key] = value
 	}
-	validation := program.Manifest.Validation
+	for key, value := range baseFindingFields(coach, program.Tree) {
+		validation[key] = value
+	}
+	program.Manifest.Validation = validation
+	return program
+}
+
+func baseFindingFields(coach coachBinary, tree map[string][]byte) map[string]any {
 	if !coach.found() {
-		validation[baseFindingsKey], validation[baseFindingsReason] = nil, noCoachBinary
-		return
+		return map[string]any{baseFindingsKey: nil, baseFindingsReason: noCoachBinary}
 	}
-	count, err := coachSignalCount(coach.path, program.Tree)
+	count, err := coachSignalCount(coach.path, tree)
 	if err != nil {
-		validation[baseFindingsKey], validation[baseFindingsReason] = nil, "coach failed: "+err.Error()
-		return
+		return map[string]any{baseFindingsKey: nil, baseFindingsReason: "coach failed: " + err.Error()}
 	}
-	validation[baseFindingsKey] = count
+	return map[string]any{baseFindingsKey: count}
 }
 
 func coachSignalCount(coach string, tree map[string][]byte) (int, error) {

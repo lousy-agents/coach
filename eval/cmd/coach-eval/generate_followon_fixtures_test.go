@@ -2,9 +2,6 @@ package main_test
 
 import (
 	"encoding/json"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -45,73 +42,4 @@ func followOnField(manifest map[string]any) string {
 func followOnFirstField(manifest map[string]any) string {
 	template := manifest["template"].(map[string]any)
 	return template["follow_on"].(map[string]any)["first_field"].(string)
-}
-
-func entityFieldNames(tree map[string][]byte, entity string) []string {
-	for _, content := range tree {
-		parsed, err := parser.ParseFile(token.NewFileSet(), "", content, 0)
-		if err != nil {
-			continue
-		}
-		if names := structFieldNames(parsed, entity); names != nil {
-			return names
-		}
-	}
-	return nil
-}
-
-func structFieldNames(file *ast.File, entity string) []string {
-	var names []string
-	ast.Inspect(file, func(node ast.Node) bool {
-		spec, isType := node.(*ast.TypeSpec)
-		if !isType || spec.Name.Name != entity {
-			return true
-		}
-		names = fieldNamesOf(spec.Type)
-		return false
-	})
-	return names
-}
-
-func fieldNamesOf(expression ast.Expr) []string {
-	structure, isStruct := expression.(*ast.StructType)
-	if !isStruct {
-		return nil
-	}
-	names := make([]string, 0, len(structure.Fields.List))
-	for _, field := range structure.Fields.List {
-		names = append(names, field.Names[0].Name)
-	}
-	return names
-}
-
-// entityOf finds the entity as the struct that has an ID and a Name beside its two fields, so a new entity name
-// in the vocabulary needs no change here.
-func entityOf(program generatedProgram) string {
-	for _, content := range readTree(program.Path) {
-		parsed, err := parser.ParseFile(token.NewFileSet(), "", content, 0)
-		if err != nil {
-			continue
-		}
-		if name := entityNameIn(parsed); name != "" {
-			return name
-		}
-	}
-	return ""
-}
-
-func entityNameIn(file *ast.File) string {
-	found := ""
-	ast.Inspect(file, func(node ast.Node) bool {
-		spec, isType := node.(*ast.TypeSpec)
-		if !isType {
-			return true
-		}
-		fields := fieldNamesOf(spec.Type)
-		if len(fields) == 4 && fields[0] == "ID" && fields[1] == "Name" {
-			found = spec.Name.Name
-		}
-		return found == ""
-	})
-	return found
 }
