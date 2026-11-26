@@ -118,6 +118,19 @@ var _ = Describe("the oracles' api_surface and required-edge checks (design §4,
 			}),
 	)
 
+	It("requires a package to import itself when the manifest names two symbols of one package, so such a manifest is rejected (AC-31)", func() {
+		generated := cloned(program(0))
+		generated.Manifest.Template.APISurface = append([]evalgen.APISymbol(nil), generated.Manifest.Template.APISurface...)
+		directory, _ := surfaceSymbol(generated, 0)
+		generated.Manifest.Template.APISurface[1].Symbol = moduleOf(generated) + "/" + directory + ".Other"
+
+		_, err := evalharness.GradeOracles(generated)
+
+		Expect(err).To(HaveOccurred())
+		Expect(rejectionStep(err)).To(Equal(evalgen.StepG2))
+		Expect(err.Error()).To(ContainSubstring("architecture.required_edge_absent:" + directory + "->" + directory))
+	})
+
 	It("rejects at the g2 step, instead of panicking, when the manifest names a symbol with no package qualifier (AC-30)", func() {
 		generated := cloned(program(0))
 		generated.Manifest.Template.APISurface = append([]evalgen.APISymbol(nil), generated.Manifest.Template.APISurface...)

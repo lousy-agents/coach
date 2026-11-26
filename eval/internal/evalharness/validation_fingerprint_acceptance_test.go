@@ -28,6 +28,11 @@ var _ = Describe("the validation fingerprint a cached program is keyed by (desig
 		Expect(evalharness.ValidationFingerprint(steps, "2")).NotTo(Equal(evalharness.ValidationFingerprint(steps, "1")))
 	})
 
+	It("is past version 1, because the api_surface and required-edge checks arrived inside the g2 step after it (AC-32)", func() {
+		Expect(evalharness.ValidationVersion).NotTo(Equal("1"))
+		Expect(evalharness.ValidationFingerprint(steps, evalharness.ValidationVersion)).NotTo(Equal(evalharness.ValidationFingerprint(steps, "1")))
+	})
+
 	It("keeps two lists apart that run together to the same text (AC-32)", func() {
 		Expect(evalharness.ValidationFingerprint([]string{"ab", "c"}, "1")).NotTo(Equal(evalharness.ValidationFingerprint([]string{"a", "bc"}, "1")))
 	})
