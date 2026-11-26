@@ -50,8 +50,7 @@ var _ = Describe("the eval-compare guard rules", func() {
 	)
 
 	DescribeTable("a field outside the comparable set that differs", func(path string, value any) {
-		changed := completeRecord("run-b")
-		setPath(changed, path, value)
+		changed := withPath(completeRecord("run-b"), path, value)
 		writeRunRecord(stateRoot, "run-a", completeRecord("run-a"))
 		writeRunRecord(stateRoot, "run-b", changed)
 
