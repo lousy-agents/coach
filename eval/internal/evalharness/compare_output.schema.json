@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "coach-eval compare output, schema version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "comparable", "runs", "differing_fields", "warnings", "not_complete_runs"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "comparable": {"type": "boolean"},
+    "runs": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string", "minLength": 1}},
+    "differing_fields": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "warnings": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "not_complete_runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["run_id", "state"],
+        "properties": {
+          "run_id": {"type": "string", "minLength": 1},
+          "state": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

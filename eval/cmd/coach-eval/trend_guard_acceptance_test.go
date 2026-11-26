@@ -223,5 +223,6 @@ var _ = Describe("eval-compare trend guard rules", func() {
 		Entry("has schema_version 2", func(r record) { r["schema_version"] = "2" }, "schema_version"),
 		Entry("has a negative trials count", func(r record) { r["run"] = withPath(r["run"].(record), "results.trials", -1) }, "trials"),
 		Entry("has a clean_success below 0", func(r record) { r["run"] = withPath(r["run"].(record), "results.clean_success", -0.1) }, "clean_success"),
+		Entry("has a trials count that is not an integer", func(r record) { r["run"] = withPath(r["run"].(record), "results.trials", 1.5) }, "trials"),
 	)
 })
