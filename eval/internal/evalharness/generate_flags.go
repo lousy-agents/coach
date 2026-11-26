@@ -14,7 +14,7 @@ const unset = -1
 // GenerateRequest is a parsed `coach-eval generate` command line.
 type GenerateRequest struct {
 	Language evalgen.Language
-	Cell     evalgen.Cell
+	Cells    []evalgen.Cell
 	Seed     int64
 	Panel    string
 	Out      string
@@ -46,6 +46,7 @@ func parseGenerate(args []string, stderr io.Writer) (GenerateRequest, error) {
 	flags.StringVar(&request.Panel, "panel", PanelTuning, "tuning or held_out")
 	flags.StringVar(&request.Out, "out", "", "copy the program to <out>/<program_id>")
 	flags.BoolVar(&request.NoCache, "no-cache", false, "regenerate instead of reading the cache")
+	tuning := flags.Bool("tuning", false, "emit the twelve fixed tuning cells")
 	if err := flags.Parse(args); err != nil {
 		return request, err
 	}
@@ -56,53 +57,6 @@ func parseGenerate(args []string, stderr io.Writer) (GenerateRequest, error) {
 	if request.Language, err = evalgen.ParseLanguage(*language); err != nil {
 		return request, err
 	}
-	request.Cell, err = chooseCell(*index, cell)
+	request.Cells, err = chooseCells(*tuning, *index, cell, request)
 	return request, err
-}
-
-func chooseCell(index int, dimensions evalgen.Cell) (evalgen.Cell, error) {
-	given := givenDimensions(dimensions)
-	if index != unset {
-		if len(given) > 0 {
-			return evalgen.Cell{}, fmt.Errorf("--cell %d conflicts with %s: name the cell by index or by every dimension, not both", index, strings.Join(given, ", "))
-		}
-		return evalgen.CellFromIndex(index)
-	}
-	if missing := missingDimensions(dimensions); len(missing) > 0 {
-		return evalgen.Cell{}, fmt.Errorf("no cell: missing %s; pass --cell N, or every dimension", strings.Join(missing, ", "))
-	}
-	return dimensions, dimensions.Validate()
-}
-
-type dimensionFlag struct {
-	name  string
-	given func(evalgen.Cell) bool
-}
-
-var dimensionFlags = []dimensionFlag{
-	{"--layers", func(c evalgen.Cell) bool { return c.Layers != unset }},
-	{"--packages", func(c evalgen.Cell) bool { return c.Packages != unset }},
-	{"--entry", func(c evalgen.Cell) bool { return c.Entry != "" }},
-	{"--depth", func(c evalgen.Cell) bool { return c.Depth != unset }},
-	{"--field", func(c evalgen.Cell) bool { return c.Field != "" }},
-	{"--direction", func(c evalgen.Cell) bool { return c.Direction != "" }},
-	{"--trap", func(c evalgen.Cell) bool { return c.Trap != "" }},
-}
-
-func givenDimensions(cell evalgen.Cell) []string {
-	return namesWhere(cell, true)
-}
-
-func missingDimensions(cell evalgen.Cell) []string {
-	return namesWhere(cell, false)
-}
-
-func namesWhere(cell evalgen.Cell, given bool) []string {
-	var names []string
-	for _, flag := range dimensionFlags {
-		if flag.given(cell) == given {
-			names = append(names, flag.name)
-		}
-	}
-	return names
 }

@@ -29,6 +29,7 @@ type ProgramInfo struct {
 	Cell             Cell   `json:"cell"`
 	SeedHash         string `json:"seed_hash"`
 	Panel            string `json:"panel"`
+	Replacements     int    `json:"replacements"`
 }
 
 type TemplateInfo struct {
