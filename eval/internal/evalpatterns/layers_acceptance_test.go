@@ -3,6 +3,7 @@ package evalpatterns_test
 import (
 	"errors"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -150,6 +151,60 @@ var _ = Describe("the layers and roles of a profile (AC-2.1, AC-2.2, AC-2.8)", f
 		})
 	})
 
+	DescribeTable("maps four or five ordered layers to the generator's roles, outermost first",
+		func(names []string, counts []int, roles []string) {
+			files := chainedLayers(names...)
+			for i, name := range names {
+				for extra := 3; extra <= counts[i]; extra++ {
+					files["pkg/"+name+"/p"+strconv.Itoa(extra)+"/p.go"] = pkgFile("p" + strconv.Itoa(extra))
+				}
+				if counts[i] == 1 {
+					delete(files, "pkg/"+name+"/p2/p.go")
+				}
+			}
+			want := map[string]any{}
+			for i, role := range roles {
+				want[role] = map[string]any{"packages": map[string]any{strconv.Itoa(counts[i]): 1.0}}
+			}
+
+			Expect(profileOfFiles(files)["roles"]).To(Equal(want))
+		},
+		Entry("four layers", []string{"l1", "l2", "l3", "l4"}, []int{2, 3, 4, 5},
+			[]string{"api", "service", "domain", "store"}),
+		Entry("five layers", []string{"l1", "l2", "l3", "l4", "l5"}, []int{1, 2, 3, 4, 5},
+			[]string{"api", "service", "domain", "repository", "store"}),
+	)
+
+	When("a layer lists a longer prefix before a shorter one, and another layer's prefix falls between them", func() {
+		It("puts a package under both of the first layer's prefixes in that layer, by its longest prefix", func() {
+			policy := `{"schema_version":"1","roots":["."],"layers":[` +
+				`{"name":"x","prefixes":["pkg/aa/bb","pkg"]},{"name":"z","prefixes":["pkg/aa"]},{"name":"w","prefixes":["lib/w"]}],` +
+				`"forbidden_imports":[{"from":"z","to":"x"},{"from":"w","to":"x"},{"from":"w","to":"z"}]}`
+			profile := profileOfFiles(map[string]string{
+				".lousy-agents/coach.json": policy,
+				"pkg/aa/bb/x1/x.go":        pkgFile("x1"), "pkg/aa/bb/x2/x.go": pkgFile("x2"),
+				"pkg/aa/z1/z.go": pkgFile("z1"), "pkg/aa/z2/z.go": pkgFile("z2"), "pkg/aa/z3/z.go": pkgFile("z3"),
+				"lib/w/w1/w.go": pkgFile("w1"), "lib/w/w2/w.go": pkgFile("w2"),
+				"lib/w/w3/w.go": pkgFile("w3"), "lib/w/w4/w.go": pkgFile("w4"),
+			})
+
+			Expect(profile["roles"]).To(Equal(map[string]any{
+				"api":     map[string]any{"packages": map[string]any{"2": 1.0}},
+				"service": map[string]any{"packages": map[string]any{"3": 1.0}},
+				"store":   map[string]any{"packages": map[string]any{"4": 1.0}},
+			}))
+		})
+	})
+
+	When("the checkout holds no production Go file", func() {
+		It("records no layer, and lists neither layers nor packages as not covered", func() {
+			profile := profileOfFiles(map[string]string{"p/p_test.go": "package p\n"})
+
+			Expect(measure(profile, "dimensions", "layers")).To(Equal(map[string]any{}))
+			Expect(profile["not_covered"]).To(Equal([]any{}))
+		})
+	})
+
 	When("the checkout has no policy", func() {
 		It("takes one layer per top-level package directory, with no roles", func() {
 			profile := profileOfFiles(map[string]string{
@@ -185,6 +240,20 @@ var _ = Describe("the static call depth of a profile's entries (AC-2.4, AC-2.8)"
 
 		Expect(measure(profile, "dimensions", "depth")).To(Equal(map[string]any{"2": 1.0, "1": 1.0}))
 	})
+
+	DescribeTable("reads the module path however go.mod spells its module line",
+		func(goMod string) {
+			profile := profileOfFiles(map[string]string{
+				"go.mod": goMod,
+				"a/a.go": "package a\n\nimport \"example.invalid/one/b\"\n\nfunc Entry() { b.Call() }\n",
+				"b/b.go": "package b\n\nfunc Call() {}\n",
+			})
+
+			Expect(measure(profile, "dimensions", "depth")).To(Equal(map[string]any{"1": 1.0, "0": 1.0}))
+		},
+		Entry("a quoted module path", "module \"example.invalid/one\"\n\ngo 1.26.0\n"),
+		Entry("an indented module line", "  module example.invalid/one\n\ngo 1.26.0\n"),
+	)
 
 	It("lists the out-of-range shapes in a fixed order: depth, layers, packages", func() {
 		profile := profileOfFiles(map[string]string{"a/a.go": "package a\n\nfunc Entry() {}\n"})
