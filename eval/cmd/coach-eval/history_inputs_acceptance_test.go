@@ -75,7 +75,7 @@ var _ = Describe("coach-eval history inputs and isolation", func() {
 			}
 			Expect(kinds).To(ConsistOf("census", "history"))
 			measures := map[any]int{}
-			for _, record := range jsonLines(filepath.Join(censusRoot, "fixture", "records.jsonl")) {
+			for _, record := range currentJSONLines(filepath.Join(censusRoot, "fixture", "records.jsonl")) {
 				measures[record["measure"]]++
 			}
 			Expect(measures).To(Equal(map[any]int{"analysis_status": 1, "flagged_vs_unflagged_association": 2}))

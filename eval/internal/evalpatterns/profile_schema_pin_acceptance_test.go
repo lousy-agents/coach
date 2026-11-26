@@ -35,7 +35,7 @@ var requiredProfileKeys = []string{
 	"dimensions.entry.http_handler", "dimensions.entry.method", "dimensions.entry.function",
 	"shapes.nesting", "shapes.cognitive", "shapes.branch_density", "shapes.constructor",
 	"shapes.constructor.assigns_only", "shapes.constructor.does_work",
-	"not_covered.0.shape", "not_covered.0.count",
+	"not_covered.0.shape", "not_covered.0.reason", "not_covered.0.count",
 }
 
 var _ = Describe("the profile schema's required keys and types (AC-1.4)", func() {
@@ -83,5 +83,7 @@ var _ = Describe("the profile schema's required keys and types (AC-1.4)", func()
 		Entry("a not-covered item as a string", "not_covered", []any{"layers"}),
 		Entry("a not-covered count of zero", "not_covered.0.count", 0),
 		Entry("a not-covered count as a string", "not_covered.0.count", "1"),
+		Entry("a not-covered reason outside the closed list", "not_covered.0.reason", "too_big"),
+		Entry("a not-covered reason as a number", "not_covered.0.reason", 1),
 	)
 })

@@ -21,8 +21,9 @@ var _ = Describe("the census record ledger", func() {
 
 			records, err := evalcensus.LoadRecords(path)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(records).To(HaveLen(2))
-			Expect(records[1].RecordID).To(Equal("r2"))
+			current := evalcensus.CurrentRecords(records)
+			Expect(current).To(HaveLen(2))
+			Expect(current[1].RecordID).To(Equal("r2"))
 		})
 	})
 
