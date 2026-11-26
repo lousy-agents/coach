@@ -23,11 +23,24 @@ type generateOutcome struct {
 	stderr   string
 }
 
+type generatedCell struct {
+	Layers    int    `json:"layers"`
+	Packages  int    `json:"packages"`
+	Entry     string `json:"entry"`
+	Depth     int    `json:"depth"`
+	Field     string `json:"field"`
+	Direction string `json:"direction"`
+	Trap      string `json:"trap"`
+}
+
 type generatedProgram struct {
-	ProgramID string `json:"program_id"`
-	Path      string `json:"path"`
-	OracleDir string `json:"oracle_dir"`
-	Cache     string `json:"cache"`
+	ProgramID    string        `json:"program_id"`
+	Path         string        `json:"path"`
+	OracleDir    string        `json:"oracle_dir"`
+	Cache        string        `json:"cache"`
+	Seed         int64         `json:"seed"`
+	Replacements int           `json:"replacements"`
+	Cell         generatedCell `json:"cell"`
 }
 
 type programCell struct {
@@ -48,7 +61,11 @@ func (c programCell) flags() []string {
 }
 
 func runGenerate(cacheHome string, extraEnv []string, args ...string) generateOutcome {
-	cmd := exec.Command(coachEvalBinary, append([]string{"generate"}, args...)...)
+	return runGenerateBinary(coachEvalBinary, cacheHome, extraEnv, args...)
+}
+
+func runGenerateBinary(binary, cacheHome string, extraEnv []string, args ...string) generateOutcome {
+	cmd := exec.Command(binary, append([]string{"generate"}, args...)...)
 	cmd.Env = append(os.Environ(), "XDG_CACHE_HOME="+cacheHome)
 	cmd.Env = append(cmd.Env, extraEnv...)
 	return runGenerateCommand(cmd)
@@ -74,6 +91,16 @@ func generateOne(cacheHome string, args ...string) generatedProgram {
 	outcome := runGenerate(cacheHome, nil, args...)
 	Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 	return decodeGenerated(outcome.stdout)
+}
+
+func decodeAllGenerated(stdout string) []generatedProgram {
+	var programs []generatedProgram
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		var program generatedProgram
+		Expect(json.Unmarshal([]byte(line), &program)).To(Succeed(), line)
+		programs = append(programs, program)
+	}
+	return programs
 }
 
 func decodeGenerated(stdout string) generatedProgram {
