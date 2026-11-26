@@ -69,7 +69,8 @@ var _ = Describe("a history run over a pinned corpus", func() {
 			Expect(repo.Until).To(Equal(until))
 			Expect(repo.Commits).To(Equal(4))
 			Expect(repo.Fixes).To(Equal(3))
-			Expect(repo.MatchRate).To(BeNumerically("~", 0.75, 1e-9))
+			Expect(repo.MatchRate).To(HaveValue(BeNumerically("~", 0.75, 1e-9)))
+			Expect(repo.MatchRateNullReason).To(BeEmpty())
 			Expect(repo.UnmappedFixes).To(Equal(evalhistory.UnmappedFixes{Function: 2, File: 1}))
 		})
 
@@ -221,12 +222,13 @@ var _ = Describe("a history run over a pinned corpus", func() {
 	})
 
 	When("history_until is the census SHA itself", func() {
-		It("reports an empty window, with a match rate of 0, and a summary that encodes as JSON", func() {
+		It("reports an empty window, with no match rate and the reason, and a summary that encodes as JSON", func() {
 			summary, err := evalhistory.Run(corpusFor(h, since, since, goRule(cognitive)), fakeCoach(signals), 7)
 			Expect(err).NotTo(HaveOccurred())
 			repo := summary.Repositories[0]
 			Expect([]int{repo.Commits, repo.Fixes}).To(Equal([]int{0, 0}))
-			Expect(repo.MatchRate).To(BeZero())
+			Expect(repo.MatchRate).To(BeNil())
+			Expect(repo.MatchRateNullReason).To(Equal("no commits between since and until"))
 			_, err = json.Marshal(summary)
 			Expect(err).NotTo(HaveOccurred())
 		})
