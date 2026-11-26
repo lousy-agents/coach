@@ -50,6 +50,15 @@ var _ = Describe("coach-eval generate --language, and the toolchain a TypeScript
 		Expect(outcome.stderr).To(ContainSubstring(missing))
 	})
 
+	It("uses an EVAL_TSC given as a path relative to the working directory", func() {
+		_ = installedTSC()
+		dir := filepath.Join(repositoryRoot(), "js", "semantics")
+
+		outcome := runGenerateIn(dir, GinkgoT().TempDir(), []string{"EVAL_TSC=" + filepath.Join("node_modules", ".bin", "tsc")}, cell...)
+
+		Expect(outcome.exitCode).To(Equal(0), "validation runs in another directory, so the path must be made absolute: "+outcome.stderr)
+	})
+
 	It("finds the installed compiler from a subdirectory of the repository", func() {
 		outcome := runGenerateIn(filepath.Join(repositoryRoot(), "eval", "cmd"), GinkgoT().TempDir(), nil, cell...)
 		_ = installedTSC()

@@ -46,6 +46,17 @@ var _ = Describe("a generated TypeScript program tree", func() {
 			Expect(readTree(ts.Path)).NotTo(HaveKey("go.mod"))
 		})
 
+		It("shares no cache entry with the Go program of the same cell and seed", func() {
+			cacheHome := GinkgoT().TempDir()
+			goProgram := generateOne(cacheHome, append(cell.flags(), "--seed", "4")...)
+			ts := generateOne(cacheHome, flags...)
+
+			Expect(goProgram.Cache).To(Equal("miss"))
+			Expect(ts.Cache).To(Equal("miss"), "the Go program's cache entry must not serve the TypeScript one")
+			Expect(ts.Path).NotTo(Equal(goProgram.Path))
+			Expect(readTree(goProgram.Path)).To(HaveKey("go.mod"), "and the TypeScript program did not overwrite it")
+		})
+
 		It("is served from the cache the second time", func() {
 			cacheHome := GinkgoT().TempDir()
 			first := generateOne(cacheHome, flags...)
