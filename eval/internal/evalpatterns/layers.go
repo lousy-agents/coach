@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -35,7 +33,7 @@ type layerShape struct {
 // counting only layers that hold a package, and otherwise one layer per
 // top-level package directory.
 func layersOf(root string, packageDirs []string) (layerShape, error) {
-	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(policyFile)))
+	raw, err := readRegularFile(root, policyFile)
 	if errors.Is(err, fs.ErrNotExist) {
 		return treeLayers(packageDirs), nil
 	}

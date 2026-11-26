@@ -1,26 +1,30 @@
 package evalpatterns
 
 import (
+	"errors"
 	"go/ast"
-	"os"
+	"io/fs"
 	pathpkg "path"
-	"path/filepath"
 	"sort"
 	"strings"
 )
 
-// modulePath is the module path in root's go.mod, or "" without one.
-func modulePath(root string) string {
-	raw, err := os.ReadFile(filepath.Join(root, "go.mod"))
+// modulePath is the module path in root's go.mod, or "" without one. A
+// go.mod that is not a regular file is an error.
+func modulePath(root string) (string, error) {
+	raw, err := readRegularFile(root, "go.mod")
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
 	if err != nil {
-		return ""
+		return "", err
 	}
 	for _, line := range strings.Split(string(raw), "\n") {
 		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
-			return strings.Trim(strings.TrimSpace(rest), `"`)
+			return strings.Trim(strings.TrimSpace(rest), `"`), nil
 		}
 	}
-	return ""
+	return "", nil
 }
 
 func sortedDirs(packages map[string][]*ast.File) []string {

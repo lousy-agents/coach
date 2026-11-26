@@ -35,7 +35,11 @@ func ExtractProfile(reference Reference, root string) ([]byte, error) {
 	if err != nil {
 		return nil, reference.refuse(err.Error())
 	}
-	p.recordDepths(entryDepths(modulePath(root), packages))
+	module, err := modulePath(root)
+	if err != nil {
+		return nil, reference.refuse(err.Error())
+	}
+	p.recordDepths(entryDepths(module, packages))
 	p.recordLayers(shape)
 	raw, err := sealed(p)
 	if err != nil {
