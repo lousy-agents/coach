@@ -152,6 +152,16 @@ var _ = Describe("mapping Coach's findings to units", func() {
 		Expect(flagged.Unplaced).To(Equal(1))
 	})
 
+	It("names the reason for each finding it cannot place", func() {
+		inTypeScript, err := evalhistory.FlaggedUnits(inventory, []evalhistory.Signal{{RuleID: "complexity.branch_density", Path: "js/a.ts"}}, "complexity.branch_density")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(inTypeScript.UnplacedReasons).To(Equal([]string{"language not in the Go history inventory"}))
+
+		missing, err := evalhistory.FlaggedUnits(inventory, []evalhistory.Signal{{RuleID: "complexity.cognitive_complexity", Path: "gone.go", Subject: "G", StartRow: 2, EndRow: 4}}, "complexity.cognitive_complexity")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(missing.UnplacedReasons).To(Equal([]string{"no unit of the Go history inventory holds its line"}))
+	})
+
 	It("places a max_nesting_depth finding in its file, whatever its location", func() {
 		signals := []evalhistory.Signal{{RuleID: "complexity.max_nesting_depth", Path: "p/p.go", StartRow: 6, EndRow: 9}}
 
