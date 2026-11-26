@@ -6,21 +6,10 @@ import (
 	"fmt"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
-
-	"github.com/lousy-agents/coach/eval/internal/evalcensus"
 )
 
-// AppendLedgerLine validates line against the ledger line schema and appends
-// it to the ledger at path as one JSON line, with the records ledger's lock,
-// newline repair and truncation on a failed write.
-func AppendLedgerLine(path string, line any) error {
-	data, err := validLedgerLine(line)
-	if err != nil {
-		return err
-	}
-	return evalcensus.AppendToLedger(path, func() ([]byte, error) { return append(data, '\n'), nil })
-}
-
+// validLedgerLine marshals line and checks it against the ledger line
+// schema.
 func validLedgerLine(line any) ([]byte, error) {
 	data, err := json.Marshal(line)
 	if err != nil {

@@ -17,5 +17,9 @@ func AppendCorpusRecords(censusRoot, corpusID string, records []Record) error {
 			return fmt.Errorf("%w %q: target.corpus_id %q is not the ledger's corpus %q", ErrInvalidRecord, record.RecordID, record.Target.CorpusID, corpusID)
 		}
 	}
-	return AppendRecords(filepath.Join(censusRoot, corpusID, "records.jsonl"), records)
+	return AppendRecords(corpusRecordsPath(censusRoot, corpusID), records)
+}
+
+func corpusRecordsPath(censusRoot, corpusID string) string {
+	return filepath.Join(censusRoot, corpusID, "records.jsonl")
 }
