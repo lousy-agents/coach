@@ -53,33 +53,3 @@ func (s *tsScanner) scanTemplate(line int, head bool) {
 		}
 	}
 }
-
-// scanRegex skips a regular expression literal, including slashes inside a
-// character class, and its flags.
-func (s *tsScanner) scanRegex() {
-	line, inClass := s.line, false
-	s.pos++
-	for s.pos < len(s.src) && s.src[s.pos] != '\n' {
-		c := s.src[s.pos]
-		s.pos++
-		switch {
-		case c == '\\':
-			s.pos++
-		case c == '[':
-			inClass = true
-		case c == ']':
-			inClass = false
-		case c == '/' && !inClass:
-			s.skipRegexFlags()
-			s.emit(tsOther, "/regex/", line)
-			return
-		}
-	}
-	s.emit(tsOther, "/regex/", line)
-}
-
-func (s *tsScanner) skipRegexFlags() {
-	for s.pos < len(s.src) && isIdentByte(s.src[s.pos]) {
-		s.pos++
-	}
-}

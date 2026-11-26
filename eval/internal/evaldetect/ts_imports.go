@@ -1,5 +1,7 @@
 package evaldetect
 
+import "fmt"
+
 // tsImport is one literal module specifier and the line of the statement or
 // call that names it.
 type tsImport struct {
@@ -23,7 +25,11 @@ func (r tsImportReader) at(i int) tsToken {
 // require() calls in a TS source, refusing a call whose specifier is not a
 // literal string.
 func tsImports(file, src string) ([]tsImport, error) {
-	r := tsImportReader{file: file, tokens: scanTS(src)}
+	tokens, refusedLine := scanTS(src)
+	if refusedLine > 0 {
+		return nil, fmt.Errorf("%w: %s:%d: a slash that may start a regular expression, which is outside the subset", ErrRefused, file, refusedLine)
+	}
+	r := tsImportReader{file: file, tokens: tokens}
 	var imports []tsImport
 	for i, token := range r.tokens {
 		if token.kind != tsIdent || r.at(i-1).is(tsPunct, ".") {

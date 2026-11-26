@@ -12,14 +12,18 @@ type tsScanner struct {
 	// braces records, for each open brace, whether it opened a template
 	// substitution, so the matching close brace resumes the template.
 	braces []bool
+	// refusedLine is the line of a slash the scanner could not classify, or 0.
+	refusedLine int
 }
 
-func scanTS(src string) []tsToken {
+// scanTS tokenizes src, stopping at the first slash it cannot classify as
+// a division or a comment and returning that slash's line.
+func scanTS(src string) ([]tsToken, int) {
 	s := &tsScanner{src: src, line: 1}
-	for s.pos < len(s.src) {
+	for s.pos < len(s.src) && s.refusedLine == 0 {
 		s.step()
 	}
-	return s.tokens
+	return s.tokens, s.refusedLine
 }
 
 func (s *tsScanner) step() {
@@ -85,8 +89,8 @@ func (s *tsScanner) scanWord() {
 
 func (s *tsScanner) scanPunct(c byte) {
 	switch {
-	case c == '/' && slashStartsRegex(s.tokens):
-		s.scanRegex()
+	case c == '/' && !slashDivides(s.tokens):
+		s.refusedLine = s.line
 		return
 	case c == '{':
 		s.braces = append(s.braces, false)

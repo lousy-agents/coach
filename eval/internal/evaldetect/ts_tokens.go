@@ -23,20 +23,26 @@ func (t tsToken) is(kind tsTokenKind, text string) bool {
 	return t.kind == kind && t.text == text
 }
 
-// regexKeywords are the identifiers after which a slash starts a regular
-// expression rather than a division.
-var regexKeywords = map[string]bool{
-	"return": true, "typeof": true, "instanceof": true, "in": true, "of": true, "new": true,
-	"delete": true, "void": true, "throw": true, "case": true, "do": true, "else": true,
-	"yield": true, "await": true,
+// ambiguousSlashWords are the words after which a slash could start a
+// regular expression.
+var ambiguousSlashWords = map[string]bool{
+	"as": true, "async": true, "await": true, "break": true, "case": true, "catch": true,
+	"class": true, "const": true, "continue": true, "debugger": true, "default": true,
+	"delete": true, "do": true, "else": true, "enum": true, "export": true, "extends": true,
+	"finally": true, "for": true, "function": true, "if": true, "import": true, "in": true,
+	"instanceof": true, "keyof": true, "let": true, "new": true, "of": true, "return": true,
+	"satisfies": true, "static": true, "switch": true, "throw": true, "try": true,
+	"typeof": true, "var": true, "void": true, "while": true, "with": true, "yield": true,
 }
 
-// slashStartsRegex applies the usual lexer heuristic: a slash is a division
-// only after something that ends an expression. A keyword after a dot is a
-// property name, which ends one.
-func slashStartsRegex(tokens []tsToken) bool {
+// slashDivides reports whether a slash after these tokens is certainly a
+// division: it follows an identifier (including this, null and the other
+// value words), a property name, a number, a string or a closing ]. Anywhere
+// else it could start a regular expression, which is outside the subset the
+// lexer reads.
+func slashDivides(tokens []tsToken) bool {
 	if len(tokens) == 0 {
-		return true
+		return false
 	}
 	prev, beforePrev := tokens[len(tokens)-1], tsToken{kind: tsOther}
 	if len(tokens) > 1 {
@@ -44,21 +50,11 @@ func slashStartsRegex(tokens []tsToken) bool {
 	}
 	switch prev.kind {
 	case tsIdent:
-		return regexKeywords[prev.text] && !beforePrev.is(tsPunct, ".")
-	case tsPunct:
-		return !endsOperand(prev, beforePrev)
-	}
-	return false
-}
-
-// endsOperand reports whether a punctuator closes an operand: a closing
-// bracket, or the second sign of a postfix ++ or --.
-func endsOperand(prev, beforePrev tsToken) bool {
-	switch prev.text {
-	case ")", "]", "}":
+		return beforePrev.is(tsPunct, ".") || !ambiguousSlashWords[prev.text]
+	case tsString, tsOther:
 		return true
-	case "+", "-":
-		return beforePrev.is(tsPunct, prev.text)
+	case tsPunct:
+		return prev.text == "]"
 	}
 	return false
 }
