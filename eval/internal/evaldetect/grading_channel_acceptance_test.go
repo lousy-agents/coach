@@ -62,11 +62,11 @@ var _ = Describe("the G2 static check for grading-channel access (#857, design 4
 		Entry("a read of a path", "import fs from \"node:fs\";\nconst n = fs.readFileSync(\"data.txt\", \"utf8\");\n", nil),
 		Entry("a read of a variable descriptor", "import fs from \"node:fs\";\nconst n = fs.readSync(fd, buffer);\n", nil),
 		Entry("a /proc/self/fd string", "const p = \"/proc/self/fd/3\";\n", []evaldetect.Finding{channelFinding("src/a/a.ts", "proc_fd", 1)}),
-		Entry("a /proc/<ppid>/fd template", "const p = `/proc/${process.ppid}/fd/4`;\n", []evaldetect.Finding{channelFinding("src/a/a.ts", "proc_fd", 1)}),
+		Entry("a /proc/<ppid>/fd template, whose /proc/ head is a path being built", "const p = `/proc/${process.ppid}/fd/4`;\n", []evaldetect.Finding{channelFinding("src/a/a.ts", "proc_path_built", 1)}),
 		Entry("a /proc/<pid>/mem string", "const p = \"/proc/1/mem\";\n", []evaldetect.Finding{channelFinding("src/a/a.ts", "proc_mem", 1)}),
-		Entry("a /proc/ prefix being built up", "const p = \"/proc/\" + process.ppid + \"/fd/4\";\n", []evaldetect.Finding{
-			channelFinding("src/a/a.ts", "proc_path_built", 1), channelFinding("src/a/a.ts", "proc_fd", 1),
-		}),
+		Entry("a /proc/ prefix being built up", "const p = \"/proc/\" + process.ppid + \"/fd/4\";\n", []evaldetect.Finding{channelFinding("src/a/a.ts", "proc_path_built", 1)}),
+		Entry("a bare writeSync to an inherited descriptor", "import { writeSync } from \"node:fs\";\nwriteSync(4, \"x\");\n", []evaldetect.Finding{channelFinding("src/a/a.ts", "inherited_fd", 2)}),
+		Entry("a user function that is not an fs call", "function write(fd: number) { return fd; }\nwrite(4);\n", nil),
 		Entry("a /proc/cpuinfo string", "const p = \"/proc/cpuinfo\";\n", nil),
 		Entry("a /proc/meminfo template", "const p = `/proc/meminfo`;\n", nil),
 	)
@@ -112,6 +112,12 @@ var _ = Describe("the G2 static check for grading-channel access (#857, design 4
 
 	It("refuses a Go file it cannot parse, rather than skipping what it cannot read", func() {
 		_, err := channelScan(map[string]string{"pkg/a/a.go": "package a\n\nfunc broken( {\n"})
+
+		Expect(errors.Is(err, evaldetect.ErrRefused)).To(BeTrue(), "got %v", err)
+	})
+
+	It("refuses a TypeScript file whose slash it cannot classify, as the layer graph does", func() {
+		_, err := channelScan(map[string]string{"src/a/a.ts": "const p = (1, /proc\\/self/.test(x));\n"})
 
 		Expect(errors.Is(err, evaldetect.ErrRefused)).To(BeTrue(), "got %v", err)
 	})
