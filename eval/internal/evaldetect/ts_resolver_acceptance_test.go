@@ -38,7 +38,7 @@ var _ = Describe("the TypeScript import lexer", func() {
 		Entry("in a block comment", "/* require(\"../app/a\") */\nexport const D = 1;\n"),
 		Entry("in a string literal", "export const D = \"import('../app/a')\";\n"),
 		Entry("in a template literal", "export const D = `import { A } from \"../app/a\"`;\n"),
-		Entry("after a regular expression literal that holds a quote", "export const re = /\"/;\n// import \"../app/a\"\nexport const D = 1;\n"),
+		Entry("after a regular expression literal that holds a quote", "export const re = /\"/; const s = \"import('../app/a')\";\n"),
 	)
 
 	DescribeTable("an import the lexer must still see is reported",
@@ -50,7 +50,7 @@ var _ = Describe("the TypeScript import lexer", func() {
 		Entry("inside a template substitution", "export const D = `${import(\"../app/a\")}`;\n", 1),
 		Entry("as a side-effect import", "import \"../app/a\";\n", 1),
 		Entry("as an export-from re-export", "export const D = 1;\nexport { A } from \"../app/a\";\n", 2),
-		Entry("after a division that is not a regular expression", "export const D = 4 / 2;\nimport { A } from \"../app/a\";\n", 2),
+		Entry("after a division that is not a regular expression", "export const D = 4 / 2; import { A } from \"../app/a\";\n", 1),
 	)
 })
 
