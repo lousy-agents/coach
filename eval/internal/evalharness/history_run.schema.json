@@ -73,6 +73,7 @@
                 "controls_involved": {"type": "integer", "minimum": 0},
                 "control_shortfall": {"type": "integer", "minimum": 0},
                 "unplaced_findings": {"type": "integer", "minimum": 0},
+                "unplaced_reasons": {"type": "array", "items": {"type": "string", "minLength": 1}},
                 "risk_ratio": {"type": ["number", "null"]},
                 "ci95_low": {"type": ["number", "null"]},
                 "ci95_high": {"type": ["number", "null"]},

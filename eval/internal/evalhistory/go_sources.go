@@ -5,18 +5,6 @@ import (
 	"strings"
 )
 
-func isProductionGo(path string) bool {
-	if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-		return false
-	}
-	for _, segment := range strings.Split(path, "/") {
-		if segment == "vendor" || segment == "testdata" || strings.HasPrefix(segment, ".") {
-			return false
-		}
-	}
-	return true
-}
-
 func lineCount(source string) int {
 	return strings.Count(strings.TrimSuffix(source, "\n"), "\n") + 1
 }
