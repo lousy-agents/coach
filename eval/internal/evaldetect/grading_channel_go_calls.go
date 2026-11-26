@@ -11,10 +11,10 @@ func isSelector(selector *ast.SelectorExpr, pkg, name string) bool {
 	return ok && ident.Name == pkg && (name == "" || selector.Sel.Name == name)
 }
 
-// callsOnInheritedFD reports a call into syscall or x/sys/unix whose first argument is a descriptor literal of 3 or more.
+// callsOnInheritedFD reports a call into syscall, x/sys/unix or cgo whose first argument is a descriptor literal of 3 or more.
 func callsOnInheritedFD(call *ast.CallExpr, names goImportNames) bool {
 	selector, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || len(call.Args) == 0 || !(isSelector(selector, names.syscall, "") || isSelector(selector, names.unix, "")) {
+	if !ok || len(call.Args) == 0 || !(isSelector(selector, names.syscall, "") || isSelector(selector, names.unix, "") || isSelector(selector, names.cgo, "")) {
 		return false
 	}
 	literal, ok := call.Args[0].(*ast.BasicLit)

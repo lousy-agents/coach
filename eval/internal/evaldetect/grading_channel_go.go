@@ -14,7 +14,7 @@ func goChannelFindings(rel, source string) ([]Finding, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %v", ErrRefused, rel, err)
 	}
-	names := goImportNames{os: importedAs(file, "os"), syscall: importedAs(file, "syscall"), unix: importedAs(file, "golang.org/x/sys/unix")}
+	names := goImportNames{os: importedAs(file, "os"), syscall: importedAs(file, "syscall"), unix: importedAs(file, "golang.org/x/sys/unix"), cgo: importedAs(file, "C")}
 	var findings []Finding
 	ast.Inspect(file, func(node ast.Node) bool {
 		line := 0
@@ -29,8 +29,8 @@ func goChannelFindings(rel, source string) ([]Finding, error) {
 	return findings, nil
 }
 
-// goImportNames are the names a file gives the packages whose calls can reach an inherited descriptor, or empty.
-type goImportNames struct{ os, syscall, unix string }
+// goImportNames are the names a file gives the packages whose calls can reach an inherited descriptor (cgo is C), or empty.
+type goImportNames struct{ os, syscall, unix, cgo string }
 
 func goPatterns(node ast.Node, names goImportNames) []string {
 	switch n := node.(type) {

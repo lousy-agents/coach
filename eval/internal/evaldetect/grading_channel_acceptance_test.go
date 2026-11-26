@@ -2,6 +2,7 @@ package evaldetect_test
 
 import (
 	"errors"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -117,6 +118,16 @@ var _ = Describe("the G2 static check for grading-channel access (#857, design 4
 		Entry("a vendor directory", "vendor/x/x.ts"),
 		Entry("a testdata directory", "src/testdata/x.ts"),
 	)
+
+	It("still reads a root directory that is itself named node_modules", func() {
+		root := filepath.Join(GinkgoT().TempDir(), "node_modules")
+		writeTree(root, map[string]string{"src/a.ts": "const b = process.binding(\"fs\");\n"})
+
+		findings, err := evaldetect.GradingChannelAccess(root)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(findings).To(HaveLen(1))
+	})
 
 	It("flags a reference in a .mts and a .cts source as in a .ts", func() {
 		findings, err := channelScan(map[string]string{
