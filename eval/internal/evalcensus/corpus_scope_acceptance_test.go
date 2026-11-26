@@ -28,7 +28,7 @@ var _ = Describe("the corpus manifest's scope", func() {
 			manifest := scopedCorpus()
 			delete(firstRepository(manifest), "licence")
 
-			_, err := evalcensus.LoadCorpus(writeJSON(manifest))
+			_, err := evalcensus.LoadCensusCorpus(writeJSON(manifest))
 
 			Expect(err).To(MatchError(ContainSubstring(`"coach"`)))
 			Expect(err).To(MatchError(ContainSubstring("licence")))
@@ -40,7 +40,7 @@ var _ = Describe("the corpus manifest's scope", func() {
 			manifest := scopedCorpus()
 			firstRepository(manifest)["licence"] = " \t "
 
-			_, err := evalcensus.LoadCorpus(writeJSON(manifest))
+			_, err := evalcensus.LoadCensusCorpus(writeJSON(manifest))
 
 			Expect(err).To(MatchError(ContainSubstring(`"coach"`)))
 		})
@@ -48,7 +48,7 @@ var _ = Describe("the corpus manifest's scope", func() {
 
 	When("a repository records a licence", func() {
 		It("loads the manifest", func() {
-			_, err := evalcensus.LoadCorpus(writeJSON(scopedCorpus()))
+			_, err := evalcensus.LoadCensusCorpus(writeJSON(scopedCorpus()))
 
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -59,7 +59,7 @@ var _ = Describe("the corpus manifest's scope", func() {
 			manifest := scopedCorpus()
 			delete(firstRepository(manifest), "sample")
 
-			_, err := evalcensus.LoadCorpus(writeJSON(manifest))
+			_, err := evalcensus.LoadCensusCorpus(writeJSON(manifest))
 
 			Expect(err).To(MatchError(ContainSubstring(`"coach"`)))
 			Expect(err).To(MatchError(ContainSubstring("seed")))
@@ -71,7 +71,7 @@ var _ = Describe("the corpus manifest's scope", func() {
 			manifest := scopedCorpus()
 			firstRepository(manifest)["sample"] = map[string]any{"size": 30}
 
-			_, err := evalcensus.LoadCorpus(writeJSON(manifest))
+			_, err := evalcensus.LoadCensusCorpus(writeJSON(manifest))
 
 			Expect(err).To(MatchError(ContainSubstring(`"coach"`)))
 			Expect(err).To(MatchError(ContainSubstring("seed")))
@@ -83,7 +83,7 @@ var _ = Describe("the corpus manifest's scope", func() {
 			manifest := scopedCorpus()
 			firstRepository(manifest)["sample"] = map[string]any{"seed": 7}
 
-			_, err := evalcensus.LoadCorpus(writeJSON(manifest))
+			_, err := evalcensus.LoadCensusCorpus(writeJSON(manifest))
 
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -118,6 +118,14 @@ var _ = Describe("the corpus manifest's scope", func() {
 			firstRepository(manifest)["exclude"] = []any{"src/gen/**"}
 
 			_, err := evalcensus.LoadCorpus(writeJSON(manifest))
+
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	When("a manifest for eval-history names no licence and no sample", func() {
+		It("is still accepted by the shared loader, so the census requirements stay with the census", func() {
+			_, err := evalcensus.LoadCorpus(writeJSON(validCorpus()))
 
 			Expect(err).NotTo(HaveOccurred())
 		})

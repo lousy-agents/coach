@@ -239,4 +239,12 @@ var _ = Describe("the census's path scope and sample", func() {
 			Expect(rationale).To(ContainSubstring("sampled=30"))
 		})
 	})
+
+	When("a fixed seed and input are drawn", func() {
+		It("pins the exact keys drawn, so a change in the random stream fails here", func() {
+			statuses := statusesOf(nil, findingsReport(manyFindings(31)...))
+
+			Expect(statusFor(statuses, scopedRule)["sampled_keys"]).To(Equal([]any{"fp00", "fp01", "fp02", "fp03", "fp04", "fp05", "fp06", "fp07", "fp09", "fp10", "fp11", "fp12", "fp13", "fp14", "fp15", "fp16", "fp17", "fp18", "fp19", "fp20", "fp21", "fp22", "fp23", "fp24", "fp25", "fp26", "fp27", "fp28", "fp29", "fp30"}))
+		})
+	})
 })
