@@ -1,6 +1,9 @@
 package evalpatterns
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // checkoutPolicy is the part of a checkout's .lousy-agents/coach.json the
 // layer measure reads.
@@ -39,4 +42,34 @@ func longestPrefix(prefixes []string, dir string) int {
 		}
 	}
 	return longest
+}
+
+func (policy checkoutPolicy) layers(packageDirs []string) layerShape {
+	if len(packageDirs) == 0 {
+		return layerShape{}
+	}
+	counts := map[string]int{}
+	for _, dir := range packageDirs {
+		if name := policy.layerOf(dir); name != "" {
+			counts[name]++
+		}
+	}
+	names := sortedKeys(counts)
+	if len(names) == 0 {
+		return layerShape{fromPolicy: true, unplaced: policy.unplacedReason()}
+	}
+	ranks := policy.ranks(names)
+	sort.SliceStable(names, func(i, j int) bool { return ranks[names[i]] < ranks[names[j]] })
+	shape := layerShape{fromPolicy: true, ordered: isPermutation(ranks) && !policy.forbidsBothWays(names)}
+	for _, name := range names {
+		shape.packages = append(shape.packages, counts[name])
+	}
+	return shape
+}
+
+func (policy checkoutPolicy) unplacedReason() string {
+	if len(policy.Layers) == 0 {
+		return policyDeclaresNoLayers
+	}
+	return policyLayersMatchNoPackage
 }
