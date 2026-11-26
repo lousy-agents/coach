@@ -383,7 +383,7 @@ run = """
 set -eu
 bin_dir=$(mktemp -d)
 trap 'rm -rf "$bin_dir"' EXIT
-go build -o "$bin_dir/coach" ./cmd/coach
+go build -trimpath -buildvcs=false -o "$bin_dir/coach" ./cmd/coach
 go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 "$bin_dir/coach-eval" antipatterns --coach "$bin_dir/coach" --fixtures eval/fixtures/antipatterns "$@"
 """
