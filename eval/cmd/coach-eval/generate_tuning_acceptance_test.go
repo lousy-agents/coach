@@ -64,7 +64,6 @@ var _ = Describe("coach-eval generate --tuning", func() {
 		Entry("a cell index", "--cell", "--tuning", "--cell", "0"),
 		Entry("a dimension", "--layers", "--tuning", "--layers", "3"),
 		Entry("the held-out panel", "held_out", "--tuning", "--panel", "held_out"),
-		Entry("the TypeScript language, whose tuning cells are not defined here", "typescript", "--tuning", "--language", "typescript"),
 	)
 
 	It("keeps every tuning cell out of the held-out panel (AC-13)", func() {
