@@ -85,11 +85,33 @@ func fieldNamesOf(expression ast.Expr) []string {
 	return names
 }
 
+// entityOf finds the entity as the struct that has an ID and a Name beside its two fields, so a new entity name
+// in the vocabulary needs no change here.
 func entityOf(program generatedProgram) string {
 	for _, content := range readTree(program.Path) {
-		if match := regexp.MustCompile(`(?m)^type (Account|Order|Patient|Book|Invoice) struct`).FindSubmatch(content); match != nil {
-			return string(match[1])
+		parsed, err := parser.ParseFile(token.NewFileSet(), "", content, 0)
+		if err != nil {
+			continue
+		}
+		if name := entityNameIn(parsed); name != "" {
+			return name
 		}
 	}
 	return ""
+}
+
+func entityNameIn(file *ast.File) string {
+	found := ""
+	ast.Inspect(file, func(node ast.Node) bool {
+		spec, isType := node.(*ast.TypeSpec)
+		if !isType {
+			return true
+		}
+		fields := fieldNamesOf(spec.Type)
+		if len(fields) == 4 && fields[0] == "ID" && fields[1] == "Name" {
+			found = spec.Name.Name
+		}
+		return found == ""
+	})
+	return found
 }
