@@ -383,7 +383,7 @@ run = """
 set -eu
 bin_dir=$(mktemp -d)
 trap 'rm -rf "$bin_dir"' EXIT
-go build -o "$bin_dir/coach" ./cmd/coach
+go build -trimpath -buildvcs=false -o "$bin_dir/coach" ./cmd/coach
 go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 "$bin_dir/coach-eval" antipatterns --coach "$bin_dir/coach" --fixtures eval/fixtures/antipatterns "$@"
 """
@@ -397,7 +397,7 @@ run = """
 set -eu
 bin_dir=$(mktemp -d)
 trap 'rm -rf "$bin_dir"' EXIT
-go build -o "$bin_dir/coach" ./cmd/coach
+go build -trimpath -buildvcs=false -o "$bin_dir/coach" ./cmd/coach
 go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 for language in go typescript; do
   "$bin_dir/coach-eval" generate --tuning --language "$language" | "$bin_dir/coach-eval" hook-health --coach "$bin_dir/coach"
@@ -431,7 +431,7 @@ run = """
 set -eu
 bin_dir=$(mktemp -d)
 trap 'rm -rf "$bin_dir"' EXIT
-go build -o "$bin_dir/coach" ./cmd/coach
+go build -trimpath -buildvcs=false -o "$bin_dir/coach" ./cmd/coach
 go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 "$bin_dir/coach-eval" census --coach "$bin_dir/coach" --census-root eval/census --ledger eval/ledger/runs.jsonl "$@"
 """
@@ -442,7 +442,7 @@ run = """
 set -eu
 bin_dir=$(mktemp -d)
 trap 'rm -rf "$bin_dir"' EXIT
-go build -o "$bin_dir/coach" ./cmd/coach
+go build -trimpath -buildvcs=false -o "$bin_dir/coach" ./cmd/coach
 go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 "$bin_dir/coach-eval" history --coach "$bin_dir/coach" --census-root eval/census --ledger eval/ledger/runs.jsonl "$@"
 """
