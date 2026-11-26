@@ -4,7 +4,6 @@ import (
 	"errors"
 	"path/filepath"
 
-	"github.com/lousy-agents/coach/eval/internal/evaldetect"
 	"github.com/lousy-agents/coach/eval/internal/evalgen"
 )
 
@@ -93,5 +92,5 @@ func (r *generateRun) output(cell evalgen.Cell, location evalgen.Location, manif
 }
 
 func (r *generateRun) fixtureKey(generatorKey string) string {
-	return FixtureKey(generatorKey, r.coach.hash, evaldetect.PinnedGocognitVersion)
+	return FixtureKey(generatorKey, r.coach.hash, detectorVersion())
 }

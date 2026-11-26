@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lousy-agents/coach/eval/internal/evaldetect"
 	"github.com/lousy-agents/coach/eval/internal/evalgen"
 )
 
@@ -44,4 +45,15 @@ func faultsFromEnvironment() (faults, error) {
 		fault.cell = cell
 	}
 	return fault, nil
+}
+
+// detectorVersionVariable replaces the pinned detector's version in the cache key, so that a spec can change only
+// that part of the key.
+const detectorVersionVariable = "COACH_EVAL_DETECTOR_VERSION"
+
+func detectorVersion() string {
+	if version := os.Getenv(detectorVersionVariable); version != "" {
+		return version
+	}
+	return evaldetect.PinnedGocognitVersion
 }
