@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -144,5 +145,11 @@ var _ = Describe("A Go project analysis whose policy roots hold no Go source", f
 			Expect(report.ProjectCoverage.Complete).To(BeTrue())
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 		})
+	})
+
+	It("docs/cli-codesignal.md names project_roots_empty in the --fail-on-incomplete-coverage row (AC-4.2)", func() {
+		flagRow := regexp.MustCompile("\\| `--fail-on-incomplete-coverage` \\|[^|]*\\|[^|]*\\|").FindString(documentText("docs/cli-codesignal.md"))
+
+		Expect(flagRow).To(ContainSubstring(rootsEmptyDiagnosticCode))
 	})
 })
