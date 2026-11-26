@@ -9,7 +9,10 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-const gremlinsOverrideVariable = "COACH_EVAL_GREMLINS"
+const (
+	gremlinsOverrideVariable = "COACH_EVAL_GREMLINS"
+	gremlinsVersionVariable  = "COACH_EVAL_GREMLINS_VERSION"
+)
 
 // standInGremlins writes the report a chosen mutation run would: it logs each invocation, takes the report's path
 // from --output, and names the entry package's source file so the mutants fall inside the api surface's route.
@@ -26,7 +29,10 @@ if [ "$mode" = "bad-once" ]; then
 fi
 good='{"type":"A","status":"KILLED","line":1,"column":1},{"type":"A","status":"KILLED","line":2,"column":1},{"type":"A","status":"KILLED","line":3,"column":1},{"type":"A","status":"KILLED","line":4,"column":1},{"type":"A","status":"KILLED","line":5,"column":1}'
 bad='{"type":"A","status":"KILLED","line":1,"column":1},{"type":"A","status":"KILLED","line":2,"column":1},{"type":"A","status":"KILLED","line":3,"column":1},{"type":"A","status":"LIVED","line":4,"column":1},{"type":"A","status":"LIVED","line":5,"column":1}'
-if [ "$mode" = "bad" ]; then mutations="$bad"; else mutations="$good"; fi
+mixed='{"type":"A","status":"KILLED","line":1,"column":1},{"type":"A","status":"KILLED","line":2,"column":1},{"type":"A","status":"KILLED","line":3,"column":1},{"type":"A","status":"KILLED","line":4,"column":1},{"type":"A","status":"KILLED","line":5,"column":1},{"type":"A","status":"KILLED","line":6,"column":1},{"type":"A","status":"KILLED","line":7,"column":1},{"type":"A","status":"KILLED","line":8,"column":1},{"type":"A","status":"KILLED","line":9,"column":1},{"type":"A","status":"NOT COVERED","line":10,"column":1}'
+if [ "$mode" = "mixed" ]; then
+  if [ -e "$GREMLINS_STATE" ]; then mutations="$mixed"; else : > "$GREMLINS_STATE"; mutations="$good"; fi
+elif [ "$mode" = "bad" ]; then mutations="$bad"; else mutations="$good"; fi
 printf '{"files":[{"file_name":"%s","mutations":[%s]}]}' "$file" "$mutations" > "$out"
 `
 
@@ -89,6 +95,19 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 		})
 	})
 
+	When("the two suites are judged differently", func() {
+		It("records the lowest score and the highest not-covered share of the two (AC-24)", func() {
+			gremlins := newStandIn()
+
+			outcome := gated(GinkgoT().TempDir(), gremlins, "mixed", "--cell", "1", "--seed", "3")
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			validation := validationOf(decodeGenerated(outcome.stdout))
+
+			Expect(validation["mutation_score"]).To(BeNumerically("~", 0.9), "the lower of 1.0 and 0.9")
+			Expect(validation["not_covered_share"]).To(BeNumerically("~", 0.1), "the higher of 0 and 0.1")
+		})
+	})
+
 	When("a program's mutants are not detected well enough", func() {
 		It("replaces it with the next seed and counts the rejection at the mutation step (AC-24)", func() {
 			gremlins := newStandIn()
@@ -127,6 +146,24 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 
 			Expect(decodeGenerated(second.stdout).Cache).To(Equal("miss"), "another coach binary is another program record")
 			Expect(gremlins.invocations()).To(Equal(2), "the mutation result of the same program is reused")
+		})
+	})
+
+	When("the same program is judged by another Gremlins version", func() {
+		It("runs it again, because the cached result is keyed by the version too (AC-26)", func() {
+			gremlins := newStandIn()
+			cacheHome := GinkgoT().TempDir()
+			directory := GinkgoT().TempDir()
+			args := []string{"--cell", "1", "--seed", "3"}
+			other := writeExecutable(directory, "coach-other", `printf '{"signals":[]}'`)
+
+			first := runGenerateBinary(faultBinary, cacheHome, gremlins.environment("good"), args...)
+			Expect(first.exitCode).To(Equal(0), first.stderr)
+			Expect(gremlins.invocations()).To(Equal(2))
+			second := runGenerateBinary(faultBinary, cacheHome, append(gremlins.environment("good"), "COACH_BIN="+other, gremlinsVersionVariable+"=v9.9.9"), args...)
+			Expect(second.exitCode).To(Equal(0), second.stderr)
+
+			Expect(gremlins.invocations()).To(Equal(4), "another version is another cached result")
 		})
 	})
 
