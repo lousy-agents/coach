@@ -43,7 +43,9 @@ type antipattern struct {
 	Source string `json:"source"`
 	Seed   string `json:"seed"`
 	Status string `json:"status"`
-	Expect struct {
+	// ExpectIncomplete says that the bad variant's scan is expected to be incomplete: the incomplete scan is the point.
+	ExpectIncomplete bool `json:"expect_incomplete"`
+	Expect           struct {
 		Bad  expectedFindings `json:"bad"`
 		Good expectedFindings `json:"good"`
 	} `json:"expect"`

@@ -27,6 +27,7 @@ type antipatternSummary struct {
 	Pass       int      `json:"pass"`
 	Fail       int      `json:"fail"`
 	NotCovered []string `json:"not_covered"`
+	Incomplete []string `json:"incomplete"`
 }
 
 type antipatternTable struct {

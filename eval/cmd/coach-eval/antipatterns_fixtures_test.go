@@ -44,7 +44,8 @@ func cannedCoach() string {
 
 // incompleteVariant is a variant whose scan reports incomplete coverage: coach exits 3, as --fail-on-incomplete-coverage does.
 func incompleteVariant(report string) map[string]string {
-	return variantFiles(report, map[string]string{"exit_code": "3"})
+	withDiagnostic := strings.TrimSuffix(report, "}") + `,"diagnostics":[{"kind":"project_coverage_incomplete"}]}`
+	return variantFiles(withDiagnostic, map[string]string{"exit_code": "3"})
 }
 
 func reportOf(signals ...string) string {

@@ -146,6 +146,7 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 		Expect(good.Result).To(Equal("incomplete"))
 		Expect(good.CoverageComplete).To(BeFalse())
 		Expect(good.Diagnostics).To(ConsistOf("project_coverage_incomplete"))
+		Expect(decodeTable(outcome.stdout).Summary.Incomplete).To(Equal([]string{"layer"}), "the summary lists a fixture whose good variant was incomplete too")
 	})
 
 	const incompleteMissExpect = `{"id":"global","name":"Bypass","source":"none","seed":"none","status":"not_covered","expect_incomplete":true,

@@ -41,13 +41,18 @@ func coveredFixtureIDs(table antipatternTable) map[string]bool {
 // expectKnownMissesSilent requires every not_covered fixture to be one Coach is still silent on, with a reason to promote it if not.
 func expectKnownMissesSilent(table antipatternTable) {
 	for _, fixture := range table.Fixtures {
-		if fixture.Status == "not_covered" {
-			wantBad := "miss"
-			if fixture.ID == "bypass-without-required-layer" {
-				wantBad = "incomplete"
-			}
-			ExpectWithOffset(1, fixture.Bad.Result).To(Equal(wantBad), fixture.ID+": Coach is silent on its bad variant today; if it is not, promote the fixture")
-			ExpectWithOffset(1, fixture.Good.Result).To(Equal("miss"), fixture.ID)
+		if fixture.Status != "not_covered" {
+			continue
 		}
+		ExpectWithOffset(1, fixture.Bad.Result).To(Equal(missResultOf(fixture.ID)), fixture.ID+": Coach is silent on its bad variant today; if it is not, promote the fixture")
+		ExpectWithOffset(1, fixture.Good.Result).To(Equal("miss"), fixture.ID)
 	}
+}
+
+// missResultOf is a known miss's expected result on its bad variant: a miss, except where the fixture declares the scan incomplete.
+func missResultOf(id string) string {
+	if id == "bypass-without-required-layer" {
+		return "incomplete"
+	}
+	return "miss"
 }
