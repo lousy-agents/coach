@@ -104,6 +104,22 @@ var _ = Describe("mapping Coach's findings to units", func() {
 		Expect(flagged.Units).To(Equal([]int{1}))
 	})
 
+	It("places an architecture.layer_violation finding on an import line in its file unit", func() {
+		signals := []evalhistory.Signal{{RuleID: "architecture.layer_violation", Path: "p/p.go", Subject: "architecture.layer_violation:p->q", StartRow: 1}}
+
+		flagged := evalhistory.FlaggedUnits(inventory, signals, "architecture.layer_violation")
+		Expect(flagged.Level).To(Equal(evalhistory.FileLevel))
+		Expect(flagged.Units).To(Equal([]int{0}))
+		Expect(flagged.Unplaced).To(BeZero())
+	})
+
+	It("refuses a rule the placement table does not hold, naming the rule", func() {
+		signals := []evalhistory.Signal{{RuleID: "architecture.made_up", Path: "p/p.go", StartRow: 6, EndRow: 9}}
+
+		_, err := evalhistory.FlaggedUnits(inventory, signals, "architecture.made_up")
+		Expect(err).To(MatchError(ContainSubstring("architecture.made_up")))
+	})
+
 	It("counts a finding at another level than the rule's first as unplaced", func() {
 		signals := []evalhistory.Signal{
 			{RuleID: "complexity.branch_density", Path: "q/q.go"},
