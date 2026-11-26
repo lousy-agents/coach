@@ -36,6 +36,21 @@ var _ = Describe("the unit inventory at since", func() {
 		})
 	})
 
+	When("the census counts findings in a test file", func() {
+		It("lists that test file's functions, so the history's controls and flagged units come from the same code", func() {
+			h := newHistory()
+			since := h.commit("base", map[string]string{
+				"p/p.go":      baseSource,
+				"p/p_test.go": "package p\n\nfunc TestA() {}\n",
+			})
+
+			inventory, err := evalhistory.GoInventory(h.dir, since)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(inventory.Functions).To(ContainElement(evalhistory.Unit{Path: "p/p_test.go", Start: 3, End: 3}))
+			Expect(inventory.Files).To(ContainElement(evalhistory.Unit{Path: "p/p_test.go", Start: 1, End: 3}))
+		})
+	})
+
 	When("two files' functions interleave by line number", func() {
 		It("orders units by path, then by first line, so a seeded draw sees the same order", func() {
 			h := newHistory()
