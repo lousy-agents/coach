@@ -76,6 +76,15 @@ var _ = Describe("a generated Go program's follow-on slot", func() {
 			Expect(failingPackages(broken)).To(HaveLen(1), "reading the first field from the second must fail: "+broken.stdout+broken.stderr)
 			Expect(failingPackages(broken)[0]).To(HaveSuffix("/tests/followon"))
 			Expect(broken.stdout).NotTo(ContainSubstring("[build failed]"), "it fails by the assertion and not by the compiler")
+
+			secondField := regexp.MustCompile(`(\brecord|\bfirst|\bsecond|\bbody|\))\.` + followOnField(manifestOf(program)) + `\b`)
+			for path, content := range followOnSolution {
+				swapped := secondField.ReplaceAll(content, []byte("${1}."+followOnFirstField(manifestOf(program))))
+				Expect(os.WriteFile(filepath.Join(work, filepath.FromSlash(path)), swapped, 0o644)).To(Succeed())
+			}
+			brokenSecond := goIn(work, "test", "./...")
+			Expect(failingPackages(brokenSecond)).To(HaveLen(1), "reading the second field from the first must fail too: "+brokenSecond.stdout+brokenSecond.stderr)
+			Expect(failingPackages(brokenSecond)[0]).To(HaveSuffix("/tests/followon"))
 		})
 	}
 
