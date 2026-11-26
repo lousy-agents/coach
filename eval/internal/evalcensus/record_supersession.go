@@ -42,3 +42,21 @@ func latestCurrent(existing []Record, superseded map[string]bool, record Record)
 	}
 	return found, ok
 }
+
+// CurrentRecords returns the records no later record supersedes, in ledger order: what a reader counts. The ledger keeps
+// every record, so a count over all of them counts a re-measured target once for each measurement.
+func CurrentRecords(records []Record) []Record {
+	superseded := make(map[string]bool, len(records))
+	for _, record := range records {
+		if record.Supersedes != nil {
+			superseded[*record.Supersedes] = true
+		}
+	}
+	var current []Record
+	for _, record := range records {
+		if !superseded[record.RecordID] {
+			current = append(current, record)
+		}
+	}
+	return current
+}
