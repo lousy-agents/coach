@@ -14,7 +14,7 @@ func locateTSC(workingDir string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("EVAL_TSC names %s, which has no absolute path: %v", named, err)
 		}
-		return existing(absolute, fmt.Errorf("EVAL_TSC names %s, which does not exist", named))
+		return namedCompiler(absolute, named)
 	}
 	root, found := checkoutRoot(workingDir)
 	if !found {
@@ -23,6 +23,20 @@ func locateTSC(workingDir string) (string, error) {
 	candidate := filepath.Join(root, "js", "semantics", "node_modules", ".bin", "tsc")
 	return existing(candidate, fmt.Errorf("the pinned TypeScript compiler is not installed at %s: run `mise run js-install`, or set EVAL_TSC", candidate))
 }
+
+// namedCompiler accepts the tsc file itself or the typescript package directory that holds it.
+func namedCompiler(absolute, named string) (string, error) {
+	info, err := os.Stat(absolute)
+	if err != nil {
+		return "", fmt.Errorf("EVAL_TSC names %s, which does not exist", named)
+	}
+	if !info.IsDir() {
+		return absolute, nil
+	}
+	return existing(filepath.Join(absolute, "bin", "tsc"), fmt.Errorf("EVAL_TSC names the directory %s, which holds no bin/tsc: %s", named, entryPointHint))
+}
+
+const entryPointHint = "expected the tsc entry point (node_modules/.bin/tsc, or the typescript package directory)"
 
 func existing(path string, missing error) (string, error) {
 	if _, err := os.Stat(path); err != nil {
@@ -47,6 +61,9 @@ func checkoutRoot(dir string) (string, bool) {
 func requirePinnedVersion(tsc string) error {
 	output, err := exec.Command(tsc, "--version").CombinedOutput()
 	version := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(output)), "Version"))
+	if version == "" {
+		return fmt.Errorf("%s prints no TypeScript version: %s", tsc, entryPointHint)
+	}
 	if err != nil || version != PinnedTypeScript {
 		return fmt.Errorf("%s is TypeScript %q, but the generator needs exactly %s", tsc, version, PinnedTypeScript)
 	}
