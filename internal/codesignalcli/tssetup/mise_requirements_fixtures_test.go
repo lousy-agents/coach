@@ -11,16 +11,20 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func runningInCI() bool { return os.Getenv("GITHUB_ACTIONS") == "true" }
+// realToolchainRequiredVariable is set by the CI job that installs mise, npm and a route to the public registry for
+// these specs. distro-git runs the same package without npm, so the CI environment alone cannot say the tools are promised.
+const realToolchainRequiredVariable = "COACH_REQUIRE_REAL_MISE"
 
-// outcomeWhenRequirementMissing decides what a real-mise spec does when something it needs is absent: outside CI it
-// skips and says why; in CI it fails, because a skipped control proves nothing and nothing else would notice.
-func outcomeWhenRequirementMissing(requirement string, cause error, inCI bool) (skipReason, failure string) {
+func realToolchainRequired() bool { return os.Getenv(realToolchainRequiredVariable) != "" }
+
+// outcomeWhenRequirementMissing decides what a real-mise spec does when something it needs is absent: without the variable it
+// skips and says why; with it, it fails, because a skipped control proves nothing and nothing else would notice.
+func outcomeWhenRequirementMissing(requirement string, cause error, required bool) (skipReason, failure string) {
 	if cause == nil {
 		return "", ""
 	}
-	if inCI {
-		return "", fmt.Sprintf("%s is required in CI and is not available (%s)", requirement, cause)
+	if required {
+		return "", fmt.Sprintf("%s is required here and is not available (%s)", requirement, cause)
 	}
 	return fmt.Sprintf("%s is not available (%s)", requirement, cause), ""
 }
@@ -36,7 +40,7 @@ func requireToolOnPath(name string) {
 }
 
 func requireOrSkip(requirement string, cause error) {
-	skipReason, failure := outcomeWhenRequirementMissing(requirement, cause, runningInCI())
+	skipReason, failure := outcomeWhenRequirementMissing(requirement, cause, realToolchainRequired())
 	Expect(failure).To(BeEmpty())
 	if skipReason != "" {
 		Skip(skipReason)

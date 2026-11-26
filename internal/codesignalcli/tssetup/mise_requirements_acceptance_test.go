@@ -55,12 +55,12 @@ var _ = Describe("the real-mise specs that serve their own loopback npm registry
 	})
 })
 
-var _ = Describe("a real-mise spec that cannot run says why, and cannot silently stop proving anything in CI (#891)", func() {
+var _ = Describe("a real-mise spec that cannot run says why, and cannot silently stop proving anything where the toolchain is promised (#891)", func() {
 	cause := errors.New("exec: \"mise\": executable file not found in $PATH")
 
 	DescribeTable("what a missing requirement does",
-		func(requirement string, cause error, inCI bool, wantSkip, wantFailure bool) {
-			skipReason, failure := outcomeWhenRequirementMissing(requirement, cause, inCI)
+		func(requirement string, cause error, required bool, wantSkip, wantFailure bool) {
+			skipReason, failure := outcomeWhenRequirementMissing(requirement, cause, required)
 
 			Expect(skipReason != "").To(Equal(wantSkip), "skip reason %q", skipReason)
 			Expect(failure != "").To(Equal(wantFailure), "failure %q", failure)
@@ -71,10 +71,26 @@ var _ = Describe("a real-mise spec that cannot run says why, and cannot silently
 				Expect(failure).To(And(ContainSubstring(requirement), ContainSubstring(cause.Error())))
 			}
 		},
-		Entry("is present outside CI: neither", "mise", nil, false, false, false),
-		Entry("is present in CI: neither", "mise", nil, true, false, false),
-		Entry("is missing outside CI: skips, naming it and why", "mise", cause, false, true, false),
-		Entry("is missing in CI: fails, naming it and why", "mise", cause, true, false, true),
+		Entry("is present, not required: neither", "mise", nil, false, false, false),
+		Entry("is present, required: neither", "mise", nil, true, false, false),
+		Entry("is missing, not required: skips, naming it and why", "mise", cause, false, true, false),
+		Entry("is missing, required: fails, naming it and why", "mise", cause, true, false, true),
+	)
+
+	DescribeTable("when the toolchain counts as promised",
+		func(setting string, set bool, want bool) {
+			if set {
+				GinkgoT().Setenv(realToolchainRequiredVariable, setting)
+			} else {
+				GinkgoT().Setenv(realToolchainRequiredVariable, "")
+				Expect(os.Unsetenv(realToolchainRequiredVariable)).To(Succeed())
+			}
+
+			Expect(realToolchainRequired()).To(Equal(want))
+		},
+		Entry("the variable is unset: not promised", "", false, false),
+		Entry("the variable is empty: not promised", "", true, false),
+		Entry("the variable is 1: promised", "1", true, true),
 	)
 
 	When("the public npm registry is the requirement", func() {
