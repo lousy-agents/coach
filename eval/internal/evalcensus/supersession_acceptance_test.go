@@ -40,7 +40,7 @@ var _ = Describe("a record for a target the ledger already holds", func() {
 		Expect(records[2].Supersedes).To(Equal(strPtr("second")))
 	})
 
-	DescribeTable("is not superseded by a record that differs in the target, the measure or the source",
+	DescribeTable("is not superseded by a record that differs in the target, the measure or the source kind",
 		func(other evalcensus.Record) {
 			root := GinkgoT().TempDir()
 			Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{automatedRecord("first", `"agree"`)})).To(Succeed())
@@ -64,9 +64,9 @@ var _ = Describe("a record for a target the ledger already holds", func() {
 			record.Target.SHA = "1111111111111111111111111111111111111111"
 			return record
 		}()),
-		Entry("another source on the same target and measure", func() evalcensus.Record {
+		Entry("another source kind on the same target and measure", func() evalcensus.Record {
 			record := automatedRecord("second", `"agree"`)
-			record.Source = evalcensus.Source{Kind: "detector", Ref: "gocognit v2.0.0"}
+			record.Source = evalcensus.Source{Kind: "census", Ref: "gocognit v2.0.0"}
 			return record
 		}()),
 		Entry("only the measure, from the same source", func() evalcensus.Record {
@@ -102,6 +102,50 @@ var _ = Describe("a record for a target the ledger already holds", func() {
 		Expect(records[0].Supersedes).To(BeNil())
 		Expect(records[1].Supersedes).To(BeNil())
 		Expect(records[2].Supersedes).To(Equal(strPtr("later")))
+	})
+
+	It("supersedes the earlier record when a history re-run moves its association from none to a fix", func() {
+		root := GinkgoT().TempDir()
+		earlier := automatedRecord("earlier", `0`)
+		earlier.Measure = "flagged_vs_unflagged_association"
+		earlier.Source = evalcensus.Source{Kind: "szz", Ref: "none"}
+		later := automatedRecord("later", `1`)
+		later.Measure = "flagged_vs_unflagged_association"
+		later.Source = evalcensus.Source{Kind: "szz", Ref: "abc1234"}
+		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{earlier})).To(Succeed())
+
+		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{later})).To(Succeed())
+
+		Expect(recordsOf(root)[1].Supersedes).To(Equal(strPtr("earlier")))
+	})
+
+	It("supersedes the earlier census record when a Coach change re-measures the same target", func() {
+		root := GinkgoT().TempDir()
+		earlier := automatedRecord("earlier", `"measured"`)
+		earlier.Target.Path = "."
+		earlier.Target.Lines = nil
+		earlier.Measure = "analysis_status"
+		earlier.Source = evalcensus.Source{Kind: "census", Ref: "coach-hash-a"}
+		later := earlier
+		later.RecordID = "later"
+		later.Source = evalcensus.Source{Kind: "census", Ref: "coach-hash-b"}
+		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{earlier})).To(Succeed())
+
+		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{later})).To(Succeed())
+
+		Expect(recordsOf(root)[1].Supersedes).To(Equal(strPtr("earlier")))
+	})
+
+	It("lets only the first of two records in one batch supersede the earlier one", func() {
+		root := GinkgoT().TempDir()
+		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{automatedRecord("first", `"agree"`)})).To(Succeed())
+
+		Expect(evalcensus.AppendCorpusRecords(root, "pilot", []evalcensus.Record{automatedRecord("second", `"agree"`), automatedRecord("third", `"agree"`)})).To(Succeed())
+
+		records := recordsOf(root)
+		Expect(records).To(HaveLen(3))
+		Expect(records[1].Supersedes).To(Equal(strPtr("first")))
+		Expect(records[2].Supersedes).To(BeNil())
 	})
 })
 
