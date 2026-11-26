@@ -7,7 +7,9 @@ type Unit struct {
 }
 
 // Involvement says, per unit, the first fix that changed one of its lines
-// ("" for none), and how many fixes changed no unit's line.
+// ("" for none), and how many fixes changed no unit's line. A fix that
+// cannot be traced counts as unmapped and is listed with its reason, so one
+// such fix never fails the repository.
 type Involvement struct {
 	FixSHA      []string
 	Unmapped    int
@@ -32,7 +34,9 @@ func Involve(repoDir, since string, units []Unit, fixes []FixCommit) (Involvemen
 	for _, fix := range fixes {
 		touched, err := touchedUnits(repoDir, fix.SHA, owner)
 		if err != nil {
-			return Involvement{}, err
+			result.Unmapped++
+			result.Unprocessed = append(result.Unprocessed, UnprocessedFix{SHA: fix.SHA, Reason: err.Error()})
+			continue
 		}
 		result.record(fix.SHA, touched)
 	}
