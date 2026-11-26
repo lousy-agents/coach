@@ -51,9 +51,18 @@ type historyRepoEntry struct {
 	ProjectConfig string `json:"project_config,omitempty"`
 }
 
-// writeHistoryCorpus writes a manifest that both a census and a history can read: the licence and sample seed are
-// the census's, and history ignores them.
+// writeHistoryCorpus writes a manifest that both a census and a history can read, naming the Go cognitive complexity
+// rule: the licence and sample seed are the census's, and history ignores them.
 func writeHistoryCorpus(repos ...historyRepoEntry) string {
+	return writeHistoryCorpusRules([]string{"complexity.cognitive_complexity"}, repos...)
+}
+
+// writeHistoryCorpusRules writes the history manifest for repos, naming each Go rule in ruleIDs.
+func writeHistoryCorpusRules(ruleIDs []string, repos ...historyRepoEntry) string {
+	rules := make([]any, 0, len(ruleIDs))
+	for _, ruleID := range ruleIDs {
+		rules = append(rules, map[string]any{"rule_id": ruleID, "languages": []string{"go"}})
+	}
 	entries := make([]map[string]any, 0, len(repos))
 	for _, repo := range repos {
 		raw, err := json.Marshal(repo)
@@ -67,7 +76,7 @@ func writeHistoryCorpus(repos ...historyRepoEntry) string {
 	raw, err := json.Marshal(map[string]any{
 		"corpus_id":    "fixture",
 		"repositories": entries,
-		"rules":        []any{map[string]any{"rule_id": "complexity.cognitive_complexity", "languages": []string{"go"}}},
+		"rules":        rules,
 	})
 	Expect(err).NotTo(HaveOccurred())
 	path := filepath.Join(GinkgoT().TempDir(), "corpus.json")
