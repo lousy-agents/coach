@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/lousy-agents/coach/eval/internal/evaldetect"
 	"github.com/lousy-agents/coach/eval/internal/evalgen"
@@ -21,7 +22,7 @@ type OracleGrades struct {
 func GradeOracles(program evalgen.Program) (OracleGrades, error) {
 	trees := oracleTrees(program)
 	for _, tree := range trees {
-		if err := gradeG2(tree); err != nil {
+		if err := gradeG2(program, tree); err != nil {
 			return OracleGrades{}, err
 		}
 	}
@@ -37,7 +38,7 @@ func GradeOracles(program evalgen.Program) (OracleGrades, error) {
 }
 
 // gradeG2 reports what the graded detectors find on an oracle: a forbidden edge, or a reach for the grading channel.
-func gradeG2(tree oracleTree) error {
+func gradeG2(program evalgen.Program, tree oracleTree) error {
 	directory, err := os.MkdirTemp("", "coach-eval-g2")
 	if err != nil {
 		return err
@@ -58,7 +59,15 @@ func gradeG2(tree oracleTree) error {
 	if err != nil {
 		return err
 	}
-	if findings := append(layers, channel...); len(findings) > 0 {
+	absent, err := evaldetect.APISurfaceAbsences(directory, surfaceSymbols(program))
+	if err != nil {
+		return err
+	}
+	missing, err := evaldetect.RequiredEdgeAbsences(directory, surfaceEdges(program))
+	if err != nil {
+		return err
+	}
+	if findings := slices.Concat(layers, channel, absent, missing); len(findings) > 0 {
 		return &evalgen.StepError{Step: evalgen.StepG2, Err: fmt.Errorf("%s oracle: %w", tree.name, reported(findings))}
 	}
 	return nil

@@ -35,6 +35,7 @@ func (r *generateRun) validate(program evalgen.Program, seed int64) (string, map
 func oracleFields(grades OracleGrades) map[string]any {
 	return map[string]any{
 		"g2_checked": true,
+		"g2_checks":  []string{"layer_graph", "grading_channel", "api_surface", "required_edges"},
 		"g1_native":  map[string]any{"first_oracle": grades.FirstOracleTests, "follow_on_oracle": grades.FollowOnOracleTests},
 	}
 }
