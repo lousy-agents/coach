@@ -5,18 +5,23 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-// copyGitDir copies the .git directory at source to target. It lists every
-// entry first and then copies each, calling afterList in between, so a spec
-// can remove a file git was holding, as a concurrent git process would.
+// copyGitDir copies the .git directory at source to target, leaving out
+// every *.lock file: git creates and removes them while it runs, so one
+// listed a moment earlier may be gone, and a copy must never hold one. It
+// lists every entry first and then copies each, calling afterList in
+// between, so a spec can remove a lock as a concurrent git process would.
 func copyGitDir(source, target string, afterList func()) error {
 	var entries []string
 	err := filepath.WalkDir(source, func(path string, _ fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		entries = append(entries, path)
+		if !strings.HasSuffix(path, ".lock") {
+			entries = append(entries, path)
+		}
 		return nil
 	})
 	if err != nil {
