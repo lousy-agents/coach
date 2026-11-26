@@ -686,7 +686,7 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 | `eval-precommit-agent` | Wiring; ≈ 10 min, ≈ 3 τ | 0 · 1 an integrity failure · 2 a refusal (no 15.15 record, no `sbx`, or a credential problem) |
 | `eval-agent-pilot` | 360 trials; writes the estimates | 0 · 1 a harness-caused event (R) · 2 a refusal · 5 killed (R) · 6 a cap reached (R after the caps are raised) |
 | `eval-agent-study` | The study (section 5) | 0 complete · 1 a harness-caused event (R) · 2 a refusal: input missing or invalid, the commit not clean, the 15.15 record absent, the credential expires before the projected end · 5 killed (R; `--supervise` relaunches) · 6 the checkpoint said stop, or a cap was reached, including `run_hours` (R after the caps are raised) · 7 invalid: the model, CLI or credential identity changed (not resumable) |
-| `eval-census` | #260's census | 0 · 2 a SHA is unreachable, an input is unusable, or a repository is TypeScript (until the pinned image, #832) · 3 `coach` non-zero on a repository |
+| `eval-census` | #260's census | 0 · 2 a SHA is unreachable, an input is unusable, or a repository is TypeScript (until the pinned image, #832) · 3 a repository's analysis failed (`coach` non-zero, or a report that cannot be read), after every repository is recorded |
 | `eval-history` | The association (section 13a) | 0 · 2 no network in online mode |
 | `eval-harness-acceptance` | Harness tests | 0 · 1 a test failed · 2 no Docker |
 | `eval-compare` | Compares two runs | 0 comparable · 2 a run missing or invalid (fails the run schema) · 4 not comparable (a run not `complete`, or a comparable field differs) |
