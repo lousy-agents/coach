@@ -159,9 +159,18 @@ var _ = Describe("the measure of one function (AC-2.3, AC-2.5, AC-2.6)", func() 
 		},
 		Entry("an if inside an else block, one deeper", "if a {\n} else {\n\tif b {\n\t}\n}", map[string]any{"2": 1.0}),
 		Entry("an if inside an else-if, one deeper than the chain", "if a {\n} else if b {\n\tif c {\n\t}\n}", map[string]any{"2": 1.0}),
+		Entry("a condition-only for inside a three-clause for", "for i := 0; i < 3; i++ {\n\tfor a {\n\t}\n}", map[string]any{"2": 1.0}),
 		Entry("an else-if chain, at its if's depth", "if a {\n} else if b {\n} else if c {\n}", map[string]any{"1": 1.0}),
 		Entry("a type switch in a select in a switch", "switch {\ncase a:\n\tselect {\n\tcase <-ch:\n\t\tswitch v.(type) {\n\t\t}\n\t}\n}", map[string]any{"3": 1.0}),
 	)
+
+	When("a file holds only plain for loops", func() {
+		It("counts each one as a branch point", func() {
+			profile := profileOfSource("package p\n\nfunc F(a bool) {\n\tfor i := 0; i < 3; i++ {\n\t}\n\tfor a {\n\t}\n}\n")
+
+			Expect(measure(profile, "shapes", "branch_density")).To(Equal(map[string]any{"2": 1.0}))
+		})
+	})
 
 	When("a function is declared without a body, as one implemented in assembly is", func() {
 		It("is not measured", func() {

@@ -178,6 +178,46 @@ var _ = Describe("extracting a profile from a checkout (#872 Task 2)", func() {
 		})
 	})
 
+	DescribeTable("refuses a checkout that holds a .go entry that is not a regular file, with exit 2, naming it, without reading through it",
+		func(target func(dir string) string, name string) {
+			root := standInTree()
+			outside := GinkgoT().TempDir()
+			Expect(os.Symlink(target(outside), filepath.Join(root, "pick", name))).To(Succeed())
+
+			_, err := evalpatterns.ExtractProfile(standInReference(), root)
+
+			var refusal evalpatterns.Refusal
+			Expect(errors.As(err, &refusal)).To(BeTrue(), "ExtractProfile returned %v", err)
+			Expect(refusal.Exit).To(Equal(2))
+			Expect(err.Error()).To(HavePrefix(`reference "stand-in": `))
+			Expect(err.Error()).To(ContainSubstring("pick/" + name))
+			Expect(err.Error()).To(ContainSubstring("not a regular file"))
+			Expect(err.Error()).NotTo(ContainSubstring("hunter2"))
+		},
+		Entry("a symlink to a Go file outside the checkout", func(dir string) string {
+			path := filepath.Join(dir, "host.go")
+			writeFile(path, arrowSource)
+			return path
+		}, "link.go"),
+		Entry("a symlink to a host text file", func(dir string) string {
+			path := filepath.Join(dir, "secret.txt")
+			writeFile(path, "hunter2\n")
+			return path
+		}, "leak.go"),
+	)
+
+	When("the checkout directory does not exist", func() {
+		It("refuses the entry with exit 2, naming the label, rather than returning an empty profile", func() {
+			raw, err := evalpatterns.ExtractProfile(standInReference(), filepath.Join(GinkgoT().TempDir(), "missing"))
+
+			var refusal evalpatterns.Refusal
+			Expect(errors.As(err, &refusal)).To(BeTrue(), "ExtractProfile returned %v", err)
+			Expect(refusal.Exit).To(Equal(2))
+			Expect(err.Error()).To(ContainSubstring("cannot be read"))
+			Expect(raw).To(BeNil())
+		})
+	})
+
 	When("the entry itself is refused", func() {
 		It("refuses before reading the checkout", func() {
 			reference := standInReference()
