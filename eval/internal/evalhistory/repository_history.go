@@ -71,8 +71,11 @@ func involveAll(dir, since string, inventory Inventory, fixes []FixCommit) (invo
 
 func (result *RepositoryHistory) countFixes(scan FixScan, involved involvements) {
 	result.Commits, result.Fixes = scan.Commits, len(scan.Fixes)
-	if scan.Commits > 0 {
-		result.MatchRate = float64(len(scan.Fixes)) / float64(scan.Commits)
+	if scan.Commits == 0 {
+		result.MatchRateNullReason = "no commits between since and until"
+	} else {
+		rate := float64(len(scan.Fixes)) / float64(scan.Commits)
+		result.MatchRate = &rate
 	}
 	result.UnmappedFixes = UnmappedFixes{Function: involved.functions.Unmapped, File: involved.files.Unmapped}
 	result.UnprocessedFixes = append(result.UnprocessedFixes, involved.functions.Unprocessed...)
