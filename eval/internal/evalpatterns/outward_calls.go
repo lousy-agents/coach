@@ -5,11 +5,11 @@ import (
 	"strings"
 )
 
-// outwardCall is one entry of the closed list of APIs that reach outside
-// the process: all filesystem, environment, process, network and SQL I/O
-// (the chief's rulings on #872 and #887, matching #876). Name is a
-// package-level function, a selector path below the package such as
-// DefaultClient.Do, a prefix ending in *, or * for the whole package.
+// outwardCall is one entry of a closed list of outward calls (filesystem,
+// environment, process, network, SQL) ruled on #887; a call not on the list
+// counts as assigns_only. Name is a package-level function, a selector path
+// below the package such as DefaultClient.Do, a prefix ending in *, or * for
+// the whole package.
 type outwardCall struct {
 	path string
 	name string
