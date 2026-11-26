@@ -7,5 +7,6 @@
   "expect": {
     "bad": "none",
     "good": "none"
-  }
+  },
+  "note": "The scan is not silent about it, but it does not name the cause. With a required_layer whose prefix matches no package, coach codesignal --baseline reports complete=false for the go_model_build phase, the diagnostics project_coverage_incomplete, project_layer_bypass_coverage_incomplete ('absence of a witness for a source/sink pair in this run does not mean no bypass exists') and project_lifecycle_indeterminate, the text verdict 'the analysis is incomplete: project analysis did not complete', and --fail-on-incomplete-coverage exits 3; the default exit is 0 and no finding is reported. Nothing says that the required layer matched no package."
 }
