@@ -1,0 +1,10 @@
+package orders
+
+// Order is a customer's purchase.
+type Order struct {
+	ID       string
+	Country  string
+	Quantity int
+	Price    int
+	Express  bool
+}

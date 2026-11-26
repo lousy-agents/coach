@@ -29,6 +29,12 @@ func admitted(repo Repository, name string) bool {
 	return false
 }
 
+// Admits reports whether a finding or a Go file at the repository-relative name is in repo's census scope. The census
+// and the history both use it, so they cannot count different code.
+func (repo Repository) Admits(name string) bool {
+	return admitted(repo, name)
+}
+
 // globsProblem names the first of repo's include or exclude globs that is malformed or not repository-relative,
 // or returns "".
 func globsProblem(repo Repository) string {

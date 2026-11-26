@@ -1,0 +1,76 @@
+package orders
+
+import (
+	"fmt"
+	"strings"
+)
+
+// Order is a customer's purchase.
+type Order struct {
+	ID       string
+	Country  string
+	Quantity int
+	Price    int
+	Express  bool
+}
+
+// This file validates, prices, ships and prints orders: four reasons to change in one place.
+
+// Validate reports why an order cannot be accepted.
+func Validate(o Order) error {
+	if o.ID == "" {
+		return fmt.Errorf("order has no id")
+	}
+	if o.Quantity <= 0 {
+		return fmt.Errorf("order %s has no items", o.ID)
+	}
+	if o.Price < 0 {
+		return fmt.Errorf("order %s has a negative price", o.ID)
+	}
+	return nil
+}
+
+// Total prices an order with its discounts.
+func Total(o Order) int {
+	total := o.Quantity * o.Price
+	if o.Quantity >= 10 {
+		total -= total / 10
+	}
+	if o.Country != "US" {
+		total += 500
+	}
+	if o.Express {
+		total += 1000
+	}
+	return total
+}
+
+// ShippingDays estimates delivery time.
+func ShippingDays(o Order) int {
+	days := 5
+	if o.Express {
+		days = 2
+	}
+	if o.Country != "US" {
+		days += 7
+	}
+	if o.Quantity > 50 {
+		days++
+	}
+	return days
+}
+
+// Label prints the order's shipping label.
+func Label(o Order) string {
+	line := strings.ToUpper(o.ID)
+	if o.Express {
+		line += " EXPRESS"
+	}
+	if o.Country != "US" {
+		line += " INTL"
+	}
+	if o.Quantity > 50 {
+		line += " BULK"
+	}
+	return line
+}

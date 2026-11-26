@@ -1,0 +1,17 @@
+{
+  "id": "skipped-layer",
+  "name": "Skipped layer (layer bypass)",
+  "source": "Layer bypass in a layered architecture: a handler reaches the data layer past the layer that owns the rules (Richards, Software Architecture Patterns, ch. 1, on closed layers and the sinkhole anti-pattern)",
+  "seed": "none (Coach's own policy does not set required_layer)",
+  "status": "covered",
+  "expect": {
+    "bad": [
+      {
+        "rule_id": "architecture.layer_bypass",
+        "path": "internal/handler/deposit.go",
+        "subject": "architecture.layer_bypass:service:example.com/accounts/internal/handler.Deposit->(*database/sql.DB).Query"
+      }
+    ],
+    "good": "none"
+  }
+}

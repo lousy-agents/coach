@@ -22,6 +22,7 @@ const (
 	DiagLayerBypassBudgetExceeded                     = domain.DiagLayerBypassBudgetExceeded
 	DiagLayerBypassSourceLoadFailed                   = domain.DiagLayerBypassSourceLoadFailed
 	DiagLayerBypassAmbiguousLayer                     = domain.DiagLayerBypassAmbiguousLayer
+	DiagLayerBypassRequiredLayerUnmatched             = domain.DiagLayerBypassRequiredLayerUnmatched
 	InclusionRuleTSConfigIncludesNoTestClassification = domain.InclusionRuleTSConfigIncludesNoTestClassification
 )
 

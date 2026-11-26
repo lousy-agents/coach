@@ -1,0 +1,16 @@
+package orders
+
+// ShippingDays estimates delivery time.
+func ShippingDays(o Order) int {
+	days := 5
+	if o.Express {
+		days = 2
+	}
+	if o.Country != "US" {
+		days += 7
+	}
+	if o.Quantity > 50 {
+		days++
+	}
+	return days
+}

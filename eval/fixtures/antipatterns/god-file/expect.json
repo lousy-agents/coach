@@ -1,0 +1,17 @@
+{
+  "id": "god-file",
+  "name": "God file (overloaded file)",
+  "source": "A file with many reasons to change: validation, pricing, shipping and printing in one place (Martin, Clean Code, ch. 10, on the single-responsibility principle at the file level); the fix is to split by responsibility into named files",
+  "seed": "complexity.branch_density in pkg/codesignal/project_continuity.go and pkg/semantics/ts_scope.go (a baseline scan of main at 6d98ea0)",
+  "status": "covered",
+  "expect": {
+    "bad": [
+      {
+        "rule_id": "complexity.branch_density",
+        "path": "orders/orders.go",
+        "subject": ""
+      }
+    ],
+    "good": "none"
+  }
+}
