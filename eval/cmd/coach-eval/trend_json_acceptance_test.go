@@ -204,6 +204,57 @@ var _ = Describe("eval-compare trend --format json", func() {
 		})
 	})
 
+	When("a metric value or change has more than six decimal places", func() {
+		It("prints the value and the change rounded to six decimal places", func() {
+			writeLedger(ledger,
+				ledgerLine("pre_run", "2026-11-01", "cell-a", trendRecord("run-1", 0.1234567)),
+				ledgerLine("pre_run", "2026-11-02", "cell-a", trendRecord("run-2", 0.7)),
+			)
+
+			outcome := runTrend(root, root, "--cell", "cell-a", "--ledger", ledger, "--format", "json")
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			expectMatchesSchema(trendOutputSchemaPath, []byte(outcome.stdout))
+			segment := decodeJSONObject(outcome.stdout)["segments"].([]any)[0].(map[string]any)
+			first := segment["first"].(map[string]any)
+			Expect(first["value"]).To(BeNumerically("==", 0.123457))
+			Expect(segment["change"]).To(BeNumerically("==", 0.576543))
+		})
+	})
+
+	When("a metric falls by less than a millionth", func() {
+		It("prints the change as 0 in JSON, not -0", func() {
+			writeLedger(ledger,
+				ledgerLine("pre_run", "2026-11-01", "cell-a", trendRecord("run-1", 0.5)),
+				ledgerLine("pre_run", "2026-11-02", "cell-a", trendRecord("run-2", 0.4999999)),
+			)
+
+			outcome := runTrend(root, root, "--cell", "cell-a", "--ledger", ledger, "--format", "json")
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			expectMatchesSchema(trendOutputSchemaPath, []byte(outcome.stdout))
+			Expect(outcome.stdout).To(ContainSubstring(`"change":0}`))
+		})
+	})
+
+	When("a metric value is a tiny negative number", func() {
+		It("prints the value and the change as 0 in JSON, not -0", func() {
+			tinyNegative := func(runID string) record {
+				return withPath(completeRecord(runID), "parameters.k", -0.0000001)
+			}
+			writeLedger(ledger,
+				ledgerLine("pre_run", "2026-11-01", "cell-a", tinyNegative("run-1")),
+				ledgerLine("pre_run", "2026-11-02", "cell-a", tinyNegative("run-2")),
+			)
+
+			outcome := runTrend(root, root, "--cell", "cell-a", "--ledger", ledger, "--metric", "parameters.k", "--format", "json")
+
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			expectMatchesSchema(trendOutputSchemaPath, []byte(outcome.stdout))
+			Expect(outcome.stdout).NotTo(ContainSubstring(":-0"))
+		})
+	})
+
 	When("run through the eval-trend mise task with --format json", func() {
 		It("prints the JSON trend through the task", func() {
 			writeLedger(ledger,

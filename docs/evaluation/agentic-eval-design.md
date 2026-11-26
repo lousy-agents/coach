@@ -160,12 +160,13 @@ Only rules with a **general** detector are graded. Each detector is pinned, live
 
 | Graded `rule_id` | Language | Detector | Threshold and comparison (also in the protocol) |
 | --- | --- | --- | --- |
-| `architecture.layer_violation` | Go, TS | **In-house graph check** against `.lousy-agents/coach.json`. **This is the same policy file the hook reads.** Each import is placed in the layer with the longest matching prefix. **Go:** each `.go` file's imports are parsed with `go/parser` and resolved against every `go.mod` under the root, nested modules included. **TS:** a Go-native lexer and resolver, independent of Coach's TS backend and of the `typescript` package. It resolves relative specifiers, `baseUrl`, single-wildcard `paths` and relative `extends` (depth ≤ 16), and reads tsconfig comments and trailing commas. It refuses by name anything outside the generated subset (below). A missing required edge is a G2 absence | any forbidden edge counts |
+| `architecture.layer_violation` | Go, TS | **In-house graph check** against `.lousy-agents/coach.json`. **This is the same policy file the hook reads.** Each import is placed in the layer with the longest matching prefix. **Go:** each `.go` file's imports are parsed with `go/parser` and resolved against every `go.mod` under the root, nested modules included. **TS:** a Go-native lexer and resolver, independent of Coach's TS backend and of the `typescript` package. It resolves relative specifiers (a specifier that names a directory resolves only to its index), single-wildcard `paths` relative to the config that declares them, and relative `extends` (depth ≤ 16), and reads tsconfig comments and trailing commas. It refuses by name anything outside the generated subset (below). A missing required edge is a G2 absence | any forbidden edge counts |
 | `complexity.cognitive_complexity` | Go | **gocognit** (external, f.10), pinned at v1.3.0 by a `tool` directive in `eval/go.mod`, not through mise, so CI never installs it. `coach-eval` builds it from the module cache alone (`GOPROXY=off`, `GOTOOLCHAIN=local`, applied after the caller's environment). It refuses, without fetching, when the cache lacks it, and refuses a binary built from any other version | `-over 14`, which reports complexity > 14, matching Coach's "from the threshold up" at 15 (`docs/cli-codesignal.md` threshold table) |
 
 **The TS grader's subset.** The TS layer check refuses with a named reason, never guessing:
 - a `.tsx` source (JSX);
-- any `/` that is not after an identifier, a property name, a number, a string or `]`, because it could start a regular expression. So a division after `)`, `}` or `++` is refused;
+- any `/` that is not after an identifier (other than a keyword after which an expression can start, such as `return` or `typeof`), a property name, a number, a string or `]`, because it could start a regular expression. So a division after `)`, `}` or `++` is refused;
+- `baseUrl`, which TypeScript 7 removed;
 - project references;
 - package.json `imports` and self-references;
 - a nested `tsconfig.json`;
@@ -685,7 +686,7 @@ Each exit code below maps one condition. "R" means the run can be resumed.
 | `eval-precommit-agent` | Wiring; ≈ 10 min, ≈ 3 τ | 0 · 1 an integrity failure · 2 a refusal (no 15.15 record, no `sbx`, or a credential problem) |
 | `eval-agent-pilot` | 360 trials; writes the estimates | 0 · 1 a harness-caused event (R) · 2 a refusal · 5 killed (R) · 6 a cap reached (R after the caps are raised) |
 | `eval-agent-study` | The study (section 5) | 0 complete · 1 a harness-caused event (R) · 2 a refusal: input missing or invalid, the commit not clean, the 15.15 record absent, the credential expires before the projected end · 5 killed (R; `--supervise` relaunches) · 6 the checkpoint said stop, or a cap was reached, including `run_hours` (R after the caps are raised) · 7 invalid: the model, CLI or credential identity changed (not resumable) |
-| `eval-census` | #260's census | 0 · 2 a SHA is unreachable · 3 `coach` non-zero on a repository |
+| `eval-census` | #260's census | 0 · 2 a SHA is unreachable, an input is unusable, or a repository is TypeScript (until the pinned image, #832) · 3 a repository's analysis failed (`coach` non-zero, or a report that cannot be read), after every repository is recorded |
 | `eval-history` | The association (section 13a) | 0 · 2 no network in online mode |
 | `eval-harness-acceptance` | Harness tests | 0 · 1 a test failed · 2 no Docker |
 | `eval-compare` | Compares two runs | 0 comparable · 2 a run missing or invalid (fails the run schema) · 4 not comparable (a run not `complete`, or a comparable field differs) |
@@ -808,7 +809,10 @@ The join key is `(source.sha, rule_id, path, subject, lines)`. This repository's
 - **(a) Amend #260 so the census is fully automated** (*recommended*, given the autonomy requirement). The census would use only detector agreement and the `eval-history` association. Human review of the security rules becomes an **explicit, optional gap**. *Consequence:* no security-precision claim can be made until humans review them, and the PRD §12 security gate stays open.
 - **(b) Keep a small, sampled `human_verdict` tier for the security rules only.** *Consequence:* the census needs a human step, so requirement (4) is not met for the census, and the census cannot be tied to the autonomous restamp.
 
-**How the census runs.** `eval-census` runs `coach-eval census` in a pinned image (dependencies installed with `--ignore-scripts`; digest and compilers recorded). It scans with `coach codesignal --baseline --format json --no-interactive --fail-on-incomplete-coverage`, adding `--project-config` and, for TS, `--project-language typescript`. `analysis_status` is one of `measured`, `not_exercised`, `not_adjudicable_only`, `analysis_failed` or `out_of_scope`. Generated programs are excluded.
+**How the census runs.** `eval-census` runs `coach-eval census` in a pinned image (dependencies installed with `--ignore-scripts`; digest and compilers recorded). It scans with `coach codesignal --baseline --format json --no-interactive --fail-on-incomplete-coverage`, adding `--project-config` and, for TS, `--project-language typescript`. `analysis_status` is one of `measured`, `not_exercised`, `not_adjudicable_only`, `analysis_failed` or `out_of_scope`. Generated programs are excluded. Until the image lands (#832), the census runs Go repositories on the host:
+- each from a fresh local clone, checked out at its SHA;
+- with hooks, repository-supplied git configuration and global and system git configuration all disabled, so no repository code, filter or hook runs;
+- and it refuses TypeScript repositories with exit 2, because Coach would resolve their compiler from the repository's own `node_modules`.
 
 **The census record:**
 
@@ -902,7 +906,7 @@ Grouped under b.7's four headings, plus generation and contamination.
 **Construct**
 - **H3 is conformance on seeded rows,** not precision. The team writes the rules, the generator, the operators and the in-house layer check (c.8).
 - **The tasks are synthetic.** They are generated programs, small and regular, that start below Coach's published thresholds.
-  - **The bases are deliberately simple.** The generated Go base is branch-free and pointer-free, with value semantics, so every margin below Coach's thresholds holds by construction (#780). Complexity enters only through the operators (#782).
+  - **The bases are deliberately simple.** The generated Go base is branch-free, returns no pointers, and uses value semantics, so every margin below Coach's thresholds holds by construction (#780). Complexity enters only through the operators (#782).
   - This limits realism, and the claim names it.
 - **H4 covers only the graded rules:** layer violations (an in-house check that reads the same policy as the hook) and Go cognitive complexity (gocognit, external). Layer bypass is H3-only until #816. The disagreement between detectors and Coach, and `coach_base_fp`, are reported.
 - **Injected is not natural** (c.6, c.7, f.1). Cognitive complexity is only partly validated (d.1, d.2), and gocognit's reading can differ from Coach's (f.10).

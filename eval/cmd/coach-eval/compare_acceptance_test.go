@@ -141,4 +141,29 @@ var _ = Describe("eval-compare", func() {
 			Expect(outcome.stderr).NotTo(ContainSubstring("warning:"), "text output on exit 4 keeps the state message alone")
 		})
 	})
+
+	DescribeTable("a format flag among the positional arguments", func(args []string) {
+		writeRunRecord(stateRoot, "run-a", completeRecord("run-a"))
+		writeRunRecord(stateRoot, "run-b", completeRecord("run-b"))
+
+		outcome := runCompare(stateRoot, args...)
+
+		Expect(outcome.exitCode).To(Equal(2), outcome.stderr)
+		Expect(outcome.stdout).To(BeEmpty())
+		Expect(outcome.stderr).To(ContainSubstring("--format must come before the run ids"))
+	},
+		Entry("--format follows two run ids", []string{"run-a", "run-b", "--format", "json"}),
+		Entry("-format follows two run ids", []string{"run-a", "run-b", "-format", "json"}),
+		Entry("--format=json follows one run id", []string{"run-a", "--format=json"}),
+	)
+
+	It("does not treat --formatx as the format flag", func() {
+		writeRunRecord(stateRoot, "run-a", completeRecord("run-a"))
+		writeRunRecord(stateRoot, "run-b", completeRecord("run-b"))
+
+		outcome := runCompare(stateRoot, "run-a", "run-b", "--formatx", "json")
+
+		Expect(outcome.exitCode).To(Equal(2), outcome.stderr)
+		Expect(outcome.stderr).To(ContainSubstring("expected exactly two run ids"))
+	})
 })

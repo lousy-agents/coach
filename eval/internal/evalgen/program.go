@@ -30,6 +30,7 @@ type spec struct {
 // (files that overlay the tree), and the manifest.
 type Program struct {
 	ID       string
+	Language Language
 	Cell     Cell
 	Seed     int64
 	Tree     map[string][]byte
@@ -72,7 +73,7 @@ func Generate(cell Cell, seed int64) (Program, error) {
 		}
 	}
 	program := Program{
-		Cell: cell, Seed: seed, Tree: tree,
+		Cell: cell, Seed: seed, Language: LanguageGo, Tree: tree,
 		Tests:    map[string][]byte{"tests/feature/feature_test.go": featureTest(g)},
 		Solution: map[string][]byte{g.route[0].dir + "/" + g.route[0].name + ".go": entrySource(g, true)},
 	}
