@@ -72,6 +72,17 @@ func (s standIn) runs() []string {
 	return strings.Fields(string(content))
 }
 
+// running reports whether the process is alive. A killed process nothing has reaped yet is a zombie, which kill(2)
+// still finds; /proc says which, where it exists.
+func running(pid int) bool {
+	stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return syscall.Kill(pid, 0) == nil
+	}
+	state := strings.Fields(string(stat[strings.LastIndex(string(stat), ")")+1:]))
+	return len(state) > 0 && state[0] != "Z"
+}
+
 func (s standIn) invocations() int { return len(s.runs()) }
 
 func validationOf(program generatedProgram) map[string]any {
@@ -158,7 +169,7 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 			Expect(err).NotTo(HaveOccurred())
 			pid, err := strconv.Atoi(strings.TrimSpace(string(content)))
 			Expect(err).NotTo(HaveOccurred())
-			Eventually(func() error { return syscall.Kill(pid, 0) }).Should(MatchError(syscall.ESRCH), "the process Gremlins started is gone")
+			Eventually(func() bool { return running(pid) }).Should(BeFalse(), "the process Gremlins started is gone")
 		})
 	})
 
