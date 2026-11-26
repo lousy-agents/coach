@@ -89,9 +89,6 @@ func segmentChangeFor(segment trendSegment) *float64 {
 	return &change
 }
 
-func writeTrendJSON(stdout io.Writer, document trendDocument) int {
-	if err := json.NewEncoder(stdout).Encode(document); err != nil {
-		return CompareInputInvalid
-	}
-	return CompareComparable
+func writeTrendJSON(stdout io.Writer, document trendDocument) error {
+	return json.NewEncoder(stdout).Encode(document)
 }

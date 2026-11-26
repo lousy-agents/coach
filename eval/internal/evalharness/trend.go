@@ -52,15 +52,19 @@ func Trend(args []string, stdout, stderr io.Writer) int {
 	}
 
 	segments, breaks := segmentTrend(cellLines, *metric)
+	if *format == formatJSON {
+		if err := writeTrendJSON(stdout, trendDocumentFor(*cell, *metric, cellLines, segments, breaks)); err != nil {
+			return CompareInputInvalid
+		}
+	}
 	if !hasComparablePair(segments) {
 		fmt.Fprintf(stderr, "coach-eval trend: cell %s has no comparable adjacent pair\n", *cell)
 		return CompareNotComparable
 	}
 	warnDirtyTrendRuns(stderr, cellLines)
-	if *format == formatJSON {
-		return writeTrendJSON(stdout, trendDocumentFor(*cell, *metric, cellLines, segments, breaks))
+	if *format == formatText {
+		printTrend(stdout, *cell, *metric, cellLines, segments, breaks)
 	}
-	printTrend(stdout, *cell, *metric, cellLines, segments, breaks)
 	return CompareComparable
 }
 
