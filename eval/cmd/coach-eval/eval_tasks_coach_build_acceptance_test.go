@@ -60,7 +60,40 @@ var _ = Describe("the eval tasks' coach build (#881)", func() {
 		},
 		Entry("eval-census", "eval-census"),
 		Entry("eval-history", "eval-history"),
+		Entry("eval-antipatterns", "eval-antipatterns"),
 	)
+
+	DescribeTable("builds the same binary from a checkout before and after a tracked file is edited, as a census run leaves it",
+		func(task string) {
+			line := taskCoachBuild(task)
+			checkout := checkoutOfHead()
+
+			clean, err := os.ReadFile(runTaskBuild(line, checkout))
+			Expect(err).NotTo(HaveOccurred())
+			edited := filepath.Join(checkout, "README.md")
+			content, err := os.ReadFile(edited)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(os.WriteFile(edited, append(content, "\nan uncommitted edit\n"...), 0o644)).To(Succeed())
+			dirty, err := os.ReadFile(runTaskBuild(line, checkout))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(bytes.Equal(clean, dirty)).To(BeTrue(), "%s: %q stamped the working tree's state into the binary", task, line)
+		},
+		Entry("eval-census", "eval-census"),
+		Entry("eval-history", "eval-history"),
+		Entry("eval-antipatterns", "eval-antipatterns"),
+	)
+
+	It("builds coach with -trimpath -buildvcs=false in every task that builds it into the task's bin_dir", func() {
+		config, err := os.ReadFile(filepath.Join(repositoryRoot(), "mise.toml"))
+		Expect(err).NotTo(HaveOccurred())
+		lines := regexp.MustCompile(`(?m)^go build .*-o "\$bin_dir/coach" \./cmd/coach$`).FindAll(config, -1)
+
+		Expect(lines).NotTo(BeEmpty())
+		for _, line := range lines {
+			Expect(strings.Fields(string(line))).To(ContainElements("-trimpath", "-buildvcs=false"), "%s", line)
+		}
+	})
 
 	It("gives a census re-run at the same corpus SHA the same record_id content prefix and source.ref", func() {
 		line := taskCoachBuild("eval-census")
