@@ -1,0 +1,16 @@
+package files
+
+import "os"
+
+// Lock creates a lock file unless one exists. Between the check and the create another process can make the file, and
+// both callers believe they hold the lock.
+func Lock(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		f, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+		return f.Close()
+	}
+	return os.ErrExist
+}

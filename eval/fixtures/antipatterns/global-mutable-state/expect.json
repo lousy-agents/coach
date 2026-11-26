@@ -1,0 +1,11 @@
+{
+  "id": "global-mutable-state",
+  "name": "Global mutable state",
+  "source": "A package-level variable that functions mutate: shared by every caller and test (Wright and Hailperin, global state in concurrent programs; Go FAQ on package-level state). Known miss: Coach has no rule for it",
+  "seed": "none",
+  "status": "not_covered",
+  "expect": {
+    "bad": "none",
+    "good": "none"
+  }
+}

@@ -1,0 +1,15 @@
+package orders
+
+import "strings"
+
+// Order is a customer's purchase.
+type Order struct {
+	ID     string
+	Status string
+}
+
+// Normalize returns a cleaned copy of an order for storage and leaves the caller's order as it was.
+func Normalize(o Order) Order {
+	o.Status = strings.ToLower(strings.TrimSpace(o.Status))
+	return o
+}

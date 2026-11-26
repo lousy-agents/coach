@@ -182,14 +182,7 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 		table := decodeTable(outcome.stdout)
 		Expect(table.Summary.Fail).To(BeZero())
-		covered := map[string]bool{}
-		for _, fixture := range table.Fixtures {
-			if fixture.Status == "covered" {
-				covered[fixture.ID] = true
-				Expect(fixture.Bad.Result).To(Equal("pass"), fixture.ID)
-				Expect(fixture.Good.Result).To(Equal("pass"), fixture.ID)
-			}
-		}
+		covered := coveredFixtureIDs(table)
 		Expect(covered).To(HaveKey("dependency-rule-breach"))
 		Expect(covered).To(HaveKey("skipped-layer"))
 		Expect(covered).To(HaveKey("arrow-code"))
@@ -207,12 +200,7 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 		table := decodeTable(outcome.stdout)
 		Expect(table.Summary.NotCovered).To(ConsistOf("constructor-does-real-work", "create-after-missing-check", "global-mutable-state", "god-struct"))
-		for _, fixture := range table.Fixtures {
-			if fixture.Status == "not_covered" {
-				Expect(fixture.Bad.Result).To(Equal("not_covered"), fixture.ID+": Coach is silent on its bad variant today; if it is not, promote the fixture")
-				Expect(fixture.Good.Result).To(Equal("not_covered"), fixture.ID)
-			}
-		}
+		expectKnownMissesSilent(table)
 		Expect(table.Summary.Pass).To(Equal(7), "seven covered fixtures pass; the known misses are not among them")
 	})
 

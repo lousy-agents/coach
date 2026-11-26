@@ -1,0 +1,28 @@
+package store
+
+import (
+	"database/sql"
+	"os"
+)
+
+// Store keeps orders in a database.
+type Store struct {
+	db *sql.DB
+}
+
+// NewStore opens the database named by the environment. The constructor reads configuration and opens a connection
+// itself, so a test cannot build a Store without a database and a caller cannot choose another one.
+func NewStore() *Store {
+	db, err := sql.Open("postgres", os.Getenv("ORDERS_DSN"))
+	if err != nil {
+		panic(err)
+	}
+	return &Store{db: db}
+}
+
+// Count returns the number of stored orders.
+func (s *Store) Count() int {
+	var n int
+	_ = s.db.QueryRow("SELECT count(*) FROM orders").Scan(&n)
+	return n
+}

@@ -115,21 +115,3 @@ func decodeTable(stdout string) antipatternTable {
 	ExpectWithOffset(1, json.Unmarshal([]byte(stdout), &table)).To(Succeed(), stdout)
 	return table
 }
-
-func copyDirectory(from, to string) {
-	ExpectWithOffset(1, filepath.WalkDir(from, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(from, path)
-		target := filepath.Join(to, rel)
-		if entry.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		content, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
-		}
-		return os.WriteFile(target, content, 0o644)
-	})).To(Succeed())
-}
