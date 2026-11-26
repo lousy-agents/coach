@@ -637,7 +637,7 @@ The tests:
 - **The credential probe.** Planted host markers (a `~/.claude/.credentials.json` with a marker token, and a host Keychain item on macOS) are unreachable by an agent that tries to read them. The same probe run on the host does reach them (false-green rule). No marker appears in any artefact, and the artefact scan fails on a planted copy.
 - **No leakage from the developer's setup.** The developer's user-level hooks, MCP servers and `CLAUDE.md`, each planted with a marker, are not loaded in a trial.
 - **No API key wins.** With an API-key variable set on the host, the preflight refuses.
-- **Git-state bypasses fail.** A `git commit --no-verify`, a `commit-tree` or an `update-ref` inside a trial is an integrity failure.
+- **Git-state bypasses fail.** A `git commit --no-verify`, a `commit-tree` or an `update-ref` inside a trial is an agent-caused integrity event, graded as assigned with `clean_success` = `completed` = 0.
 - **Detection stays inside the fixture.** `eval-detection` fails if a finding's path falls outside the fixture.
 - **The oracle is absent from the agent's boundary.** This is pilot gate 13, red first.
 - **The hook cannot be swapped.** Deleting and replacing the hook script, or its settings, inside a trial is detected as an agent-caused integrity event.
@@ -786,7 +786,7 @@ Everything is a local `mise` task with a `description`, which a developer runs b
 | Code | Meaning |
 | --- | --- |
 | 0 | Pass. For `eval-compare`: compared, and the runs are comparable |
-| 1 | A gate or integrity failure |
+| 1 | A gate failure, or a harness-caused integrity event (the run stays resumable) |
 | 2 | Refusal: a missing or wrong input, including an unreachable census SHA, or a missing run or an incomplete study for `eval-compare` |
 | 3 | `coach` returned non-zero on a fixture or a census repository |
 | 4 | `eval-compare`: the runs are not comparable. The report is printed with the reasons |
@@ -911,7 +911,7 @@ Verdicts are reused through `dedup_key`.
   "private_repo_sha": "string", "held_out_template_ids": ["string"],
   "seeds": { "instance": 0, "order": 0 },
   "caps": { "trial_tokens": 0, "trial_turns": 0, "trial_seconds": 0 },
-  "exclusions": ["harness_error_twice", "usage_limit_requeue"],
+  "exclusions": ["usage_limit_requeue"], "harness_error_twice": "aborts the run; resumable", "agent_integrity_events": "graded as assigned",
   "model_retirement_policy": "if the pinned model is retired before T completes, the study is invalid and is re-registered; no mid-study substitution",
   "kappa_failure_policy": "a rule with kappa < 0.6 is re-adjudicated by a third human; if it is still < 0.6, its trials are reported with and without that rule's candidates, and the claim uses the more conservative result",
   "delta": { "complexity.cognitive_complexity": 3, "complexity.max_nesting_depth": 1 },
