@@ -1,6 +1,7 @@
 package evaldetect
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -40,6 +41,9 @@ func isTSSource(name string) bool {
 }
 
 func tsFileEdges(resolver tsResolver, rel string) ([]importEdge, error) {
+	if strings.HasSuffix(rel, ".tsx") {
+		return nil, fmt.Errorf("%w: %s: a .tsx source; JSX is outside the subset the lexer reads", ErrRefused, rel)
+	}
 	src, err := os.ReadFile(filepath.Join(resolver.root, filepath.FromSlash(rel)))
 	if err != nil {
 		return nil, err

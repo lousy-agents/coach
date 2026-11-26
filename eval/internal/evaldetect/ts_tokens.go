@@ -32,17 +32,33 @@ var regexKeywords = map[string]bool{
 }
 
 // slashStartsRegex applies the usual lexer heuristic: a slash is a division
-// only after something that ends an expression.
+// only after something that ends an expression. A keyword after a dot is a
+// property name, which ends one.
 func slashStartsRegex(tokens []tsToken) bool {
 	if len(tokens) == 0 {
 		return true
 	}
-	prev := tokens[len(tokens)-1]
+	prev, beforePrev := tokens[len(tokens)-1], tsToken{kind: tsOther}
+	if len(tokens) > 1 {
+		beforePrev = tokens[len(tokens)-2]
+	}
 	switch prev.kind {
 	case tsIdent:
-		return regexKeywords[prev.text]
+		return regexKeywords[prev.text] && !beforePrev.is(tsPunct, ".")
 	case tsPunct:
-		return prev.text != ")" && prev.text != "]" && prev.text != "}"
+		return !endsOperand(prev, beforePrev)
+	}
+	return false
+}
+
+// endsOperand reports whether a punctuator closes an operand: a closing
+// bracket, or the second sign of a postfix ++ or --.
+func endsOperand(prev, beforePrev tsToken) bool {
+	switch prev.text {
+	case ")", "]", "}":
+		return true
+	case "+", "-":
+		return beforePrev.is(tsPunct, prev.text)
 	}
 	return false
 }

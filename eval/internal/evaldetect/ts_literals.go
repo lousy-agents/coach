@@ -3,7 +3,9 @@ package evaldetect
 import "strings"
 
 // scanQuoted reads a quoted string, keeping the character after each
-// backslash, which is enough to read module specifiers.
+// backslash, which is enough to read module specifiers. A newline ends an
+// unterminated string without being consumed, so the line count holds; a
+// backslash-continued newline is counted as it is passed.
 func (s *tsScanner) scanQuoted(quote byte) {
 	line := s.line
 	var text strings.Builder
@@ -13,9 +15,11 @@ func (s *tsScanner) scanQuoted(quote byte) {
 			s.pos++
 		}
 		text.WriteByte(s.src[s.pos])
+		s.advanceTo(s.pos + 1)
+	}
+	if s.pos < len(s.src) && s.src[s.pos] == quote {
 		s.pos++
 	}
-	s.pos++
 	s.emit(tsString, text.String(), line)
 }
 

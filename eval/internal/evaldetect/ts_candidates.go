@@ -10,7 +10,7 @@ import (
 // tsSourceExtensions maps a JS extension a specifier may carry to the TS
 // source extensions that compile to it.
 var tsSourceExtensions = map[string][]string{
-	".js": {".ts", ".tsx"}, ".jsx": {".tsx"}, ".mjs": {".mts"}, ".cjs": {".cts"},
+	".js": {".ts"}, ".mjs": {".mts"}, ".cjs": {".cts"},
 }
 
 // file returns the first existing file TS would load for a resolved path.
@@ -34,7 +34,7 @@ func fileCandidates(target string) []string {
 		candidates = append(candidates, strings.TrimSuffix(target, ext)+sourceExt)
 	}
 	candidates = append(candidates, target)
-	for _, suffix := range []string{".ts", ".tsx", ".d.ts", "/index.ts", "/index.tsx", "/index.d.ts"} {
+	for _, suffix := range []string{".ts", ".d.ts", "/index.ts", "/index.d.ts"} {
 		candidates = append(candidates, target+suffix)
 	}
 	return candidates
