@@ -2,6 +2,8 @@ package evalgen
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -96,7 +98,7 @@ func readOracle(dir string) (Program, error) {
 	var oracle Program
 	for name, files := range oracleDirectories(&oracle) {
 		tree, err := readTree(filepath.Join(dir, filepath.FromSlash(name)))
-		if err != nil {
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return Program{}, err
 		}
 		*files = tree
