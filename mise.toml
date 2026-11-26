@@ -365,7 +365,7 @@ go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 
 # Generates one deterministic Go program for a structural cell. Arguments after `--` reach the command.
 [tasks.eval-generate]
-description = "Generate a Go or TypeScript eval program by cell (--language, then --cell N or every dimension flag); prints one JSON line, exit 2 on invalid input"
+description = "Generate a Go or TypeScript eval program by cell (--language, then --cell N, every dimension flag, --tuning, or --profile P --count N); prints one JSON line, exit 2 on invalid input"
 depends = ["js-install"]
 run = """
 set -eu
