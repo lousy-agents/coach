@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "coach-eval census run, schema version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "corpus_id", "coach", "repositories", "exit"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "run_id": {"type": "string", "minLength": 1},
+    "corpus_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+    "coach": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "sha", "coach_exit", "statuses"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+          "coach_exit": {"type": "integer"},
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["rule_id", "analysis_status", "findings", "adjudicable"],
+              "properties": {
+                "rule_id": {"type": "string", "minLength": 1},
+                "analysis_status": {"enum": ["measured", "not_exercised", "not_adjudicable_only", "analysis_failed", "out_of_scope"]},
+                "findings": {"type": "integer", "minimum": 0},
+                "adjudicable": {"type": "integer", "minimum": 0},
+                "evidence": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "exit": {"enum": [0, 3]}
+  }
+}

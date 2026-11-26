@@ -52,8 +52,15 @@ func stringValue(value json.RawMessage) string {
 }
 
 // automatedValueProblem ties an automated measure to its kind of value: an
-// agreement is agree or disagree, an association is a number.
+// agreement is agree or disagree, an association is a number, and an
+// analysis_status is one of the census statuses.
 func automatedValueProblem(record Record) string {
+	if record.Measure == "analysis_status" {
+		if !statusValues[stringValue(record.Value)] {
+			return "analysis_status takes one of the census statuses"
+		}
+		return ""
+	}
 	if record.Measure == "flagged_vs_unflagged_association" {
 		if !isNumber(record.Value) {
 			return "flagged_vs_unflagged_association takes a number"
