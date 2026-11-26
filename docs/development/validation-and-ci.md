@@ -141,6 +141,18 @@ In a credentialed environment, `test-acceptance-fast`'s ambient-credential
 preflight refusal is the documented, expected result, not a gate failure —
 `mise run test` already ran the same `*Acceptance` suites unfiltered.
 
+## The test-only rule override
+
+`pkg/codesignal` holds a test-only override of rule thresholds and detectors,
+selected by the build tag `coach_eval_override` and driven by the
+`COACH_EVAL_OVERRIDE` environment variable (coach#809). The untagged files carry
+two functions that return their input, so a release build holds none of it: an
+acceptance spec builds `./cmd/coach` the way `.goreleaser.yaml` does and checks
+the binary for the override's banner and variable name, and a guard spec fails
+if `.goreleaser.yaml` names the tag or declares `tags`, `flags` or `ldflags`.
+A default `go vet ./...` skips the tagged files, so `mise run go-vet` also vets
+`./pkg/codesignal/...` and `./cmd/coach/...` with the tag.
+
 ## GitHub Actions shape
 
 GHA is a parallel scheduler of atomic `mise run <task>` steps. The local

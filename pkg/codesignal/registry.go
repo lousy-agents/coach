@@ -16,6 +16,11 @@ var gatedFindingKinds = map[string]bool{
 	"pointer_return":   true,
 }
 
+var gatedRuleIDsByKind = map[string]string{
+	"constructor_func": "structure.constructor_density",
+	"pointer_return":   "structure.pointer_return_density",
+}
+
 // ruleRegistry maps semantics.Finding.Kind to the Signal constructor for
 // that kind. Kinds absent from this map are silently ignored: this is the
 // single dispatch point processHeadResult and extractBaseSignals use, so
@@ -50,7 +55,7 @@ func signalsFromFindings(path string, findings []semantics.Finding, counts map[s
 		if !recognized {
 			continue
 		}
-		if gatedFindingKinds[finding.Kind] && counts[finding.Kind] < densityGateThreshold {
+		if gatedFindingKinds[finding.Kind] && counts[finding.Kind] < ruleThreshold(gatedRuleIDsByKind[finding.Kind], densityGateThreshold) {
 			continue
 		}
 		signals = append(signals, newSignal(path, finding))
