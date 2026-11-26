@@ -13,6 +13,14 @@ func (g tsSpec) entryName() string {
 	return prefix + strings.ToUpper(g.field[:1]) + g.field[1:]
 }
 
+// entrySymbol is the entry as a caller names it: a method belongs to its class.
+func (g tsSpec) entrySymbol() string {
+	if g.cell.Entry == "method" {
+		return "Service." + g.entryName()
+	}
+	return g.entryName()
+}
+
 // entrySource is the entry module: its stub returns the zero value, and the clean oracle forwards to the next
 // package on the route. Both declare describe so the visible tests do not depend on the entry.
 func (g tsSpec) entrySource(solution bool) []byte {

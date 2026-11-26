@@ -19,7 +19,7 @@ func testPath(layer, name string) string { return "src/" + layer + "/" + name + 
 
 func (g tsSpec) path(h hop) string { return modulePath(h.layer, h.name) }
 
-// importFrom is the specifier by which one package imports another, which sits in a sibling layer directory.
+// importFrom is the specifier by which one package imports another: each sits in a directory of its layer under src/.
 func importFrom(from, to hop) string { return "../" + to.layer + "/" + to.name + ".ts" }
 
 // GenerateTypeScript emits the TypeScript program for a cell and a seed. It is deterministic: the same generator
@@ -28,7 +28,7 @@ func GenerateTypeScript(cell Cell, seed int64) (Program, error) {
 	if err := cell.Validate(); err != nil {
 		return Program{}, err
 	}
-	s := newStream(TypeScriptGeneratorVersion, cell, seed)
+	s := newStream(LanguageTypeScript.Version(), cell, seed)
 	layers := layerNames[cell.Layers]
 	names := shuffled(s, packageNames)[:cell.Packages]
 	entity, field := pick(s, entityNames), pick(s, fieldNames[cell.Field])

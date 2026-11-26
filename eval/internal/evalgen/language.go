@@ -23,10 +23,12 @@ func ParseLanguage(text string) (Language, error) {
 	return "", fmt.Errorf("language must be %s or %s, got %q", LanguageGo, LanguageTypeScript, text)
 }
 
-// Version is the generator version of a language; it changes whenever that language's trees can change.
+// Version is the generator version of a language; it changes whenever that language's trees can change. A
+// TypeScript tree is built from the vocabulary, route, policy writer and hook that the Go generator shares, so its
+// version carries the Go one.
 func (l Language) Version() string {
 	if l == LanguageTypeScript {
-		return TypeScriptGeneratorVersion
+		return TypeScriptGeneratorVersion + "+" + GeneratorVersion
 	}
 	return GeneratorVersion
 }

@@ -14,9 +14,9 @@ var tsTestName = regexp.MustCompile(`(?m)^test\("([^"]+)"`)
 
 func buildTypeScriptManifest(g tsSpec, p Program) Manifest {
 	cellJSON, _ := json.Marshal(g.cell)
-	templateSum := sha256.Sum256([]byte(TypeScriptGeneratorVersion + "|" + string(cellJSON)))
+	templateSum := sha256.Sum256([]byte(LanguageTypeScript.Version() + "|" + string(cellJSON)))
 	seedSum := sha256.Sum256([]byte(fmt.Sprint(p.Seed)))
-	entry := g.path(g.route[0]) + "#" + g.entryName()
+	entry := g.path(g.route[0]) + "#" + g.entrySymbol()
 	surface := []APISymbol{{Symbol: entry, Entry: entry}}
 	function := "load"
 	if g.cell.Direction == "write" {
@@ -28,7 +28,7 @@ func buildTypeScriptManifest(g tsSpec, p Program) Manifest {
 	return Manifest{
 		SchemaVersion: "1", ID: p.ID, Kind: "feature_template_instance", Language: []string{string(LanguageTypeScript)},
 		Program: ProgramInfo{
-			ProgramID: p.ID, GeneratorVersion: TypeScriptGeneratorVersion, Cell: g.cell,
+			ProgramID: p.ID, GeneratorVersion: LanguageTypeScript.Version(), Cell: g.cell,
 			SeedHash: hex.EncodeToString(seedSum[:]), Panel: "tuning",
 		},
 		Operators:  []any{},

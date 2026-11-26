@@ -11,10 +11,10 @@ import (
 
 var jsxFile = regexp.MustCompile(`\.[jt]sx$`)
 
-// slashOutsideStrings finds a `/` that is not inside a string: the layer grader refuses a slash it cannot classify,
-// so the generated sources hold none, which also rules out regular expressions and divisions.
 var doubleQuoted = regexp.MustCompile(`"(?:[^"\\\n]|\\.)*"`)
 
+// slashOutsideStrings finds a `/` that is not inside a string: the layer grader refuses a slash it cannot classify,
+// so the generated sources hold none, which also rules out regular expressions and divisions.
 func slashOutsideStrings(source []byte) bool {
 	return bytes.Contains(doubleQuoted.ReplaceAll(source, nil), []byte("/"))
 }
