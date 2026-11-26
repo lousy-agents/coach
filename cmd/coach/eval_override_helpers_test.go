@@ -55,6 +55,28 @@ func baselineScanWithOverride(binary, repo, override string) (stdout, stderr []b
 	return runCoachBinary(binary, repo, environmentWithOverride(override), "codesignal", "--baseline", "--format=json")
 }
 
+func diffScanWithOverride(binary, repo, base, override string) (stdout, stderr []byte, exitCode int) {
+	return runCoachBinary(binary, repo, environmentWithOverride(override), "codesignal", "--base", base, "--format=json")
+}
+
+type lifecycleCounts struct {
+	Introduced int
+	Existing   int
+	Resolved   int
+}
+
+func reportedLifecycleCounts(stdout []byte) lifecycleCounts {
+	var report struct {
+		Summary struct {
+			Introduced int `json:"introduced_signals"`
+			Existing   int `json:"existing_signals"`
+			Resolved   int `json:"resolved_signals"`
+		} `json:"summary"`
+	}
+	Expect(json.Unmarshal(stdout, &report)).To(Succeed(), "stdout should be one JSON report: %s", stdout)
+	return lifecycleCounts(report.Summary)
+}
+
 func reportedRuleIDs(stdout []byte) []string {
 	var report struct {
 		Signals []struct {

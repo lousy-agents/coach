@@ -51,6 +51,11 @@ var _ = Describe("The eval override build of coach codesignal", Ordered, Continu
 				override: `{"thresholds":{"structure.constructor_density":1}}`,
 				files:    map[string]string{"nested.go": nestedGoBelowEveryDefaultThreshold},
 			}),
+			Entry("structure.pointer_return_density, through the density gate", loweredThreshold{
+				ruleID:   "structure.pointer_return_density",
+				override: `{"thresholds":{"structure.pointer_return_density":1}}`,
+				files:    map[string]string{"nested.go": nestedGoBelowEveryDefaultThreshold},
+			}),
 			Entry("coupling.deep_relative_import", loweredThreshold{
 				ruleID:   "coupling.deep_relative_import",
 				override: `{"thresholds":{"coupling.deep_relative_import":2}}`,
@@ -78,6 +83,20 @@ var _ = Describe("The eval override build of coach codesignal", Ordered, Continu
 
 			Expect(exitCode).To(Equal(0))
 			Expect(reportedRuleIDs(stdout)).To(ConsistOf("coupling.deep_relative_import"))
+		})
+	})
+
+	When("COACH_EVAL_OVERRIDE disables a rule and the scan compares against a base revision", func() {
+		It("removes that rule's signal from the base side too, so nothing reads as resolved (AC-1.2)", func() {
+			repo := repoWithFiles(map[string]string{"deep.go": nestedGoAtTheDefaultNestingThreshold})
+			commitFile(repo, "deep.go", nestedGoAtTheDefaultNestingThreshold+"\n// edited\n")
+			releaseStdout, _, _ := diffScanWithOverride(commandPath, repo, "HEAD~1", "")
+			Expect(reportedLifecycleCounts(releaseStdout)).To(Equal(lifecycleCounts{Existing: 1}))
+
+			stdout, _, exitCode := diffScanWithOverride(overrideCoach, repo, "HEAD~1", `{"disable":["complexity.max_nesting_depth"]}`)
+
+			Expect(exitCode).To(Equal(0))
+			Expect(reportedLifecycleCounts(stdout)).To(Equal(lifecycleCounts{}))
 		})
 	})
 

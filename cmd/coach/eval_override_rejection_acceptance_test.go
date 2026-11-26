@@ -23,7 +23,7 @@ var _ = Describe("The eval override build of coach codesignal given an invalid o
 
 			stdout, stderr, exitCode := baselineScanWithOverride(overrideCoach, repo, row.override)
 
-			Expect(exitCode).NotTo(Equal(0))
+			Expect(exitCode).To(Equal(2))
 			Expect(stdout).To(BeEmpty())
 			Expect(string(stderr)).To(ContainSubstring(row.namesInside))
 		},
@@ -54,6 +54,22 @@ var _ = Describe("The eval override build of coach codesignal given an invalid o
 		Entry("a threshold above 10 times the compiled value", rejectedOverride{
 			override:    `{"thresholds":{"coupling.deep_relative_import":31}}`,
 			namesInside: "coupling.deep_relative_import",
+		}),
+		Entry("content after the object, a second object", rejectedOverride{
+			override:    `{"thresholds":{"complexity.max_nesting_depth":2}} {}`,
+			namesInside: evalOverrideEnvironmentVariable,
+		}),
+		Entry("content after the object, a closing brace", rejectedOverride{
+			override:    `{"thresholds":{"complexity.max_nesting_depth":2}}}`,
+			namesInside: evalOverrideEnvironmentVariable,
+		}),
+		Entry("content after the object, a closing bracket", rejectedOverride{
+			override:    `{"thresholds":{"complexity.max_nesting_depth":2}}]`,
+			namesInside: evalOverrideEnvironmentVariable,
+		}),
+		Entry("a disable entry that is not a rule the override can disable", rejectedOverride{
+			override:    `{"disable":["not.a.rule"]}`,
+			namesInside: "not.a.rule",
 		}),
 		Entry("a disable member that is not a list", rejectedOverride{
 			override:    `{"disable":"complexity.branch_density"}`,
