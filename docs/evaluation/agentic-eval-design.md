@@ -1,6 +1,6 @@
 # Coach evaluation design: fixtures with ground truth, and agentic evals
 
-Status: draft for review. This document is research and design only. It authorizes no fixture or harness code.
+Status: approved design v1; implementation follows the issue graph.
 
 Conventions:
 - Decisions marked **our choice** have no source behind them and need owner ratification.
@@ -16,6 +16,19 @@ Conventions:
 | The oracle is never inside the agent's container | **Met** under options (b) and (c), by construction (section 7) | Choosing option (a), which is rejected |
 | Runnable before commit as `mise` tasks; no scheduled or CI runs | **Met.** `eval-precommit` is model-free, Docker-optional, and targets ≤ 2 minutes warm | Wiring any `eval-*` task into a workflow. A guard test forbids this (section 10) |
 | Fully autonomous: no human hours | **Conditionally met** (section 15, "Residuals") | 15.15 is "no" (the agentic hypotheses stay unjudged); #260 is not amended (decision 15.9 option b); a reboot or credential expiry during a study |
+
+## Decisions taken (2026-11-26)
+
+The owner accepted every recommendation in section 15. In particular:
+- **15.14:** a dedicated login or token, under option (c), subject to the pilot gates.
+- **15.7a:** the minimum viable confirmatory design (MVD).
+- **15.7b:** the defaults, which the pilot may revise.
+- **15.9:** option (a), amending #260 to be fully automated.
+- **15.16:** tie `eval-census` and `eval-history` to the restamp duty.
+- **15.17:** the TS hook takes its language from the policy.
+- **15.18:** developers run `ci-fast` plus `eval-precommit`, which is not added to the CI-mirrored list.
+
+**15.15 remains open.** The owner is asking Anthropic. Every agent run stays blocked until `eval/protocol/decisions/15.15.json` exists.
 
 Terms:
 - **Program**: a small, layered Go or TS project emitted by the deterministic generator (section 6). `program_id` is the hash of its tree.
