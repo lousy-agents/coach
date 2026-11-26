@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var failedPackage = regexp.MustCompile(`(?m)^FAIL\s+(\S+)`)
+var failedPackage = regexp.MustCompile(`(?m)^FAIL[ \t]+(\S+)`)
 
 func failingPackages(output generateOutcome) []string {
 	var packages []string
@@ -54,6 +54,7 @@ var _ = Describe("a generated Go program's follow-on slot", func() {
 			followOnTests := readTree(filepath.Join(program.OracleDir, "followon", "tests"))
 			Expect(followOnTests).NotTo(BeEmpty())
 			Expect(readTree(program.Path)).NotTo(HaveKey(MatchRegexp(`^tests/`)), "no hidden test is in the tree")
+			Expect(os.RemoveAll(filepath.Join(work, "tests", "feature"))).To(Succeed(), "the follow-on changes the entry's contract, so the first feature's hidden tests are replaced by the follow-on's")
 			copyTree(followOnTests, work)
 			before := goIn(work, "test", "./...")
 			Expect(failingPackages(before)).To(HaveLen(1), "only the follow-on package fails: "+before.stdout+before.stderr)
@@ -66,9 +67,9 @@ var _ = Describe("a generated Go program's follow-on slot", func() {
 			Expect(done.exitCode).To(Equal(0), "the follow-on oracle passes every test: "+done.stdout+done.stderr)
 			Expect(goIn(work, "vet", "./...").exitCode).To(Equal(0))
 
-			firstField := regexp.MustCompile(`\.` + followOnFirstField(manifestOf(program)) + `\b`)
+			firstField := regexp.MustCompile(`(\brecord|\bfirst|\bsecond|\bbody|\))\.` + followOnFirstField(manifestOf(program)) + `\b`)
 			for path, content := range followOnSolution {
-				swapped := firstField.ReplaceAll(content, []byte("."+followOnField(manifestOf(program))))
+				swapped := firstField.ReplaceAll(content, []byte("${1}."+followOnField(manifestOf(program))))
 				Expect(os.WriteFile(filepath.Join(work, filepath.FromSlash(path)), swapped, 0o644)).To(Succeed())
 			}
 			broken := goIn(work, "test", "./...")
