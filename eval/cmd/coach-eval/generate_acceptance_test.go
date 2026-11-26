@@ -63,16 +63,7 @@ var _ = Describe("coach-eval generate for a Go program", func() {
 			var policy policyFile
 			tree := readTree(program.Path)
 			Expect(json.Unmarshal(tree[".lousy-agents/coach.json"], &policy)).To(Succeed())
-			directories := map[string]bool{}
-			for path := range tree {
-				for _, layer := range policy.Layers {
-					prefix := layer.Prefixes[0] + "/"
-					if strings.HasPrefix(path, prefix) && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
-						directories[filepath.ToSlash(filepath.Dir(path))] = true
-					}
-				}
-			}
-			Expect(directories).To(HaveLen(baseCell.layers*baseCell.packages), "one source directory per package")
+			Expect(sourceDirectories(tree, policy)).To(HaveLen(baseCell.layers*baseCell.packages), "one source directory per package")
 		})
 
 		It("keeps every production function branch-free and free of pointer returns, so every threshold margin holds by construction (AC-3)", func() {

@@ -14,25 +14,33 @@ import (
 // field type may add a branch, a constructor or a pointer return.
 func TestEveryCellEmitsBranchFreeProductionCodeWithoutPointerReturns(t *testing.T) {
 	for index := 0; index < evalgen.CellCount; index++ {
-		cell, err := evalgen.CellFromIndex(index)
-		if err != nil {
-			t.Fatal(err)
-		}
 		for _, seed := range []int64{0, 3} {
-			program, err := evalgen.Generate(cell, seed)
-			if err != nil {
-				t.Fatalf("cell %d seed %d: %v", index, seed, err)
-			}
-			for path, content := range program.Tree {
-				if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-					continue
-				}
-				for _, violation := range shapeViolations(t, path, content) {
-					t.Errorf("cell %d seed %d: %s: %s", index, seed, path, violation)
-				}
+			for _, violation := range violationsOfCell(t, index, seed) {
+				t.Errorf("cell %d seed %d: %s", index, seed, violation)
 			}
 		}
 	}
+}
+
+func violationsOfCell(t *testing.T, index int, seed int64) []string {
+	t.Helper()
+	cell, err := evalgen.CellFromIndex(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := evalgen.Generate(cell, seed)
+	if err != nil {
+		t.Fatalf("cell %d seed %d: %v", index, seed, err)
+	}
+	var violations []string
+	for path, content := range program.Tree {
+		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+			for _, violation := range shapeViolations(t, path, content) {
+				violations = append(violations, path+": "+violation)
+			}
+		}
+	}
+	return violations
 }
 
 func shapeViolations(t *testing.T, path string, content []byte) []string {
