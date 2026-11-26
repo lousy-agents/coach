@@ -37,12 +37,11 @@ func (s Store) Lookup(key string) (Location, Manifest, bool) {
 		return location, manifest, false
 	}
 	tree, treeErr := readTree(location.Program)
-	tests, testsErr := readTree(filepath.Join(location.Oracle, "tests"))
-	solution, solutionErr := readTree(filepath.Join(location.Oracle, "solution"))
-	if treeErr != nil || testsErr != nil || solutionErr != nil {
+	oracle, oracleErr := readOracle(location.Oracle)
+	if treeErr != nil || oracleErr != nil {
 		return location, manifest, false
 	}
-	intact := TreeID(tree) == manifest.Program.ProgramID && OracleID(Program{Tests: tests, Solution: solution}) == manifest.Template.OracleRef
+	intact := TreeID(tree) == manifest.Program.ProgramID && OracleID(oracle) == manifest.Template.OracleRef
 	return location, manifest, intact
 }
 
@@ -73,12 +72,34 @@ func (s Store) Save(key string, p Program) (Location, error) {
 	return location, writeOracle(location.Oracle, p)
 }
 
+// oracleDirectories maps each part of the oracle to its directory under the oracle root.
+func oracleDirectories(p *Program) map[string]*map[string][]byte {
+	return map[string]*map[string][]byte{
+		"tests": &p.Tests, "solution": &p.Solution,
+		"followon/tests": &p.FollowOnTests, "followon/solution": &p.FollowOnSolution,
+	}
+}
+
 func writeOracle(dir string, p Program) error {
 	if err := os.RemoveAll(dir); err != nil {
 		return err
 	}
-	if err := WriteTree(filepath.Join(dir, "tests"), p.Tests); err != nil {
-		return err
+	for name, files := range oracleDirectories(&p) {
+		if err := WriteTree(filepath.Join(dir, filepath.FromSlash(name)), *files); err != nil {
+			return err
+		}
 	}
-	return WriteTree(filepath.Join(dir, "solution"), p.Solution)
+	return nil
+}
+
+func readOracle(dir string) (Program, error) {
+	var oracle Program
+	for name, files := range oracleDirectories(&oracle) {
+		tree, err := readTree(filepath.Join(dir, filepath.FromSlash(name)))
+		if err != nil {
+			return Program{}, err
+		}
+		*files = tree
+	}
+	return oracle, nil
 }

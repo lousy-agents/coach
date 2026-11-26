@@ -13,20 +13,23 @@ func formatted(source string) []byte {
 	return out
 }
 
-// entityPackage is the data layer: the entity, a nested type when the field needs one, and the one function
-// the direction needs.
+func (g spec) updateSecond() string { return "Update" + g.second }
+
+// entityPackage is the data layer: the entity with its two fields, the nested type both share when the field
+// needs one, and the functions the direction needs.
 func entityPackage(g spec) []byte {
 	var b strings.Builder
 	b.WriteString("package " + g.route[g.cell.Depth].name + "\n\n")
 	if g.cell.Field == "nested" {
 		b.WriteString("type " + g.field + " struct {\n\tCity string\n\tCode string\n}\n\n")
 	}
-	b.WriteString("type " + g.entity + " struct {\n\tID string\n\tName string\n\t" + g.field + " " + g.fieldType("") + "\n}\n\n")
-	record := g.entity + "{ID: id, Name: \"" + sampleName + "\", " + g.field + ": " + qualify(g.shape.sample, "") + "}"
+	b.WriteString("type " + g.entity + " struct {\n\tID string\n\tName string\n\t" + g.field + " " + g.fieldType("") + "\n\t" + g.second + " " + g.fieldType("") + "\n}\n\n")
+	record := g.entity + "{ID: id, Name: \"" + sampleName + "\", " + g.field + ": " + qualify(g.shape.sample, "") + ", " + g.second + ": " + qualify(g.secondShape.sample, "") + "}"
 	if g.cell.Direction == "read" {
 		b.WriteString("func Load(id string) " + g.entity + " {\n\treturn " + record + "\n}\n")
 	} else {
 		b.WriteString("func Update(id string, value " + g.fieldType("") + ") " + g.entity + " {\n\trecord := " + record + "\n\trecord." + g.field + " = value\n\treturn record\n}\n")
+		b.WriteString("\nfunc " + g.updateSecond() + "(id string, value " + g.fieldType("") + ") " + g.entity + " {\n\trecord := " + record + "\n\trecord." + g.second + " = value\n\treturn record\n}\n")
 	}
 	return formatted(b.String())
 }
@@ -44,6 +47,7 @@ func passthroughPackage(g spec, index int) []byte {
 		b.WriteString("\nfunc Load(id string) " + g.entity + " {\n\treturn lower.Load(id)\n}\n")
 	} else {
 		b.WriteString("\nfunc Update(id string, value " + g.fieldType("") + ") " + g.entity + " {\n\treturn lower.Update(id, value)\n}\n")
+		b.WriteString("\nfunc " + g.updateSecond() + "(id string, value " + g.fieldType("") + ") " + g.entity + " {\n\treturn lower." + g.updateSecond() + "(id, value)\n}\n")
 	}
 	return formatted(b.String())
 }
@@ -66,9 +70,10 @@ func packageTest(g spec, layer, name string, onRoute bool, index int) []byte {
 		return formatted(b.String())
 	}
 	if g.cell.Direction == "read" {
-		b.WriteString("func TestLoadReturnsTheSampleRecord(t *testing.T) {\n\trecord := " + name + ".Load(\"" + recordID + "\")\n\tif record.ID != \"" + recordID + "\" || !reflect.DeepEqual(record." + g.field + ", " + qualify(g.shape.sample, name+".") + ") {\n\t\tt.Fatalf(\"Load = %+v\", record)\n\t}\n}\n")
+		b.WriteString("func TestLoadReturnsTheSampleRecord(t *testing.T) {\n\trecord := " + name + ".Load(\"" + recordID + "\")\n\tif record.ID != \"" + recordID + "\" || !reflect.DeepEqual(record." + g.field + ", " + qualify(g.shape.sample, name+".") + ") || !reflect.DeepEqual(record." + g.second + ", " + qualify(g.secondShape.sample, name+".") + ") {\n\t\tt.Fatalf(\"Load = %+v\", record)\n\t}\n}\n")
 	} else {
 		b.WriteString("func TestUpdateReplacesOnlyTheField(t *testing.T) {\n\trecord := " + name + ".Update(\"" + recordID + "\", " + qualify(g.shape.value, name+".") + ")\n\tif record.ID != \"" + recordID + "\" || record.Name != \"" + sampleName + "\" || !reflect.DeepEqual(record." + g.field + ", " + qualify(g.shape.value, name+".") + ") {\n\t\tt.Fatalf(\"Update = %+v\", record)\n\t}\n}\n")
+		b.WriteString("\nfunc TestUpdateSecondReplacesOnlyTheSecondField(t *testing.T) {\n\trecord := " + name + "." + g.updateSecond() + "(\"" + recordID + "\", " + qualify(g.secondShape.value, name+".") + ")\n\tif record.ID != \"" + recordID + "\" || record.Name != \"" + sampleName + "\" || !reflect.DeepEqual(record." + g.second + ", " + qualify(g.secondShape.value, name+".") + ") || !reflect.DeepEqual(record." + g.field + ", " + qualify(g.shape.sample, name+".") + ") {\n\t\tt.Fatalf(\"UpdateSecond = %+v\", record)\n\t}\n}\n")
 	}
 	return formatted(b.String())
 }
