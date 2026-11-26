@@ -45,3 +45,17 @@ func faultsFromEnvironment() (faults, error) {
 	}
 	return fault, nil
 }
+
+// gremlinsVariable names a stand-in for Gremlins, so the acceptance specs can drive the thresholds with chosen
+// reports. The release build never reads it.
+const gremlinsVariable = "COACH_EVAL_GREMLINS"
+
+const gremlinsVersionVariable = "COACH_EVAL_GREMLINS_VERSION"
+
+func gremlinsOverride() (binary, version string) {
+	version = os.Getenv(gremlinsVersionVariable)
+	if version == "" {
+		version = PinnedGremlinsVersion
+	}
+	return os.Getenv(gremlinsVariable), version
+}
