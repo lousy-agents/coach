@@ -40,19 +40,23 @@ func spaghettiConditions(cognitive int) []string {
 		if rule < runs%spaghettiRules {
 			count++
 		}
-		terms := []string{fmt.Sprintf("f.Flags[%d]", flag)}
-		for run := 0; run < count; run++ {
-			flag++
-			operator := " && "
-			if run%2 == 1 {
-				operator = " || "
-			}
-			terms = append(terms, operator, fmt.Sprintf("f.Flags[%d]", flag))
-		}
-		flag++
-		conditions[rule] = strings.Join(terms, "")
+		conditions[rule], flag = mixedCondition(flag, count)
 	}
 	return conditions
+}
+
+// mixedCondition chains runs+1 flags from first, alternating && and ||, so
+// it holds exactly runs operator runs. It returns the next unused flag.
+func mixedCondition(first, runs int) (string, int) {
+	terms := []string{fmt.Sprintf("f.Flags[%d]", first)}
+	for run := 1; run <= runs; run++ {
+		operator := " && "
+		if run%2 == 0 {
+			operator = " || "
+		}
+		terms = append(terms, operator, fmt.Sprintf("f.Flags[%d]", first+run))
+	}
+	return strings.Join(terms, ""), first + runs + 1
 }
 
 const spaghettiFile = "package archive\n\n// File is a file in a directory listing, with the flags the deletion rules read.\ntype File struct {\n\tName  string\n\tFlags []bool\n}\n\n"

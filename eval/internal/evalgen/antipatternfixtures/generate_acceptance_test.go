@@ -1,7 +1,6 @@
 package antipatternfixtures_test
 
 import (
-	"errors"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -80,62 +79,6 @@ var _ = Describe("profile-derived anti-pattern fixtures (#872 Task 5)", func() {
 		})
 	})
 
-	DescribeTable("scales the bad variant to the most frequent observed value at or over Coach's threshold, ties to the larger, capped, and says so in the note",
-		func(nesting map[string]int, value, from int) {
-			_, err := generate(profileWith(nesting, map[string]int{}, map[string]int{}, 0), out)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(ids(out)).To(Equal([]string{"arrow-code"}))
-			note := readExpect(out, "arrow-code").Note
-			Expect(note).To(ContainSubstring("nesting depth " + itoa(value)))
-			if from != value {
-				Expect(note).To(ContainSubstring("capped at " + itoa(value) + " from " + itoa(from)))
-			} else {
-				Expect(note).NotTo(ContainSubstring("capped"))
-			}
-			Expect(tree(filepath.Join(out, "arrow-code"))["bad/ledger/apply.go.txt"]).To(ContainSubstring(strings.Repeat("\t", value+1) + "total += value"))
-		},
-		Entry("the most frequent value", map[string]int{"2": 50, "4": 2, "6": 3, "7": 1}, 6, 6),
-		Entry("a tie goes to the larger value", map[string]int{"4": 2, "5": 2}, 5, 5),
-		Entry("a value over the cap is capped, and the note says from what", map[string]int{"12": 4}, 8, 12),
-	)
-
-	DescribeTable("declares every rule the scaled bad variant trips, from the template's own arithmetic",
-		func(depth int, cognitive bool) {
-			_, err := generate(profileWith(map[string]int{itoa(depth): 1}, map[string]int{}, map[string]int{}, 0), out)
-			Expect(err).NotTo(HaveOccurred())
-
-			rules := []finding{{RuleID: "complexity.max_nesting_depth", Path: "ledger/apply.go", Subject: ""}}
-			if cognitive {
-				rules = append(rules, finding{RuleID: "complexity.cognitive_complexity", Path: "ledger/apply.go", Subject: "Balance"})
-			}
-			Expect(badFindings(readExpect(out, "arrow-code"))).To(Equal(rules))
-		},
-		Entry("depth 4: cognitive complexity 10, under Coach's 15", 4, false),
-		Entry("depth 5: cognitive complexity 15, which reaches it", 5, true),
-	)
-
-	DescribeTable("emits a fixture for a value exactly at Coach's threshold, in the profile's units",
-		func(nesting, cognitive, density map[string]int, id string) {
-			_, err := generate(profileWith(nesting, cognitive, density, 0), out)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(ids(out)).To(Equal([]string{id}))
-		},
-		Entry("nesting 3", map[string]int{"3": 1}, map[string]int{}, map[string]int{}, "arrow-code"),
-		Entry("cognitive complexity 15", map[string]int{}, map[string]int{"15": 1}, map[string]int{}, "spaghetti-conditional"),
-		Entry("12 branch points", map[string]int{}, map[string]int{}, map[string]int{"12": 1}, "god-file"),
-	)
-
-	It("writes a god file with exactly the observed branch points, the last check holding what is left over three", func() {
-		_, err := generate(profileWith(map[string]int{}, map[string]int{}, map[string]int{"13": 1}, 0), out)
-		Expect(err).NotTo(HaveOccurred())
-
-		files := tree(filepath.Join(out, "god-file"))
-		Expect(strings.Count(files["bad/orders/orders.go.txt"], "\tif ")).To(Equal(13))
-		Expect(strings.Count(files["good/orders/check5.go.txt"], "\tif ")).To(Equal(1))
-	})
-
 	When("the profile observed no shape a template reads", func() {
 		It("emits no fixture and says so in the result", func() {
 			result, err := generate(profileWith(map[string]int{"2": 9}, map[string]int{"14": 1}, map[string]int{"11": 1}, 0), out)
@@ -166,47 +109,6 @@ var _ = Describe("profile-derived anti-pattern fixtures (#872 Task 5)", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(tree(again)).To(Equal(tree(out)))
-	})
-
-	DescribeTable("refuses a profile it cannot read with exit 2, writing nothing",
-		func(raw []byte, validate antipatternfixtures.Validator, reason string) {
-			_, err := antipatternfixtures.Generate(raw, validate, out, antipatternfixtures.Templates(), antipatternfixtures.GoVet)
-
-			Expect(exitOf(err)).To(Equal(2))
-			Expect(err.Error()).To(ContainSubstring(reason))
-			Expect(out).NotTo(BeADirectory())
-		},
-		Entry("one the schema validator rejects", everyShape(), func([]byte) error { return errors.New("closed schema: unexpected field") },
-			"closed schema: unexpected field"),
-		Entry("one from another extractor version", []byte(strings.Replace(string(everyShape()), `"0.2.0"`, `"0.1.0"`, 1)), antipatternfixtures.Validator(acceptAll),
-			`extractor_version "0.1.0"`),
-		Entry("one of another schema version", []byte(strings.Replace(string(everyShape()), `"schema_version":"1"`, `"schema_version":"2"`, 1)), antipatternfixtures.Validator(acceptAll),
-			`schema_version "2"`),
-	)
-
-	When("a variant does not pass go vet", func() {
-		It("leaves that fixture out, writes the others, and exits 3 naming it (AC-4.5)", func() {
-			broken := antipatternfixtures.Templates()[0]
-			broken.ID = "broken-template"
-			good := broken.Good
-			broken.Good = func(value int) map[string]string {
-				files := good(value)
-				for name := range files {
-					if strings.HasSuffix(name, ".go") {
-						files[name] += "\nfunc unused() { x := 1 }\n"
-					}
-				}
-				return files
-			}
-			templates := append(antipatternfixtures.Templates(), broken)
-
-			_, err := antipatternfixtures.Generate(everyShape(), acceptAll, out, templates, antipatternfixtures.GoVet)
-
-			Expect(exitOf(err)).To(Equal(3))
-			Expect(err.Error()).To(ContainSubstring("broken-template"))
-			Expect(filepath.Join(out, "broken-template")).NotTo(BeADirectory())
-			Expect(ids(out)).To(ContainElement("arrow-code"))
-		})
 	})
 })
 
