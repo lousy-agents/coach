@@ -1,6 +1,7 @@
 package projectmodel
 
 import (
+	"slices"
 	"testing"
 	"testing/fstest"
 )
@@ -21,17 +22,9 @@ func TestLayerAmbiguityDiagnostics(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			var got []string
-			for _, diagnostic := range test.ambiguity.diagnostics(nil, layer, test.unclassified) {
-				got = append(got, diagnostic.Code)
-			}
-			if len(got) != len(test.want) {
+			got := diagnosticCodes(test.ambiguity.diagnostics(nil, layer, test.unclassified))
+			if !slices.Equal(got, test.want) {
 				t.Fatalf("diagnostic codes = %v, want %v", got, test.want)
-			}
-			for i := range got {
-				if got[i] != test.want[i] {
-					t.Fatalf("diagnostic codes = %v, want %v", got, test.want)
-				}
 			}
 		})
 	}
@@ -56,13 +49,25 @@ func TestGoLayerHasPackage(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			snapshot := fstest.MapFS{}
-			for _, name := range test.files {
-				snapshot[name] = &fstest.MapFile{Data: []byte("package x\n")}
-			}
-			if got := goLayerHasPackage(snapshot, layer); got != test.want {
+			if got := goLayerHasPackage(snapshotOf(test.files), layer); got != test.want {
 				t.Fatalf("goLayerHasPackage(%v) = %v, want %v", test.files, got, test.want)
 			}
 		})
 	}
+}
+
+func diagnosticCodes(diagnostics []Diagnostic) []string {
+	var codes []string
+	for _, diagnostic := range diagnostics {
+		codes = append(codes, diagnostic.Code)
+	}
+	return codes
+}
+
+func snapshotOf(files []string) fstest.MapFS {
+	snapshot := fstest.MapFS{}
+	for _, name := range files {
+		snapshot[name] = &fstest.MapFile{Data: []byte("package x\n")}
+	}
+	return snapshot
 }
