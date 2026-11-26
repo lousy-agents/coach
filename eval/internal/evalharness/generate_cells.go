@@ -23,9 +23,6 @@ func chooseCells(tuning bool, index int, dimensions evalgen.Cell, request Genera
 }
 
 func tuningCells(index int, dimensions evalgen.Cell, request GenerateRequest) ([]evalgen.Cell, error) {
-	if request.Language == evalgen.LanguageTypeScript {
-		return nil, fmt.Errorf("--tuning conflicts with --language typescript: the TypeScript tuning cells are defined with the TypeScript validation slice, not here")
-	}
 	if index != unset {
 		return nil, fmt.Errorf("--tuning conflicts with --cell: the tuning cells are fixed")
 	}
