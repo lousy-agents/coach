@@ -11,7 +11,7 @@ var _ = Describe("the TypeScript layer graph", func() {
 	tsBase := func(domainSource string) string {
 		return writeTree(GinkgoT().TempDir(), map[string]string{
 			".lousy-agents/coach.json": tsLayerPolicy,
-			"tsconfig.json":            `{"compilerOptions":{"baseUrl":".","paths":{"@app/*":["src/app/*"]},"allowJs":false},"include":["src"]}`,
+			"tsconfig.json":            `{"compilerOptions":{"paths":{"@app/*":["src/app/*"]},"allowJs":false},"include":["src"]}`,
 			"src/app/a.ts":             "import { D } from \"../domain/d\";\nexport const A = () => D();\n",
 			"src/domain/d.ts":          domainSource,
 		})
