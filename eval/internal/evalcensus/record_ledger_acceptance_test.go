@@ -32,13 +32,13 @@ var _ = Describe("the census record ledger", func() {
 			Expect(evalcensus.AppendRecords(path, []evalcensus.Record{automatedRecord("r1", `"agree"`)})).To(Succeed())
 			before := readFile(path)
 
-			Expect(evalcensus.AppendRecords(path, []evalcensus.Record{automatedRecord("r2", `0.42`)})).To(Succeed())
+			Expect(evalcensus.AppendRecords(path, []evalcensus.Record{automatedRecord("r2", `"disagree"`)})).To(Succeed())
 
 			Expect(readFile(path)).To(HavePrefix(before))
 		})
 	})
 
-	DescribeTable("an automated source may write only agree, disagree or a number",
+	DescribeTable("an automated agreement may write only agree or disagree",
 		func(value string, allowed bool) {
 			err := evalcensus.AppendRecords(ledgerPath(), []evalcensus.Record{automatedRecord("r1", value)})
 			if allowed {
@@ -49,7 +49,7 @@ var _ = Describe("the census record ledger", func() {
 		},
 		Entry("agree", `"agree"`, true),
 		Entry("disagree", `"disagree"`, true),
-		Entry("a number", `0.37`, true),
+		Entry("a number", `0.37`, false),
 		Entry("true_positive", `"true_positive"`, false),
 		Entry("false_positive", `"false_positive"`, false),
 		Entry("unactionable_true_positive", `"unactionable_true_positive"`, false),
