@@ -7,10 +7,13 @@ import (
 	"sort"
 )
 
-// Weight is how strongly the profile favours cell: for each dimension the
-// profile observed, (count+1)/(total+values), so a value it never saw keeps
-// a share and every cell stays possible; a dimension it did not observe,
-// and field, direction and trap, which a profile leaves unset, weigh 1.
+// Weight is how strongly the profile favours cell: the product, over the
+// dimensions a profile can observe, of (count+1)/(total+values), so a value
+// it never saw keeps a share and every cell stays possible. A dimension it
+// did not observe weighs every value alike, and field, direction and trap,
+// which a profile leaves unset, take no part. Only the ratios between cells
+// matter to SampleCells, so a count outside the generator's range, which
+// no cell holds, changes nothing.
 func (p Profile) Weight(cell Cell) float64 {
 	entries := map[string]int{}
 	for _, kind := range EntryKinds {
@@ -23,9 +26,6 @@ func (p Profile) Weight(cell Cell) float64 {
 }
 
 func smoothed(count, total, values int) float64 {
-	if total == 0 {
-		return 1
-	}
 	return float64(count+1) / float64(total+values)
 }
 

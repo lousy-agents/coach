@@ -21,7 +21,7 @@ type ProfileValidator func(raw []byte) error
 
 // Profile is what the generator reads of a validated pattern profile: its
 // identity, and for each cell dimension a profile can observe, how often it
-// saw each in-range value.
+// saw each value.
 type Profile struct {
 	Identity string
 	layers   map[int]int
@@ -45,8 +45,7 @@ type profileDocument struct {
 }
 
 // ReadProfile validates raw and reads the dimensions the generator weights
-// cells by. A value outside the generator's range is left out, as the
-// profile already lists it as not covered.
+// cells by.
 func ReadProfile(raw []byte, validate ProfileValidator) (Profile, error) {
 	if err := validate(raw); err != nil {
 		return Profile{}, fmt.Errorf("the profile does not validate: %w", err)
@@ -69,19 +68,21 @@ func ReadProfile(raw []byte, validate ProfileValidator) (Profile, error) {
 	}
 	return Profile{
 		Identity: document.Identity,
-		layers:   observedInRange(document.Dimensions.Layers, 3, 5),
-		packages: observedInRange(packages, 2, 4),
+		layers:   byValue(document.Dimensions.Layers),
+		packages: byValue(packages),
 		entry:    document.Dimensions.Entry,
-		depth:    observedInRange(document.Dimensions.Depth, 2, 5),
+		depth:    byValue(document.Dimensions.Depth),
 	}, nil
 }
 
-func observedInRange(counts map[string]int, low, high int) map[int]int {
-	kept := map[int]int{}
+// byValue keys a profile distribution by its numeric value; the schema holds
+// its keys to integers.
+func byValue(counts map[string]int) map[int]int {
+	values := map[int]int{}
 	for bucket, count := range counts {
-		if value, err := strconv.Atoi(bucket); err == nil && value >= low && value <= high {
-			kept[value] += count
+		if value, err := strconv.Atoi(bucket); err == nil {
+			values[value] += count
 		}
 	}
-	return kept
+	return values
 }
