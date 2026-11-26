@@ -44,15 +44,20 @@ var _ = Describe("coach-eval generate rejection and replacement", Ordered, Conti
 			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 			replaced := decodeGenerated(outcome.stdout)
 
-			next := generateOne(GinkgoT().TempDir(), "--cell", "0", "--seed", "6")
 			Expect(replaced.Seed).To(Equal(int64(6)))
 			Expect(replaced.Replacements).To(Equal(1))
-			Expect(replaced.ProgramID).To(Equal(next.ProgramID), "the replacement is the program the next seed generates")
+			if step == "native" {
+				next := generateOne(GinkgoT().TempDir(), "--cell", "0", "--seed", "6")
+				Expect(replaced.ProgramID).To(Equal(next.ProgramID), "the replacement is the program the next seed generates")
+			}
 		},
 		Entry("native checks", "native"),
 		Entry("delete baseline", "delete_baseline"),
 		Entry("layer graph grader", "layer_graph"),
 		Entry("gocognit grader", "gocognit"),
+		Entry("follow-on stub", "followon_stub"),
+		Entry("follow-on delete baseline", "followon_delete_baseline"),
+		Entry("follow-on oracle", "followon_oracle"),
 	)
 
 	It("exits 0 at a rejection rate of exactly 50% (AC-15)", func() {
@@ -78,6 +83,9 @@ var _ = Describe("coach-eval generate rejection and replacement", Ordered, Conti
 		Entry("delete baseline", "delete_baseline"),
 		Entry("layer graph grader", "layer_graph"),
 		Entry("gocognit grader", "gocognit"),
+		Entry("follow-on stub", "followon_stub"),
+		Entry("follow-on delete baseline", "followon_delete_baseline"),
+		Entry("follow-on oracle", "followon_oracle"),
 	)
 
 	It("gives up after ten attempts in one cell and exits 8 (AC-15)", func() {

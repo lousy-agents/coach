@@ -37,12 +37,11 @@ func (s Store) Lookup(key string) (Location, Manifest, bool) {
 		return location, manifest, false
 	}
 	tree, treeErr := readTree(location.Program)
-	tests, testsErr := readTree(filepath.Join(location.Oracle, "tests"))
-	solution, solutionErr := readTree(filepath.Join(location.Oracle, "solution"))
-	if treeErr != nil || testsErr != nil || solutionErr != nil {
+	oracle, oracleErr := readOracle(location.Oracle)
+	if treeErr != nil || oracleErr != nil {
 		return location, manifest, false
 	}
-	intact := TreeID(tree) == manifest.Program.ProgramID && OracleID(Program{Tests: tests, Solution: solution}) == manifest.Template.OracleRef
+	intact := TreeID(tree) == manifest.Program.ProgramID && OracleID(oracle) == manifest.Template.OracleRef
 	return location, manifest, intact
 }
 
@@ -71,14 +70,4 @@ func (s Store) Save(key string, p Program) (Location, error) {
 		return location, err
 	}
 	return location, writeOracle(location.Oracle, p)
-}
-
-func writeOracle(dir string, p Program) error {
-	if err := os.RemoveAll(dir); err != nil {
-		return err
-	}
-	if err := WriteTree(filepath.Join(dir, "tests"), p.Tests); err != nil {
-		return err
-	}
-	return WriteTree(filepath.Join(dir, "solution"), p.Solution)
 }
