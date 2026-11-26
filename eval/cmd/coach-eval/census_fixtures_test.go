@@ -173,3 +173,16 @@ func runCensusInto(dir, corpus, coach string, env ...string) (compareOutcome, ce
 	}
 	return outcome, summary, outputs
 }
+
+// censusRunRecord is a valid census run, as a kind: census ledger line
+// carries it.
+func censusRunRecord(runID string) record {
+	return record{
+		"schema_version": "1",
+		"run_id":         runID,
+		"corpus_id":      "fixture",
+		"coach":          record{"path": "/opt/coach", "sha256": strings.Repeat("ab", 32)},
+		"repositories":   []any{},
+		"exit":           0,
+	}
+}

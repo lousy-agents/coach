@@ -16,21 +16,24 @@ var ledgerLineSchemaJSON []byte
 
 const ledgerLineSchemaName = "ledger_line.schema.json"
 
+//go:embed census_run.schema.json
+var censusRunSchemaJSON []byte
+
+const censusRunSchemaName = "census_run.schema.json"
+
+// compiledLedgerLineSchema compiles the ledger line schema, which selects
+// the run schema by kind: a census run, or the study-shaped run record.
 var compiledLedgerLineSchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
-	runDoc, err := jsonschema.UnmarshalJSON(bytes.NewReader(runSchemaJSON))
-	if err != nil {
-		return nil, err
-	}
-	ledgerDoc, err := jsonschema.UnmarshalJSON(bytes.NewReader(ledgerLineSchemaJSON))
-	if err != nil {
-		return nil, err
-	}
 	compiler := jsonschema.NewCompiler()
-	if err := compiler.AddResource(runSchemaName, runDoc); err != nil {
-		return nil, err
-	}
-	if err := compiler.AddResource(ledgerLineSchemaName, ledgerDoc); err != nil {
-		return nil, err
+	resources := map[string][]byte{runSchemaName: runSchemaJSON, censusRunSchemaName: censusRunSchemaJSON, ledgerLineSchemaName: ledgerLineSchemaJSON}
+	for name, raw := range resources {
+		doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+		if err != nil {
+			return nil, err
+		}
+		if err := compiler.AddResource(name, doc); err != nil {
+			return nil, err
+		}
 	}
 	return compiler.Compile(ledgerLineSchemaName)
 })

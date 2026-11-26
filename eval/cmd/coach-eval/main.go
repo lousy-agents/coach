@@ -22,7 +22,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return evalharness.Compare(stateHome(), args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "census" {
-		return evalcensus.Census(args[1:], stdout, stderr)
+		return evalcensus.Census(args[1:], stdout, stderr, evalharness.AppendCensusLine)
 	}
 	if len(args) > 0 && args[0] == "generate" {
 		return evalharness.Generate(args[1:], stdout, stderr)
