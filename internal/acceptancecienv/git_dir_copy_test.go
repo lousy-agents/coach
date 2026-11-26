@@ -1,7 +1,6 @@
 package acceptancecienv
 
 import (
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -59,21 +58,4 @@ func copyGitEntry(source, target, path string) error {
 		return os.Symlink(link, destination)
 	}
 	return copyGitFile(path, destination, info.Mode().Perm())
-}
-
-func copyGitFile(path, destination string, mode os.FileMode) error {
-	in, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	return out.Close()
 }
