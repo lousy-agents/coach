@@ -33,6 +33,11 @@ var _ = Describe("the validation fingerprint a cached program is keyed by (desig
 		Expect(evalharness.ValidationFingerprint(steps, evalharness.ValidationVersion)).NotTo(Equal(evalharness.ValidationFingerprint(steps, "1")))
 	})
 
+	It("is past version 2, because the mutation step's record gained mutation_vacuous inside it after that version (#902, AC-32)", func() {
+		Expect(evalharness.ValidationVersion).NotTo(Equal("2"))
+		Expect(evalharness.ValidationFingerprint(steps, evalharness.ValidationVersion)).NotTo(Equal(evalharness.ValidationFingerprint(steps, "2")))
+	})
+
 	It("keeps two lists apart that run together to the same text (AC-32)", func() {
 		Expect(evalharness.ValidationFingerprint([]string{"ab", "c"}, "1")).NotTo(Equal(evalharness.ValidationFingerprint([]string{"a", "bc"}, "1")))
 	})

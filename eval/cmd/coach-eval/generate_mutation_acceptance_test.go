@@ -156,6 +156,20 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 		Entry("only the FAIL_TO_PASS suite is empty", "empty-hidden"),
 	)
 
+	It("regenerates a program that a binary of the earlier validation version cached without mutation_vacuous, and records it (#902, AC-32)", func() {
+		cacheHome := GinkgoT().TempDir()
+		gremlins := newStandIn()
+		earlier := append(gremlins.environment("empty"), validationVersionVariable+"=2")
+
+		cached := runGenerateBinary(faultBinary, cacheHome, earlier, "--cell", "1", "--seed", "3")
+		current := gated(cacheHome, gremlins, "empty", "--cell", "1", "--seed", "3")
+
+		Expect([]int{cached.exitCode, current.exitCode}).To(Equal([]int{0, 0}))
+		Expect(decodeGenerated(cached.stdout).Cache).To(Equal("miss"))
+		Expect(decodeGenerated(current.stdout).Cache).To(Equal("miss"), "an entry validated under the earlier version is not served")
+		Expect(validationOf(decodeGenerated(current.stdout))["mutation_vacuous"]).To(Equal(true))
+	})
+
 	It("records a vacuous gate for the held-out panel like any other, because every Go template is vacuous today and refusing would block it (#902)", func() {
 		outcome := runGenerateBinary(faultBinary, GinkgoT().TempDir(), append(newStandIn().environment("empty"), "EVAL_ORACLE_DIR="+GinkgoT().TempDir()), "--cell", "1", "--seed", "3", "--panel", "held_out")
 		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
