@@ -97,3 +97,7 @@ tmp
 .coach-hook-trace.tsv
 .claude/hooks/.trace-enabled
 .coach-cycle-state/
+
+# Lock files the eval writers hold beside their ledgers while appending.
+eval/ledger/*.lock
+eval/census/**/*.lock
