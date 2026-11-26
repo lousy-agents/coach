@@ -1,7 +1,13 @@
 package evalgen_test
 
 import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -12,6 +18,15 @@ func validateWith(t *testing.T, node string, limit time.Duration) (error, time.D
 	t.Helper()
 	resolved := tools(t)
 	resolved.Node, resolved.Limit = node, limit
+	started := time.Now()
+	err := evalgen.ValidateTypeScript(program(t), resolved)
+	return err, time.Since(started)
+}
+
+func validateTSCWith(t *testing.T, tsc string, limit time.Duration) (error, time.Duration) {
+	t.Helper()
+	resolved := tools(t)
+	resolved.TSC, resolved.Limit = tsc, limit
 	started := time.Now()
 	err := evalgen.ValidateTypeScript(program(t), resolved)
 	return err, time.Since(started)
@@ -30,6 +45,19 @@ func TestAValidationRunThatOutlastsItsLimitIsKilledAndSaysSo(t *testing.T) {
 	}
 }
 
+func TestAValidationRunTscThatOutlastsItsLimitIsKilledAndSaysSo(t *testing.T) {
+	tsc := writeScript(t, t.TempDir(), "tsc", "sleep 60")
+
+	err, took := validateTSCWith(t, tsc, 2*time.Second)
+
+	if err == nil || !strings.Contains(err.Error(), "time limit") {
+		t.Fatalf("got %v, want an error that names the time limit", err)
+	}
+	if took > 30*time.Second {
+		t.Fatalf("validation took %s: the limit did not stop tsc", took)
+	}
+}
+
 func TestAValidationRunWhoseLeftoverProcessHoldsItsOutputIsNotHeldOpen(t *testing.T) {
 	node := writeScript(t, t.TempDir(), "node", "sleep 60 &\nexit 0")
 
@@ -37,6 +65,23 @@ func TestAValidationRunWhoseLeftoverProcessHoldsItsOutputIsNotHeldOpen(t *testin
 
 	if took > 30*time.Second {
 		t.Fatalf("validation took %s: a background process held the run open", took)
+	}
+}
+
+func TestAValidationRunKillsTheWholeProcessGroupWhenItsLimitPasses(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "child.pid")
+	tsc := writeScript(t, dir, "tsc", "sleep 300 &\necho $! > "+pidFile+"\nsleep 60")
+
+	err, _ := validateTSCWith(t, tsc, 2*time.Second)
+
+	if err == nil || !strings.Contains(err.Error(), "time limit") {
+		t.Fatalf("got %v, want an error that names the time limit", err)
+	}
+	pid := readPID(t, pidFile)
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	if !eventuallyGone(pid, 5*time.Second) {
+		t.Fatalf("process %d, started by tsc, outlived the run", pid)
 	}
 }
 
@@ -54,4 +99,43 @@ func TestTheDefaultLimitIsOneMinute(t *testing.T) {
 	if evalgen.DefaultValidationLimit != time.Minute {
 		t.Fatalf("default limit is %s", evalgen.DefaultValidationLimit)
 	}
+}
+
+func readPID(t *testing.T, path string) int {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("the script did not record its child's pid: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatalf("pid file holds %q: %v", data, err)
+	}
+	return pid
+}
+
+func eventuallyGone(pid int, within time.Duration) bool {
+	deadline := time.Now().Add(within)
+	for {
+		if processGone(pid) {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// processGone reports whether pid has exited. A process that is only a zombie has exited too, and a host
+// without /proc cannot show that, so the process counts as alive there.
+func processGone(pid int) bool {
+	if err := syscall.Kill(pid, 0); err != nil {
+		return errors.Is(err, syscall.ESRCH)
+	}
+	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(stat), ") Z ")
 }
