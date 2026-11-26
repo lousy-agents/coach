@@ -36,12 +36,15 @@ func strippedSuffix(rel string) string {
 	return rel
 }
 
+// hostIndependentGit keeps the host's git configuration, and any hook it names, out of the commit that makes a fixture scannable.
+var hostIndependentGit = []string{"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1"}
+
 func commitAll(dir string) error {
 	for _, step := range [][]string{
 		{"init", "-q"}, {"add", "-A"},
 		{"-c", "user.name=coach-eval", "-c", "user.email=coach-eval@example.invalid", "commit", "-q", "-m", "fixture"},
 	} {
-		if output, err := runIn(dir, nil, "", "git", step...); err != nil {
+		if output, err := runIn(dir, hostIndependentGit, "", "git", step...); err != nil {
 			return fmt.Errorf("git %s: %v: %s", step[0], err, output)
 		}
 	}

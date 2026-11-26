@@ -45,15 +45,21 @@ func scanVariant(coach, fixture, variant string) (scanResult, error) {
 		return scanResult{}, fmt.Errorf("fixture %s: coach failed: %v: %s", label, err, strings.TrimSpace(output))
 	}
 	findings, err := readFindings(output)
-	return scanResult{scan: strings.Join(args, " "), findings: findings}, err
+	if err != nil {
+		return scanResult{}, fmt.Errorf("fixture %s: %v", label, err)
+	}
+	return scanResult{scan: strings.Join(args, " "), findings: findings}, nil
 }
 
 func readFindings(report string) ([]observedFinding, error) {
 	var parsed struct {
-		Signals []observedFinding `json:"signals"`
+		Signals *[]observedFinding `json:"signals"`
 	}
 	if err := json.Unmarshal([]byte(report), &parsed); err != nil {
 		return nil, fmt.Errorf("the coach report is not JSON: %v", err)
 	}
-	return parsed.Signals, nil
+	if parsed.Signals == nil {
+		return nil, fmt.Errorf("the coach report has no signals key")
+	}
+	return *parsed.Signals, nil
 }
