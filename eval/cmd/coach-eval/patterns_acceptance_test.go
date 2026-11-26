@@ -135,6 +135,30 @@ var _ = Describe("coach-eval patterns (#872 Task 3)", func() {
 		})
 	})
 
+	When("the profile cannot be written", func() {
+		It("gives that entry exit 2, naming it", func() {
+			path, sha := censusRepo(goRepoFiles(complexFunctions(1)))
+			manifest := writePatternsManifest(patternsReference{Label: "one", SHA: sha, Language: "go", Licence: "MIT"})
+			Expect(os.WriteFile(out, []byte("a file, not a directory\n"), 0o644)).To(Succeed())
+
+			outcome := runPatterns("--manifest", manifest, "--clone", "one="+path, "--out", out)
+
+			Expect(outcome.exitCode).To(Equal(2))
+			Expect(patternsLines(outcome.stdout)).To(ConsistOf(And(HaveKeyWithValue("label", "one"), HaveKeyWithValue("exit", 2.0))))
+		})
+	})
+
+	It("removes the checkout it reads each entry from", func() {
+		path, sha := censusRepo(goRepoFiles(complexFunctions(1)))
+		manifest := writePatternsManifest(patternsReference{Label: "one", SHA: sha, Language: "go", Licence: "MIT"})
+		temp := GinkgoT().TempDir()
+		command := exec.Command(coachEvalBinary, "patterns", "--manifest", manifest, "--clone", "one="+path, "--out", out)
+		command.Env = append(os.Environ(), "TMPDIR="+temp)
+
+		Expect(runGenerateCommand(command).exitCode).To(Equal(0))
+		Expect(os.ReadDir(temp)).To(BeEmpty())
+	})
+
 	DescribeTable("refuses a command line it cannot use with exit 2, before reading any clone",
 		func(args func(manifest, clone string) []string, message string) {
 			path, sha := censusRepo(goRepoFiles(complexFunctions(1)))
@@ -153,6 +177,15 @@ var _ = Describe("coach-eval patterns (#872 Task 3)", func() {
 		Entry("a --clone without a label", func(manifest, clone string) []string {
 			return []string{"--manifest", manifest, "--clone", clone, "--out", out}
 		}, "must be LABEL=PATH"),
+		Entry("a --clone with an empty path", func(manifest, _ string) []string {
+			return []string{"--manifest", manifest, "--clone", "one=", "--out", out}
+		}, "must be LABEL=PATH"),
+		Entry("a --clone with an empty label", func(manifest, clone string) []string {
+			return []string{"--manifest", manifest, "--clone", "=" + clone, "--out", out}
+		}, "must be LABEL=PATH"),
+		Entry("a stray argument after the flags", func(manifest, clone string) []string {
+			return []string{"--manifest", manifest, "--clone", "one=" + clone, "--out", out, "references.json"}
+		}, `unexpected argument "references.json"`),
 		Entry("a --clone for a label the manifest does not hold", func(manifest, clone string) []string {
 			return []string{"--manifest", manifest, "--clone", "one=" + clone, "--clone", "other=" + clone, "--out", out}
 		}, `--clone names "other", which the manifest does not hold`),

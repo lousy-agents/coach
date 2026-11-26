@@ -11,9 +11,6 @@ import (
 // returns the profile's identity.
 func extractEntry(reference Reference, clone, out string) (string, error) {
 	if clone == "" {
-		if err := reference.Check(); err != nil {
-			return "", err
-		}
 		return "", reference.refuse("no --clone was given for it")
 	}
 	work, err := os.MkdirTemp("", "coach-eval-patterns-")
