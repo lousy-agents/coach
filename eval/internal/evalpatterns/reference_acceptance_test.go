@@ -2,6 +2,7 @@ package evalpatterns_test
 
 import (
 	"errors"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -29,7 +30,7 @@ var _ = Describe("a reference manifest entry", func() {
 
 			var refusal evalpatterns.Refusal
 			Expect(errors.As(err, &refusal)).To(BeTrue(), "Check returned %v", err)
-			Expect(refusal.Exit).To(Equal(evalpatterns.InputInvalid))
+			Expect(refusal.Exit).To(Equal(2))
 			Expect(refusal.Label).To(Equal("stand-in"))
 			Expect(err.Error()).To(Equal(`reference "stand-in": ` + reason))
 		},
@@ -93,6 +94,10 @@ var _ = Describe("loading a reference manifest", func() {
 			map[string]any{"schema_version": "1", "references": []any{
 				map[string]any{"label": "../escape", "sha": sampleSHA, "language": "go", "licence": "MIT"},
 			}}, `label "../escape" must be a lowercase path segment`),
+		Entry("when an entry's label is longer than the profile schema allows",
+			map[string]any{"schema_version": "1", "references": []any{
+				map[string]any{"label": strings.Repeat("a", 65), "sha": sampleSHA, "language": "go", "licence": "MIT"},
+			}}, `is longer than 64 characters`),
 		Entry("when two entries share a label",
 			map[string]any{"schema_version": "1", "references": []any{
 				map[string]any{"label": "stand-in", "sha": sampleSHA, "language": "go", "licence": "MIT"},

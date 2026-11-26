@@ -1,6 +1,8 @@
 package evalpatterns_test
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -66,6 +68,14 @@ var _ = Describe("the profile schema (AC-1.4)", func() {
 			func(p map[string]any) {
 				p["not_covered"] = []any{map[string]any{"shape": "layers", "count": 1, "file": "cmd/main.go"}}
 			}),
+		Entry("when the dimensions carry a key outside the schema",
+			func(p map[string]any) { nested(p, "dimensions")["vocabulary"] = map[string]any{"1": 1} }),
+		Entry("when the shapes carry a key outside the schema",
+			func(p map[string]any) { nested(p, "shapes")["ParseConfig"] = map[string]any{"1": 1} }),
+		Entry("when the label is longer than 64 characters",
+			func(p map[string]any) { p["label"] = strings.Repeat("a", 65) }),
+		Entry("when the licence is longer than 200 characters",
+			func(p map[string]any) { p["licence"] = strings.Repeat("M", 201) }),
 		Entry("when the licence is only whitespace",
 			func(p map[string]any) { p["licence"] = "  " }),
 		Entry("when the label is not a lowercase path segment",

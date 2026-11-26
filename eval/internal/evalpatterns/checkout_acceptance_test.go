@@ -44,10 +44,54 @@ var _ = Describe("checking out a reference", func() {
 
 			var refusal evalpatterns.Refusal
 			Expect(errors.As(err, &refusal)).To(BeTrue(), "CheckoutReference returned %v", err)
-			Expect(refusal.Exit).To(Equal(evalpatterns.InputInvalid))
+			Expect(refusal.Exit).To(Equal(2))
 			Expect(refusal.Label).To(Equal("stand-in"))
 			Expect(err.Error()).To(HavePrefix(`reference "stand-in": `))
 			Expect(err.Error()).To(ContainSubstring("SHA " + sampleSHA + " is not reachable"))
+		})
+	})
+
+	DescribeTable("refuses a clone that is not a local directory with exit 2, naming the label, before running git",
+		func(clone func(local string) string, reason string) {
+			local, sha := referenceRepository()
+			reference := validReference()
+			reference.SHA = sha
+			dir := filepath.Join(GinkgoT().TempDir(), "checkout")
+
+			err := evalpatterns.CheckoutReference(reference, clone(local), dir)
+
+			var refusal evalpatterns.Refusal
+			Expect(errors.As(err, &refusal)).To(BeTrue(), "CheckoutReference returned %v", err)
+			Expect(refusal.Exit).To(Equal(2))
+			Expect(err.Error()).To(HavePrefix(`reference "stand-in": `))
+			Expect(err.Error()).To(ContainSubstring(reason))
+			Expect(dir).NotTo(BeADirectory())
+		},
+		Entry("an https URL, which would open a network connection",
+			func(string) string { return "https://127.0.0.1:1/x.git" }, `is a URL (scheme "https")`),
+		Entry("a file URL to the local clone, which git would read through upload-pack",
+			func(local string) string { return "file://" + local }, `is a URL (scheme "file")`),
+		Entry("an ssh URL",
+			func(string) string { return "ssh://example.invalid/x.git" }, `is a URL (scheme "ssh")`),
+		Entry("an scp-style host and path",
+			func(string) string { return "example.invalid:x.git" }, "is not a local directory"),
+		Entry("a path that does not exist",
+			func(local string) string { return filepath.Join(local, "missing") }, "is not a local directory"),
+		Entry("a regular file",
+			func(local string) string { return filepath.Join(local, "main.go") }, "is not a local directory"),
+	)
+
+	When("the clone is given as a relative path to a local directory", func() {
+		It("checks the SHA out", func() {
+			local, sha := referenceRepository()
+			reference := validReference()
+			reference.SHA = sha
+			dir := filepath.Join(GinkgoT().TempDir(), "checkout")
+			GinkgoT().Chdir(filepath.Dir(local))
+
+			Expect(evalpatterns.CheckoutReference(reference, filepath.Base(local), dir)).To(Succeed())
+
+			Expect(filepath.Join(dir, "main.go")).To(BeAnExistingFile())
 		})
 	})
 
