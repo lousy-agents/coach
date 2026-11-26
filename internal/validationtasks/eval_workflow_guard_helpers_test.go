@@ -41,15 +41,23 @@ func evalWorkflowViolations(name, text string) []string {
 func githubAutomationFiles(githubDir string) []string {
 	var files []string
 	for _, sub := range []string{"workflows", "actions"} {
-		_ = filepath.WalkDir(filepath.Join(githubDir, sub), func(path string, entry fs.DirEntry, err error) error {
-			if err != nil || entry.IsDir() {
-				return nil
-			}
-			if ext := filepath.Ext(path); ext == ".yml" || ext == ".yaml" {
-				files = append(files, path)
-			}
-			return nil
-		})
+		files = append(files, yamlFilesUnder(filepath.Join(githubDir, sub))...)
 	}
 	return files
+}
+
+func yamlFilesUnder(dir string) []string {
+	var files []string
+	_ = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() && isYAML(path) {
+			files = append(files, path)
+		}
+		return nil
+	})
+	return files
+}
+
+func isYAML(path string) bool {
+	ext := filepath.Ext(path)
+	return ext == ".yml" || ext == ".yaml"
 }
