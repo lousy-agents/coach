@@ -192,6 +192,18 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 		Expect(covered).To(HaveKey("check-then-act"))
 	})
 
+	It("records, in the expect.json of the arrow-code fixture, that a deeper arrow also trips cognitive complexity", func() {
+		content, err := os.ReadFile(filepath.Join(repositoryRoot(), "eval", "fixtures", "antipatterns", "arrow-code", "expect.json"))
+		Expect(err).NotTo(HaveOccurred())
+
+		var expect struct {
+			Note string `json:"note"`
+		}
+		Expect(json.Unmarshal(content, &expect)).To(Succeed())
+		Expect(expect.Note).To(ContainSubstring("complexity.cognitive_complexity"))
+		Expect(expect.Note).To(ContainSubstring("not exhaustive"))
+	})
+
 	It("lists the anti-patterns Coach has no rule for as not_covered, and counts none of them as a pass", func() {
 		root := filepath.Join(repositoryRoot(), "eval", "fixtures", "antipatterns")
 
@@ -199,7 +211,7 @@ var _ = Describe("coach-eval antipatterns (#871)", func() {
 
 		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
 		table := decodeTable(outcome.stdout)
-		Expect(table.Summary.NotCovered).To(ConsistOf("constructor-does-real-work", "create-after-missing-check", "global-mutable-state", "god-struct"))
+		Expect(table.Summary.NotCovered).To(ConsistOf("bypass-without-required-layer", "constructor-does-real-work", "create-after-missing-check", "global-mutable-state", "god-struct"))
 		expectKnownMissesSilent(table)
 		Expect(table.Summary.Pass).To(Equal(7), "seven covered fixtures pass; the known misses are not among them")
 	})
