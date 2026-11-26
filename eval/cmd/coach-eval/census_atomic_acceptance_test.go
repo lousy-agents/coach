@@ -40,6 +40,21 @@ var _ = Describe("a census run lands entirely or not at all", func() {
 		})
 	})
 
+	When("the first run over a corpus cannot open the run ledger", func() {
+		It("leaves no records file behind", func() {
+			fresh := GinkgoT().TempDir()
+			ledger := filepath.Join(fresh, "ledger", "runs.jsonl")
+			Expect(os.MkdirAll(ledger, 0o755)).To(Succeed(), "a directory where the ledger file should be")
+			censusRoot := filepath.Join(fresh, "census")
+
+			outcome := runProgram("", os.Environ(), coachEvalBinary, "census", "--coach", coachBinary(), "--census-root", censusRoot, "--ledger", ledger, corpus)
+
+			Expect(outcome.exitCode).NotTo(Equal(0))
+			Expect(outcome.stderr).To(ContainSubstring("ledger"))
+			Expect(filepath.Join(censusRoot, "fixture", "records.jsonl")).NotTo(BeAnExistingFile())
+		})
+	})
+
 	When("the ledger line's write stops part way through", func() {
 		It("leaves both the records file and the run ledger byte-identical", func() {
 			const limit = 2048 * 512
