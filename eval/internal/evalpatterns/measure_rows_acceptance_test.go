@@ -50,6 +50,9 @@ var _ = Describe("the measure of one function (AC-2.3, AC-2.5, AC-2.6)", func() 
 		Entry("an exported method on an exported generic type",
 			"package p\n\ntype Box[T any] struct{ v T }\n\nfunc (b *Box[T]) Get() T { return b.v }\n",
 			map[string]any{"http_handler": 0.0, "method": 1.0, "function": 0.0}),
+		Entry("a third parameter grouped with the request, which is a function",
+			"package p\n\nimport \"net/http\"\n\nfunc F(w http.ResponseWriter, r, extra *http.Request) {}\n",
+			map[string]any{"http_handler": 0.0, "method": 0.0, "function": 1.0}),
 		Entry("an unexported function, which is no entry",
 			"package p\n\nfunc helper() {}\n",
 			map[string]any{"http_handler": 0.0, "method": 0.0, "function": 0.0}),
@@ -92,6 +95,15 @@ var _ = Describe("the measure of one function (AC-2.3, AC-2.5, AC-2.6)", func() 
 		Entry("an else-if chain, at its if's depth", "if a {\n} else if b {\n} else if c {\n}", map[string]any{"1": 1.0}),
 		Entry("a type switch in a select in a switch", "switch {\ncase a:\n\tselect {\n\tcase <-ch:\n\t\tswitch v.(type) {\n\t\t}\n\t}\n}", map[string]any{"3": 1.0}),
 	)
+
+	When("a function is declared without a body, as one implemented in assembly is", func() {
+		It("is not measured", func() {
+			profile := profileOfSource("package p\n\nfunc F() {}\n\nfunc Asm(x int) int\n")
+
+			Expect(measure(profile, "shapes", "nesting")).To(Equal(map[string]any{"0": 1.0}))
+			Expect(measure(profile, "dimensions", "entry")).To(Equal(map[string]any{"http_handler": 0.0, "method": 0.0, "function": 1.0}))
+		})
+	})
 
 	When("code sits under a directory whose name starts with . or _, which the go tool ignores", func() {
 		It("is not measured", func() {
