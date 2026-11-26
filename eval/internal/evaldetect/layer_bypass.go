@@ -38,7 +38,7 @@ func GoLayerBypass(root string, policy Policy) (BypassReport, error) {
 	if err != nil {
 		return BypassReport{}, err
 	}
-	return BypassReport{Bypasses: searchBypasses(graph, policy), Unresolved: graph.unresolved}, nil
+	return BypassReport{Bypasses: searchBypasses(graph, policy), Unresolved: graph.unresolved + unfollowedBodylessCalls(graph, policy)}, nil
 }
 
 // BypassDisagreement is a bypass only one side reports.

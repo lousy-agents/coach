@@ -15,17 +15,20 @@ type callSite struct {
 }
 
 // funcNode is one declared function or method, with its calls in source
-// order: ast.Inspect visits a body by position.
+// order: ast.Inspect visits a body by position. A function declared without
+// a body has a node with no calls, so it can end a path as a sink.
 type funcNode struct {
-	name   string
-	dir    string
-	source bool
-	calls  []callSite
+	name     string
+	dir      string
+	source   bool
+	bodyless bool
+	calls    []callSite
 }
 
 // callGraph is every local function, keyed by its full name, and the count
 // of calls the search cannot follow: through an interface or a function
-// value, or to a function declared without a body.
+// value, or to a function no node stands for. A call to a bodyless function
+// is counted by the search instead, which knows whether it is a sink.
 type callGraph struct {
 	nodes      map[string]*funcNode
 	unresolved int
@@ -69,7 +72,7 @@ func (graph *callGraph) callsInTheGraph(calls []callSite) ([]callSite, int) {
 
 func (graph *callGraph) addFile(program goProgram, pkg *goPackage, rel string, file *ast.File) {
 	for _, decl := range file.Decls {
-		if function, ok := decl.(*ast.FuncDecl); ok && function.Body != nil {
+		if function, ok := decl.(*ast.FuncDecl); ok {
 			graph.addFunction(program, pkg, rel, function)
 		}
 	}
@@ -80,8 +83,11 @@ func (graph *callGraph) addFunction(program goProgram, pkg *goPackage, rel strin
 	if !ok {
 		return
 	}
-	node := &funcNode{name: object.FullName(), dir: pkg.dir, source: isSourceShaped(object)}
+	node := &funcNode{name: object.FullName(), dir: pkg.dir, source: isSourceShaped(object), bodyless: function.Body == nil}
 	graph.nodes[node.name] = node
+	if node.bodyless {
+		return
+	}
 	ast.Inspect(function.Body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
