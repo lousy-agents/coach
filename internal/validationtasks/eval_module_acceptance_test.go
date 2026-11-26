@@ -13,7 +13,7 @@ const evalModulePath = "github.com/lousy-agents/coach/eval"
 
 var evalRingPrefixes = map[string][]string{
 	"tooling":    {"eval/cmd/coach-eval", "eval/internal/evalharness"},
-	"generation": {"eval/internal/evalgen"},
+	"generation": {"eval/internal/evalgen", "eval/internal/evalgen/antipatternfixtures"},
 	"detection":  {"eval/internal/evaldetect"},
 	"grading":    {"eval/internal/evalgrade"},
 	"real-code":  {"eval/internal/evalhistory", "eval/internal/evalcensus", "eval/internal/evalpatterns"},
