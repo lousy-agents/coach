@@ -1,11 +1,7 @@
 package antipatternfixtures_test
 
 import (
-	"encoding/json"
-	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -13,97 +9,9 @@ import (
 	"github.com/lousy-agents/coach/eval/internal/evalgen/antipatternfixtures"
 )
 
-// generatorRoles is the generator's role list for each layer count, outermost first.
-var generatorRoles = map[int][]string{
-	3: {"api", "service", "store"},
-	4: {"api", "service", "domain", "store"},
-	5: {"api", "service", "domain", "repository", "store"},
-}
-
-// layered is a profile that records the given layer-count distribution, the packages each role was seen with, and
-// the shapes listed as not covered, and observed no complexity shape.
-func layered(layers map[string]int, roles map[string]map[string]int, notCovered ...string) []byte {
-	GinkgoHelper()
-	var profile map[string]any
-	Expect(json.Unmarshal(profileWith(map[string]int{}, map[string]int{}, map[string]int{}, 0), &profile)).To(Succeed())
-	profile["dimensions"].(map[string]any)["layers"] = layers
-	observed := map[string]any{}
-	for role, packages := range roles {
-		observed[role] = map[string]any{"packages": packages}
-	}
-	profile["roles"] = observed
-	items := []any{}
-	for _, shape := range notCovered {
-		items = append(items, map[string]any{"shape": shape, "reason": "out_of_range", "count": 1})
-	}
-	profile["not_covered"] = items
-	raw, err := json.Marshal(profile)
-	Expect(err).NotTo(HaveOccurred())
-	return raw
-}
-
-// evenly gives every role of a layer count the same package distribution.
-func evenly(layers int, packages map[string]int) map[string]map[string]int {
-	roles := map[string]map[string]int{}
-	for _, role := range generatorRoles[layers] {
-		roles[role] = packages
-	}
-	return roles
-}
-
-type policyFile struct {
-	Layers []struct {
-		Name     string   `json:"name"`
-		Prefixes []string `json:"prefixes"`
-	} `json:"layers"`
-	ForbiddenImports []struct {
-		From string `json:"from"`
-		To   string `json:"to"`
-	} `json:"forbidden_imports"`
-	RequiredLayer string `json:"required_layer"`
-}
-
-func policyOf(out, id, variant string) policyFile {
-	GinkgoHelper()
-	raw, err := os.ReadFile(filepath.Join(out, id, variant, ".lousy-agents", "coach.json.txt"))
-	Expect(err).NotTo(HaveOccurred(), "the policy is stored as coach.json.txt, as #871's layer fixtures store it")
-	var policy policyFile
-	Expect(json.Unmarshal(raw, &policy)).To(Succeed())
-	return policy
-}
-
-// packageDirs are the directories under internal/<role>/ that hold a Go file, by role.
-func packageDirs(out, id, variant string) map[string][]string {
-	GinkgoHelper()
-	dirs := map[string][]string{}
-	for name := range tree(filepath.Join(out, id, variant)) {
-		parts := strings.Split(name, "/")
-		if len(parts) == 4 && parts[0] == "internal" && strings.HasSuffix(parts[3], ".go.txt") {
-			dirs[parts[1]] = append(dirs[parts[1]], parts[2])
-		}
-	}
-	for role := range dirs {
-		sort.Strings(dirs[role])
-		dirs[role] = unique(dirs[role])
-	}
-	return dirs
-}
-
-func unique(sorted []string) []string {
-	var out []string
-	for _, name := range sorted {
-		if len(out) == 0 || out[len(out)-1] != name {
-			out = append(out, name)
-		}
-	}
-	return out
-}
-
 var _ = Describe("deriving the layer fixtures from a profile's layers (#900, #872 AC-4.1)", func() {
 	var out string
 	BeforeEach(func() { out = filepath.Join(GinkgoT().TempDir(), "secret-label") })
-
-	layerIDs := []string{"dependency-rule-breach", "skipped-layer"}
 
 	When("the profile records an ordered layer count of 3 to 5 with the packages of its roles", func() {
 		It("emits both layer fixtures, in #871's layout, with the policy stored as coach.json.txt (AC-4.2)", func() {
@@ -126,10 +34,7 @@ var _ = Describe("deriving the layer fixtures from a profile's layers (#900, #87
 				_, err := generate(layered(layers, evenly(want, map[string]int{"1": 1})), out)
 
 				Expect(err).NotTo(HaveOccurred())
-				for _, id := range layerIDs {
-					Expect(policyOf(out, id, "bad").Layers).To(HaveLen(want))
-					Expect(readExpect(out, id).Note).To(ContainSubstring("layer count " + itoa(want)))
-				}
+				expectLayerCount(out, want)
 			},
 			Entry("the most frequent", map[string]int{"3": 1, "4": 5, "5": 2}, 4),
 			Entry("a tie goes to the larger", map[string]int{"3": 2, "5": 2}, 5),
@@ -143,22 +48,7 @@ var _ = Describe("deriving the layer fixtures from a profile's layers (#900, #87
 				_, err := generate(layered(map[string]int{"4": 1}, evenly(4, packages)), out)
 
 				Expect(err).NotTo(HaveOccurred())
-				for _, id := range layerIDs {
-					for _, variant := range []string{"bad", "good"} {
-						dirs := packageDirs(out, id, variant)
-						Expect(dirs).To(HaveLen(4))
-						for _, role := range generatorRoles[4] {
-							Expect(dirs[role]).To(HaveLen(want), "%s/%s/%s", id, variant, role)
-						}
-					}
-					note := readExpect(out, id).Note
-					Expect(note).To(ContainSubstring("packages per layer " + itoa(want)))
-					if from != want {
-						Expect(note).To(ContainSubstring("capped at " + itoa(want) + " from " + itoa(from)))
-					} else {
-						Expect(note).NotTo(ContainSubstring("capped"))
-					}
-				}
+				expectPackagesPerLayer(out, 4, want, from)
 			},
 			Entry("the most frequent", map[string]int{"1": 1, "2": 4, "3": 2}, 2, 2),
 			Entry("a tie goes to the larger", map[string]int{"1": 3, "2": 3}, 2, 2),
@@ -201,28 +91,7 @@ var _ = Describe("deriving the layer fixtures from a profile's layers (#900, #87
 				_, err := generate(layered(map[string]int{itoa(layers): 1}, evenly(layers, map[string]int{"1": 1})), out)
 
 				Expect(err).NotTo(HaveOccurred())
-				roles := generatorRoles[layers]
-				var want []string
-				for outer := range roles {
-					for inner := outer + 1; inner < len(roles); inner++ {
-						want = append(want, roles[inner]+">"+roles[outer])
-					}
-				}
-				for _, id := range layerIDs {
-					for _, variant := range []string{"bad", "good"} {
-						policy := policyOf(out, id, variant)
-						var names, got []string
-						for _, layer := range policy.Layers {
-							names = append(names, layer.Name)
-							Expect(layer.Prefixes).To(Equal([]string{"internal/" + layer.Name}))
-						}
-						for _, pair := range policy.ForbiddenImports {
-							got = append(got, pair.From+">"+pair.To)
-						}
-						Expect(names).To(Equal(roles))
-						Expect(got).To(ConsistOf(want))
-					}
-				}
+				expectOrderedByForbiddenPairs(out, layers)
 			},
 			Entry("3 layers", 3), Entry("4 layers", 4), Entry("5 layers", 5),
 		)
@@ -242,20 +111,7 @@ var _ = Describe("deriving the layer fixtures from a profile's layers (#900, #87
 				_, err := generate(layered(map[string]int{itoa(layers): 1}, evenly(layers, map[string]int{itoa(packages): 1})), out)
 				Expect(err).NotTo(HaveOccurred())
 
-				Expect(badFindings(readExpect(out, "dependency-rule-breach"))).To(Equal([]finding{{
-					RuleID: "architecture.layer_violation", Path: "internal/store/orders/reach.go",
-					Subject: "architecture.layer_violation:internal/store/orders->internal/api/orders"}}))
-				Expect(badFindings(readExpect(out, "skipped-layer"))).To(Equal([]finding{{
-					RuleID: "architecture.layer_bypass", Path: "internal/api/orders/handle.go",
-					Subject: "architecture.layer_bypass:service:example.com/layers/internal/api/orders.Handle->(*database/sql.DB).Query"}}))
-				for _, id := range layerIDs {
-					expect := readExpect(out, id)
-					Expect(expect.Status).To(Equal("covered"))
-					Expect(string(expect.Expect.Good)).To(Equal(`"none"`))
-					Expect(expect).To(SatisfyAll(
-						HaveField("ID", id), HaveField("Seed", "profile:"+profileIdentity),
-						HaveField("Source", SatisfyAll(ContainSubstring("#871"), ContainSubstring(id)))))
-				}
+				expectDeclaredFindings(out)
 			},
 			Entry("3 layers, 1 package", 3, 1), Entry("4 layers, 2 packages", 4, 2), Entry("5 layers, 3 packages", 5, 3),
 		)
@@ -317,80 +173,5 @@ var _ = Describe("deriving the layer fixtures from a profile's layers (#900, #87
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Emitted).To(HaveLen(2))
 		})
-	})
-})
-
-var _ = Describe("the deletion-safety guards on a layer fixture, whose policy sits in a nested dot directory (#900)", func() {
-	var root, sibling, kept string
-	BeforeEach(func() {
-		parent := GinkgoT().TempDir()
-		root = filepath.Join(parent, "derived")
-		sibling = filepath.Join(parent, "sibling.txt")
-		kept = filepath.Join(root, "other-label", "fixture", "bad", ".lousy-agents", "coach.json.txt")
-		Expect(os.MkdirAll(filepath.Dir(kept), 0o755)).To(Succeed())
-		Expect(os.WriteFile(kept, []byte("kept\n"), 0o644)).To(Succeed())
-		Expect(os.WriteFile(sibling, []byte("kept\n"), 0o644)).To(Succeed())
-	})
-
-	expectRootAndSiblingKept := func() {
-		GinkgoHelper()
-		Expect(sibling).To(BeAnExistingFile())
-		Expect(kept).To(BeAnExistingFile(), "another label's fixtures survive, nested policy included")
-	}
-
-	It("clears only its own label on a rerun, nested policy files included, and keeps another label's", func() {
-		raw := layered(map[string]int{"4": 1}, evenly(4, map[string]int{"1": 1}))
-		_, err := antipatternfixtures.Generate(raw, acceptAll, root, "secret-label", antipatternfixtures.Templates(), antipatternfixtures.GoVet)
-		Expect(err).NotTo(HaveOccurred())
-		first := filepath.Join(root, "secret-label", "skipped-layer", "bad", ".lousy-agents", "coach.json.txt")
-		Expect(first).To(BeAnExistingFile())
-
-		_, err = antipatternfixtures.Generate(profileWith(map[string]int{"4": 1}, map[string]int{}, map[string]int{}, 0), acceptAll, root, "secret-label", antipatternfixtures.Templates(), antipatternfixtures.GoVet)
-
-		Expect(err).NotTo(HaveOccurred())
-		Expect(first).NotTo(BeAnExistingFile(), "a layer fixture no longer observed leaves nothing behind, nested policy included")
-		Expect(filepath.Join(root, "secret-label", "skipped-layer")).NotTo(BeADirectory())
-		expectRootAndSiblingKept()
-	})
-
-	DescribeTable("refuses a layered profile with exit 2 before removing anything",
-		func(label string) {
-			raw := layered(map[string]int{"4": 1}, evenly(4, map[string]int{"1": 1}))
-
-			_, err := antipatternfixtures.Generate(raw, acceptAll, root, label, antipatternfixtures.Templates(), antipatternfixtures.GoVet)
-
-			Expect(exitOf(err)).To(Equal(2))
-			expectRootAndSiblingKept()
-		},
-		Entry("the label ..", ".."), Entry("the label .", "."), Entry("an empty label", ""), Entry("a label with a slash", "other-label/fixture"),
-	)
-
-	It("leaves a layer fixture whose variant fails go vet out, writes the others, and exits 3 naming it", func() {
-		templates := antipatternfixtures.Templates()
-		var broken antipatternfixtures.Template
-		for _, template := range templates {
-			if template.ID == "skipped-layer" {
-				broken = template
-			}
-		}
-		Expect(broken.ID).To(Equal("skipped-layer"), "the layer templates are among Templates()")
-		good := broken.Good
-		broken.Good = func(value int) map[string]string { return withUnusedVariable(good(value)) }
-		templates = append(templates[:0:0], broken)
-		for _, template := range antipatternfixtures.Templates() {
-			if template.ID != "skipped-layer" {
-				templates = append(templates, template)
-			}
-		}
-		raw := layered(map[string]int{"3": 1}, evenly(3, map[string]int{"1": 1}))
-
-		result, err := antipatternfixtures.Generate(raw, acceptAll, root, "secret-label", templates, antipatternfixtures.GoVet)
-
-		Expect(exitOf(err)).To(Equal(3))
-		Expect(err.Error()).To(ContainSubstring("skipped-layer"))
-		Expect(filepath.Join(root, "secret-label", "skipped-layer")).NotTo(BeADirectory())
-		Expect(ids(filepath.Join(root, "secret-label"))).To(Equal([]string{"dependency-rule-breach"}))
-		Expect(result.Emitted).To(HaveLen(1))
-		expectRootAndSiblingKept()
 	})
 })
