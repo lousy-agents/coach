@@ -21,19 +21,30 @@ func lockLedger(path string) (func(), error) {
 	lockPath := path + ".lock"
 	deadline := time.Now().Add(ledgerLockWait)
 	for {
-		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-		if err == nil {
-			file.Close()
-			return func() { os.Remove(lockPath) }, nil
-		}
-		if !errors.Is(err, fs.ErrExist) {
+		taken, err := tryLock(lockPath)
+		if err != nil {
 			return nil, err
+		}
+		if taken {
+			return func() { os.Remove(lockPath) }, nil
 		}
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("census ledger %s is locked by %s; remove it if no census is running", path, lockPath)
 		}
 		time.Sleep(ledgerLockPoll)
 	}
+}
+
+// tryLock creates the lock file, reporting false when another writer holds it.
+func tryLock(lockPath string) (bool, error) {
+	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if errors.Is(err, fs.ErrExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, file.Close()
 }
 
 // endsMidLine reports whether file's last byte is not a newline, as after a
