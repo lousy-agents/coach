@@ -4,7 +4,8 @@
     "repository": "example/repo",
     "revision": "abc123",
     "base": "main",
-    "policy": null
+    "policy": null,
+    "project_language": null
   },
   "summary": {
     "files_analyzed": 1,

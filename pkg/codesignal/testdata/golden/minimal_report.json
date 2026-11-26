@@ -1,7 +1,8 @@
 {
   "schema_version": "1",
   "scope": {
-    "policy": null
+    "policy": null,
+    "project_language": null
   },
   "summary": {
     "files_analyzed": 0,

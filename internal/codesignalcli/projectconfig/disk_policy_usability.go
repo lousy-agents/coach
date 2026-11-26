@@ -22,9 +22,19 @@ const (
 type DiskPolicyRefusal struct {
 	Path, Reason string
 	Directory    bool
+	// Detail is a fixed phrase for the one part of an invalid policy that the reason does not name.
+	Detail string
 }
 
-func (refusal *DiskPolicyRefusal) Error() string { return refusal.Path + ": " + refusal.Reason }
+func (refusal *DiskPolicyRefusal) Error() string { return refusal.Path + ": " + refusal.Words() }
+
+// Words is the reason, with its detail where there is one.
+func (refusal *DiskPolicyRefusal) Words() string {
+	if refusal.Detail == "" {
+		return refusal.Reason
+	}
+	return refusal.Reason + ": " + refusal.Detail
+}
 
 // Cause is the stable word for the refusals that have one, which are the entries that cannot be a file. A policy that is
 // too large or not valid has none: its reason is the whole answer.
@@ -83,7 +93,7 @@ func ClassifyDiskPolicyError(path string, err error) *DiskPolicyRefusal {
 	case errors.As(err, &oversize):
 		return &DiskPolicyRefusal{Path: path, Reason: refusalOversize}
 	case errors.As(err, &invalid):
-		return &DiskPolicyRefusal{Path: path, Reason: refusalInvalid}
+		return invalidPolicyRefusal(path, invalid)
 	}
 	return nil
 }
