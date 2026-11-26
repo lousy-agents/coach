@@ -81,6 +81,29 @@ func firstTuningProgramCopy() string {
 	return dir
 }
 
+var requiredTools = []string{"git", "jq", "sh"}
+
+func allExcept(missing string) []string {
+	var kept []string
+	for _, tool := range requiredTools {
+		if tool != missing {
+			kept = append(kept, tool)
+		}
+	}
+	return kept
+}
+
+// pathHolding is an environment whose PATH holds links to exactly the named tools.
+func pathHolding(tools ...string) []string {
+	dir := GinkgoT().TempDir()
+	for _, tool := range tools {
+		found, err := exec.LookPath(tool)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.Symlink(found, filepath.Join(dir, tool))).To(Succeed())
+	}
+	return []string{"PATH=" + dir}
+}
+
 const cleanReport = `{"scope":{"policy":{"matches_head":true}},"signals":[],"diagnostics":[]}`
 
 var _ = Describe("coach-eval hook-health (#789, design 7 and 10)", func() {
@@ -153,6 +176,10 @@ var _ = Describe("coach-eval hook-health (#789, design 7 and 10)", func() {
 			"if find . -name zz_probe.go | grep -q .; then find . -name zz_probe.go >&2; exit 2; fi\nexit 0", "without naming"),
 		Entry("it blocks and names the finding, but not the probe's path",
 			"if find . -name zz_probe.go | grep -q .; then echo architecture.layer_violation >&2; exit 2; fi\nexit 0", "without naming"),
+		Entry("it names the finding and the probe's path but exits 1",
+			"if find . -name zz_probe.go | grep -q .; then echo architecture.layer_violation >&2; find . -name zz_probe.go >&2; exit 1; fi\nexit 0", "exited 1"),
+		Entry("it names the finding and the probe's path but exits 3",
+			"if find . -name zz_probe.go | grep -q .; then echo architecture.layer_violation >&2; find . -name zz_probe.go >&2; exit 3; fi\nexit 0", "exited 3"),
 	)
 
 	DescribeTable("exits 1 when the review is not clean on the unmodified program",
@@ -182,8 +209,32 @@ var _ = Describe("coach-eval hook-health (#789, design 7 and 10)", func() {
 		Entry("no program on standard input", func() string { return "" }, nil, []string{"--coach", "/bin/true"}, "program"),
 		Entry("a line that is not a program", func() string { return "not json\n" }, nil, []string{"--coach", "/bin/true"}, "program"),
 		Entry("a program path that does not exist", func() string { return programLine("/nonexistent/program") }, nil, []string{"--coach", "/bin/true"}, "program"),
-		Entry("no git on PATH", func() string { return tuningLines("") }, []string{"PATH=" + os.TempDir() + "/no-such-bin"}, []string{"--coach", "/bin/true"}, "git"),
 	)
+
+	DescribeTable("exits 2 and names a required tool that PATH does not hold, whichever of the three it is",
+		func(missing string) {
+			outcome := runHookHealth(tuningLines(""), pathHolding(allExcept(missing)...), "--coach", "/bin/true")
+
+			Expect(outcome.exitCode).To(Equal(2), outcome.stderr)
+			Expect(outcome.stdout).To(BeEmpty())
+			Expect(outcome.stderr).To(ContainSubstring(missing + " is not on PATH"))
+		},
+		Entry("git", "git"),
+		Entry("jq", "jq"),
+		Entry("sh", "sh"),
+	)
+
+	It("exits 2, not 1, when a check cannot run at all, because that says nothing about the hook", func() {
+		dir := firstTuningProgramCopy()
+		Expect(os.Symlink("/nonexistent/target", filepath.Join(dir, "dangling"))).To(Succeed())
+
+		outcome := runHookHealth(programLine(dir), nil, "--coach", builtCoach())
+
+		Expect(outcome.exitCode).To(Equal(2), outcome.stderr)
+		Expect(outcome.stdout).To(BeEmpty())
+		Expect(outcome.stderr).To(ContainSubstring("dangling"))
+		Expect(outcome.stderr).NotTo(ContainSubstring("FAIL"))
+	})
 
 	It("exits 2 for a program whose forbidden edge names a layer the policy does not define", func() {
 		dir := firstTuningProgramCopy()
