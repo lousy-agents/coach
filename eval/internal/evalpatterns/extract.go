@@ -3,7 +3,6 @@ package evalpatterns
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
 )
 
@@ -20,19 +19,9 @@ func ExtractProfile(reference Reference, root string) ([]byte, error) {
 		return nil, reference.refuse(fmt.Sprintf("the checkout cannot be read: %v", checkoutError(root, err)))
 	}
 	p := newProfile(reference)
-	fset := token.NewFileSet()
-	packages := map[string][]*ast.File{}
-	for _, rel := range files {
-		src, err := readRegularFile(root, rel)
-		if err != nil {
-			return nil, reference.refuse(err.Error())
-		}
-		file, err := parser.ParseFile(fset, rel, src, parser.SkipObjectResolution)
-		if err != nil {
-			return nil, Refusal{Label: reference.Label, Exit: AnalysisFailed, Reason: fmt.Sprintf("file %s does not parse: %v", rel, err)}
-		}
-		p.measureFile(fset, file)
-		packages[packageDir(rel)] = append(packages[packageDir(rel)], file)
+	packages, err := p.measureFiles(reference, root, files)
+	if err != nil {
+		return nil, err
 	}
 	if err := p.measureProgram(root, packages); err != nil {
 		return nil, reference.refuse(err.Error())
