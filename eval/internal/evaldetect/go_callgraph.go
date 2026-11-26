@@ -49,27 +49,6 @@ func buildCallGraph(program goProgram) (callGraph, error) {
 	return graph, nil
 }
 
-// dropCallsOutsideTheGraph counts a call to a function that has no node,
-// such as one declared without a body, as unresolved, so the search only
-// follows calls it can continue from.
-func (graph *callGraph) dropCallsOutsideTheGraph() {
-	for _, node := range graph.nodes {
-		var dropped int
-		node.calls, dropped = graph.callsInTheGraph(node.calls)
-		graph.unresolved += dropped
-	}
-}
-
-func (graph *callGraph) callsInTheGraph(calls []callSite) ([]callSite, int) {
-	kept := calls[:0]
-	for _, call := range calls {
-		if graph.nodes[call.callee] != nil {
-			kept = append(kept, call)
-		}
-	}
-	return kept, len(calls) - len(kept)
-}
-
 func (graph *callGraph) addFile(program goProgram, pkg *goPackage, rel string, file *ast.File) {
 	for _, decl := range file.Decls {
 		if function, ok := decl.(*ast.FuncDecl); ok {

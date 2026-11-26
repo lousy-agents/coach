@@ -92,21 +92,3 @@ func newBypass(step searchStep, policy Policy) Bypass {
 	}
 	return bypass
 }
-
-// unfollowedBodylessCalls counts the calls to a function declared without a
-// body outside the downstream layers: the search cannot see what such a
-// function calls. A bodyless downstream function is a sink, so a call to it
-// is fully resolved.
-func unfollowedBodylessCalls(graph callGraph, policy Policy) int {
-	_, downstream := policy.bypassLayers()
-	count := 0
-	for _, node := range graph.nodes {
-		for _, call := range node.calls {
-			callee := graph.nodes[call.callee]
-			if layer, _ := policy.layerOf(callee.dir); callee.bodyless && !downstream[layer] {
-				count++
-			}
-		}
-	}
-	return count
-}
