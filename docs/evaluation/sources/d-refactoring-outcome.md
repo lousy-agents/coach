@@ -1,6 +1,11 @@
 # Track (d): Measuring refactoring outcomes
 
-Researched 2026-11-25. Every source was read directly. Quotes are verbatim; where one is cut short, either the page was truncated or the quote was too long to give in full.
+Researched 2026-11-25. Each row says what was read:
+- d.2 and d.5 were read from their arXiv abstract pages only;
+- d.3 was read from the paper's landing-page abstract and the RMTool documentation, not the paper body;
+- the other rows were read from the sources named.
+
+Quotes are verbatim. Where one is cut short, either the page was truncated or the quote was too long to give in full. Rows are cited as `d.N`, where N is the section number.
 
 ## 1. Campbell, "Cognitive Complexity: a new way of measuring understandability" (SonarSource white paper, v1.7, 29 Aug 2023)
 URL: https://www.sonarsource.com/docs/CognitiveComplexity.pdf
@@ -10,14 +15,14 @@ URL: https://www.sonarsource.com/docs/CognitiveComplexity.pdf
 - Design implication: the metric is defined by these rules, not by a theory. Grade it against Coach's own implementation of the rules, not against raw numbers from other tools, and report changes per function rather than a repository total.
 
 ## 2. Muñoz Barón, Wyrich and Wagner, "An Empirical Validation of Cognitive Complexity as a Measure of Source Code Understandability" (ESEM 2020)
-URL: https://arxiv.org/abs/2007.12520
+URL: https://arxiv.org/abs/2007.12520 (abstract only)
 - "Cognitive Complexity positively correlates with comprehension time and subjective ratings of understandability."
 - "The metric showed mixed results for the correlation with the correctness of comprehension tasks", and also for physiological measures.
 - The authors call it "the first validated and solely code-based metric" that is "able to reflect at least some aspects of code understandability."
 - Design implication: a lower score is evidence of better understandability, not proof. Use it as one signal, and never as the only measure of a refactoring's success.
 
 ## 3. Murphy, Notkin and Sullivan, "Software Reflexion Models: Bridging the Gap Between Source and High-Level Models" (FSE 1995)
-URL: https://www.cs.ubc.ca/~murphy/papers/rm/fse95.html (RMTool docs: https://www.cs.ubc.ca/~murphy/software/rmtool/rms.html)
+URL: https://www.cs.ubc.ca/~murphy/papers/rm/fse95.html (RMTool docs: https://www.cs.ubc.ca/~murphy/software/rmtool/rms.html). Read: the landing-page abstract and the RMTool page; the paper body was not read.
 - The problem: high-level models "are almost always inaccurate with respect to the system's source code."
 - The method: "an engineer defines a high-level model and specifies how the model maps to the source. A tool then computes a software reflexion model that shows where the engineer's high-level model agrees with and where it differs from a model of the source."
 - Three classes: convergences (edges both predicted and present), divergences (edges present but not predicted), and absences (edges predicted but missing).
@@ -33,12 +38,13 @@ URL: https://arxiv.org/abs/2503.07832 (method: https://arxiv.org/html/2503.07832
 - Design implication: express the target structure as AST or graph predicates broken into subtests, not as a gold diff, and keep reference refactorings private.
 
 ## 5. Cordeiro, Noei and Zou, "An Empirical Study on the Code Refactoring Capability of Large Language Models" (arXiv 2411.02320, 2024)
-URL: https://arxiv.org/abs/2411.02320
+URL: https://arxiv.org/abs/2411.02320 (abstract only)
 - "StarCoder2 reduces code smells by 20.1% more than developers"
 - "One-shot prompting increases the unit test pass rate by 6.15%"; "Generating five refactorings per input further increases the pass rate by 28.8%"
-- Pass rates are low in absolute terms. A search snippet of the full text gives 28.36% at pass@1.
-- Smell reduction and test passing are reported as separate axes, and a model can win on one while losing on the other.
-- Design implication: never report a metric improvement without behaviour preservation alongside it. Gate the metric change on tests passing. Report pass@1, not pass@k, because k samples inflate success.
+- The abstract reports smell reduction and test pass rate as separate measures. On smells, StarCoder2 leads, "excelling in systematic issues like Long Statement and Magic Number, while developers handle complex, context-dependent issues better."
+- Design implication:
+  - Report behaviour preservation beside any metric improvement, because the abstract reports them separately.
+  - Report a single generation (pass@1) as the headline, because generating several refactorings per input raised the pass rate by 28.8%.
 
 ## 6. Zhong, Raghunathan and Carlini, "ImpossibleBench: Measuring LLMs' Propensity of Exploiting Test Cases" (arXiv 2510.20270, 2025)
 URL: https://arxiv.org/html/2510.20270v1

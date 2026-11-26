@@ -53,7 +53,7 @@ Six research tracks, read from primary sources on 25–26 Nov 2026. Rows are cit
 
 ### Departures from the sources
 
-These design implications in the ledgers are superseded here, and the ledger rows say so.
+These design implications in the ledgers are superseded here. Rows a.1, a.2, a.5 and b.4 also carry a note saying so. The a.6 and b.1 implications are not contradicted, only met another way, so their rows are unchanged.
 
 | Source practice | Departure | Reason |
 | --- | --- | --- |

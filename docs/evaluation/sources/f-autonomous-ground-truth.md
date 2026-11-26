@@ -68,7 +68,7 @@ How the sources were read:
 
 ## f.7 White et al., "LiveBench: A Challenging, Contamination-Free LLM Benchmark" (ICLR 2025)
 
-- URL: https://arxiv.org/abs/2406.19314 (abstract only)
+- URL: https://arxiv.org/abs/2406.19314 (abstract only). The ICLR 2025 title is the one above. The arXiv page's latest version, v2 of 18 Apr 2025, reads "Contamination-Limited".
 - Key findings:
   1. It "scores answers automatically according to objective ground-truth values".
   2. LLM judges and crowdsourcing "can introduce significant biases, and break down when scoring hard questions".
@@ -129,4 +129,3 @@ How the sources were read:
   1. It "supports most JavaScript projects, including TypeScript".
   2. Thresholds: "mutation score < break: Error! Stryker will exit with exit code 1". The `json` reporter writes `reports/mutation/mutation.json`.
 - Design implication for Coach: pin an exact version, set `thresholds.break` from the protocol, and read the JSON report.
-
