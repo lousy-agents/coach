@@ -1,6 +1,8 @@
 package evalcensus_test
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -43,6 +45,21 @@ var _ = Describe("the corpus manifest", func() {
 		},
 		Entry("no corpus_id", func(m map[string]any) { m["corpus_id"] = "" }, "corpus_id"),
 		Entry("a corpus_id that is not a path segment", func(m map[string]any) { m["corpus_id"] = "../up" }, "corpus_id"),
+		Entry("a corpus_id of .", func(m map[string]any) { m["corpus_id"] = "." }, "corpus_id"),
+		Entry("a corpus_id of ..", func(m map[string]any) { m["corpus_id"] = ".." }, "corpus_id"),
+		Entry("a corpus_id starting with a dot", func(m map[string]any) { m["corpus_id"] = ".hidden" }, "corpus_id"),
+		Entry("a corpus_id holding a slash", func(m map[string]any) { m["corpus_id"] = "a/b" }, "corpus_id"),
+		Entry("an uppercase corpus_id", func(m map[string]any) { m["corpus_id"] = "Pilot" }, "corpus_id"),
+		Entry("a corpus_id with trailing junk", func(m map[string]any) { m["corpus_id"] = "pilot!" }, "corpus_id"),
+		Entry("a misspelt field", func(m map[string]any) {
+			m["repositories"].([]any)[0].(map[string]any)["projectconfig"] = "x.json"
+		}, "projectconfig"),
+		Entry("an uppercase SHA", func(m map[string]any) {
+			m["repositories"].([]any)[0].(map[string]any)["sha"] = strings.ToUpper(fixtureSHA)
+		}, "sha"),
+		Entry("a SHA with trailing junk", func(m map[string]any) {
+			m["repositories"].([]any)[0].(map[string]any)["sha"] = fixtureSHA + "0"
+		}, "sha"),
 		Entry("no repositories", func(m map[string]any) { m["repositories"] = []any{} }, "repositories"),
 		Entry("no rules", func(m map[string]any) { m["rules"] = []any{} }, "rules"),
 		Entry("a floating ref in place of a SHA", func(m map[string]any) {
