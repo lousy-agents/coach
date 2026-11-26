@@ -151,14 +151,11 @@ func repositoryCopy() string {
 	listing.Dir = repoRoot
 	names, err := listing.Output()
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	copying := exec.Command("cp", "-a", "--parents", "--no-dereference", "--target-directory="+target, ".git")
-	copying.Dir = repoRoot
-	out, err := copying.CombinedOutput()
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "%s", out)
+	ExpectWithOffset(1, copyGitDir(filepath.Join(repoRoot, ".git"), filepath.Join(target, ".git"), nil)).To(Succeed())
 	archive := exec.Command("sh", "-c", `tar --null --files-from=- --ignore-failed-read -cf - | tar -xf - -C "$1"`, "sh", target)
 	archive.Dir = repoRoot
 	archive.Stdin = bytes.NewReader(names)
-	out, err = archive.CombinedOutput()
+	out, err := archive.CombinedOutput()
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "%s", out)
 	return target
 }
