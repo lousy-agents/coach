@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/lousy-agents/coach/eval/internal/evalgen"
@@ -37,7 +36,12 @@ func Generate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "coach-eval generate: %v\n", err)
 		return GenerateInputInvalid
 	}
-	output, err := produce(store, request)
+	tools, err := toolsFor(request.Language)
+	if err != nil {
+		fmt.Fprintf(stderr, "coach-eval generate: %v\n", err)
+		return GenerateInputInvalid
+	}
+	output, err := produce(store, request, tools)
 	if err != nil {
 		fmt.Fprintf(stderr, "coach-eval generate: %v\n", err)
 		return GenerateFailed
@@ -48,9 +52,6 @@ func Generate(args []string, stdout, stderr io.Writer) int {
 }
 
 func storeFor(request GenerateRequest) (evalgen.Store, error) {
-	if _, err := exec.LookPath("go"); err != nil {
-		return evalgen.Store{}, fmt.Errorf("the go toolchain is not on PATH: generated programs are validated with go build, vet and test")
-	}
 	store := evalgen.DefaultStore()
 	if request.Panel == PanelHeldOut {
 		store.OracleRoot = os.Getenv("EVAL_ORACLE_DIR")
@@ -61,18 +62,18 @@ func storeFor(request GenerateRequest) (evalgen.Store, error) {
 	return store, nil
 }
 
-func produce(store evalgen.Store, request GenerateRequest) (generateOutput, error) {
-	key := evalgen.Key(request.Cell, request.Seed, request.Panel)
+func produce(store evalgen.Store, request GenerateRequest, tools evalgen.TypeScriptTools) (generateOutput, error) {
+	key := evalgen.Key(request.Language, request.Cell, request.Seed, request.Panel)
 	location, manifest, intact := store.Lookup(key)
 	cache := "hit"
 	if request.NoCache || !intact {
 		cache = "miss"
-		program, err := evalgen.Generate(request.Cell, request.Seed)
+		program, err := generateProgram(request)
 		if err != nil {
 			return generateOutput{}, err
 		}
 		program.Manifest.Program.Panel = request.Panel
-		if err := evalgen.Validate(program); err != nil {
+		if err := validateProgram(program, tools); err != nil {
 			return generateOutput{}, fmt.Errorf("the generated program failed validation: %w", err)
 		}
 		if location, err = store.Save(key, program); err != nil {

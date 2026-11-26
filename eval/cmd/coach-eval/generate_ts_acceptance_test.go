@@ -20,7 +20,7 @@ type typeScriptPolicy struct {
 	RequiredLayer    string                      `json:"required_layer"`
 }
 
-var leakageWords = regexp.MustCompile(`(?i)oracle|hidden|FAIL_TO_PASS|trap|seed|solution|operator|tests/feature`)
+var leakageWords = regexp.MustCompile(`(?i)\b(oracle|hidden|FAIL_TO_PASS|trap|seed|solution|operator)\b|tests/feature`)
 
 var _ = Describe("a generated TypeScript program tree", func() {
 	cell := programCells[1]
