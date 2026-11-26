@@ -1,16 +1,20 @@
 package evalpatterns
 
 import (
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
 )
 
-// productionGoFiles lists, sorted, the slash-separated paths of the .go
-// files under root that a build would compile: no _test.go file, and
-// nothing under testdata, vendor or a directory whose name starts with . or
-// _, which the go tool ignores too.
+// productionGoFiles lists, sorted, the slash-separated paths of every .go
+// file under root except _test.go files and anything under testdata, vendor
+// or a directory whose name starts with . or _. Build constraints are not
+// read, so a //go:build ignore file or an a_windows.go file is listed too.
+// A .go entry that is not a regular file, such as a symlink, is an error
+// rather than a file to read: the checkout is untrusted, and a link could
+// reach a file on the host.
 func productionGoFiles(root string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
@@ -20,10 +24,14 @@ func productionGoFiles(root string) ([]string, error) {
 		if entry.IsDir() {
 			return skipIgnored(root, path, entry.Name())
 		}
-		if isProductionGo(entry.Name()) {
-			rel, _ := filepath.Rel(root, path)
-			files = append(files, filepath.ToSlash(rel))
+		if !isProductionGo(entry.Name()) {
+			return nil
 		}
+		rel, _ := filepath.Rel(root, path)
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("file %s is not a regular file", filepath.ToSlash(rel))
+		}
+		files = append(files, filepath.ToSlash(rel))
 		return nil
 	})
 	sort.Strings(files)
