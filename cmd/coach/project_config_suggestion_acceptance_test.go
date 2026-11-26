@@ -484,6 +484,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config", func() 
 			repo := newTempGitRepo()
 			commitFile(repo, "go.mod", "module example.com/roundtrip\n\ngo 1.25\n")
 			commitFile(repo, "services/payments/go.mod", "module example.com/roundtrip/services/payments\n\ngo 1.25\n")
+			commitFile(repo, "main.go", "package roundtrip\n")
 
 			_, suggestStderr, suggestExit := runCoachSuggest(repo, "--baseline", "--suggest-project-config", "--output", "project.json")
 			Expect(suggestExit).To(Equal(0), "stderr: %s", suggestStderr)
