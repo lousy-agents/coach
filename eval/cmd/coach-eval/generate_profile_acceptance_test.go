@@ -1,6 +1,8 @@
 package main_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -25,6 +27,45 @@ func profileIdentity(raw []byte) string {
 	}
 	Expect(json.Unmarshal(raw, &profile)).To(Succeed())
 	return profile.Identity
+}
+
+// edited is raw decoded, changed by change, given the identity the
+// extractor would give it when reseal is set, and encoded canonically.
+func edited(raw []byte, reseal bool, change func(profile map[string]any)) []byte {
+	GinkgoHelper()
+	var profile map[string]any
+	Expect(json.Unmarshal(raw, &profile)).To(Succeed())
+	change(profile)
+	if reseal {
+		profile["identity"] = contentIdentity(profile)
+	}
+	out, err := json.Marshal(profile)
+	Expect(err).NotTo(HaveOccurred())
+	return out
+}
+
+// contentIdentity is the sha256 of profile's canonical JSON without its
+// identity, as the extractor seals it.
+func contentIdentity(profile map[string]any) string {
+	GinkgoHelper()
+	unsealed := map[string]any{}
+	for key, value := range profile {
+		if key != "identity" {
+			unsealed[key] = value
+		}
+	}
+	raw, err := json.Marshal(unsealed)
+	Expect(err).NotTo(HaveOccurred())
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func oneMoreLayer(profile map[string]any) {
+	layers := profile["dimensions"].(map[string]any)["layers"].(map[string]any)
+	for value, count := range layers {
+		layers[value] = count.(float64) + 1
+		return
+	}
 }
 
 func writeProfile(raw []byte) string {
@@ -124,8 +165,24 @@ var _ = Describe("coach-eval generate --profile (#872 Task 4)", func() {
 			return []string{"--profile", writeProfile([]byte(raw)), "--count", "1"}
 		}, "does not validate"),
 		Entry("a profile from another extractor version", func(string) []string {
-			raw := strings.Replace(string(committedProfile()), `"extractor_version":"0.2.0"`, `"extractor_version":"0.1.0"`, 1)
-			return []string{"--profile", writeProfile([]byte(raw)), "--count", "1"}
+			raw := edited(committedProfile(), true, func(profile map[string]any) { profile["extractor_version"] = "0.1.0" })
+			return []string{"--profile", writeProfile(raw), "--count", "1"}
 		}, `extractor_version "0.1.0"`),
 	)
+
+	When("a profile's counts were edited and its identity was not", func() {
+		It("refuses with exit 2, naming the identity it carries and the one its contents hash to (AC-3.4)", func() {
+			raw := committedProfile()
+			stale := edited(raw, false, oneMoreLayer)
+			var decoded map[string]any
+			Expect(json.Unmarshal(stale, &decoded)).To(Succeed())
+
+			outcome := runGenerate(GinkgoT().TempDir(), nil, "--profile", writeProfile(stale), "--count", "1")
+
+			Expect(outcome.exitCode).To(Equal(2), outcome.stdout)
+			Expect(outcome.stderr).To(ContainSubstring(profileIdentity(raw)))
+			Expect(outcome.stderr).To(ContainSubstring(contentIdentity(decoded)))
+			Expect(outcome.stdout).To(BeEmpty())
+		})
+	})
 })
