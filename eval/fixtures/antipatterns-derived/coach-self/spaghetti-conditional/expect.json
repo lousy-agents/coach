@@ -1,0 +1,18 @@
+{
+  "id": "spaghetti-conditional",
+  "name": "Spaghetti conditional (high cognitive load)",
+  "source": "#871 catalogue entry spaghetti-conditional (eval/fixtures/antipatterns/spaghetti-conditional), scaled by a pattern profile",
+  "seed": "profile:8498d03cc7f53f37aed180bb6986cc2c2ef73f72c0c5be5b027f885db3a4ffe1",
+  "status": "covered",
+  "expect": {
+    "bad": [
+      {
+        "rule_id": "complexity.cognitive_complexity",
+        "path": "archive/select.go",
+        "subject": "Expired"
+      }
+    ],
+    "good": "none"
+  },
+  "note": "Derived from pattern profile 8498d03cc7f53f37aed180bb6986cc2c2ef73f72c0c5be5b027f885db3a4ffe1: cognitive complexity 20, the most frequent value at or over Coach's threshold of 15, in the profile's units."
+}

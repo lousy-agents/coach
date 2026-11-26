@@ -1,0 +1,15 @@
+package ledger
+
+// Balance sums the values that pass every check. Every check opens a deeper block, so the line that does the work
+// sits 3 levels in and the reader must hold every enclosing condition in mind to know when it runs.
+func Balance(batches [][]int, limit int) int {
+	total := 0
+	for _, batch := range batches {
+		for _, value := range batch {
+			if value > 0 {
+				total += value
+			}
+		}
+	}
+	return total
+}

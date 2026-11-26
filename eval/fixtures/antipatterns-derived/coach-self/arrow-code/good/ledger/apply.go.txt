@@ -1,0 +1,24 @@
+package ledger
+
+// Balance sums the values that pass every check, one batch at a time; counts names the checks in one place.
+func Balance(batches [][]int, limit int) int {
+	total := 0
+	for _, batch := range batches {
+		total += batchBalance(batch, limit)
+	}
+	return total
+}
+
+func batchBalance(batch []int, limit int) int {
+	total := 0
+	for _, value := range batch {
+		if counts(value, limit) {
+			total += value
+		}
+	}
+	return total
+}
+
+func counts(value, limit int) bool {
+	return value > 0
+}

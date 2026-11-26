@@ -1,0 +1,18 @@
+{
+  "id": "god-file",
+  "name": "God file (overloaded file)",
+  "source": "#871 catalogue entry god-file (eval/fixtures/antipatterns/god-file), scaled by a pattern profile",
+  "seed": "profile:8498d03cc7f53f37aed180bb6986cc2c2ef73f72c0c5be5b027f885db3a4ffe1",
+  "status": "covered",
+  "expect": {
+    "bad": [
+      {
+        "rule_id": "complexity.branch_density",
+        "path": "orders/orders.go",
+        "subject": ""
+      }
+    ],
+    "good": "none"
+  },
+  "note": "Derived from pattern profile 8498d03cc7f53f37aed180bb6986cc2c2ef73f72c0c5be5b027f885db3a4ffe1: branch points 13, the most frequent value at or over Coach's threshold of 12, in the profile's units."
+}
