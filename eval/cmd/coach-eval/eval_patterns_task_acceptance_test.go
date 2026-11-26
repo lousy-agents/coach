@@ -38,13 +38,13 @@ var _ = Describe("the eval-patterns mise task (#872 Task 3)", func() {
 		Expect(string(written)).To(Equal(string(committed)), "the committed profile is what the task writes")
 		Expect(string(committed)).To(Equal(string(snapshot)), "the committed profile is the reviewed snapshot")
 		Expect(isolatedGit(checkout, "status", "--porcelain")).To(BeEmpty(), "the task changes nothing but the committed profiles and derived fixtures, which it rewrites byte for byte")
-		Expect(ids(filepath.Join(checkout, "eval", "fixtures", "antipatterns-derived", "coach-self"))).To(Equal([]string{"god-file", "spaghetti-conditional"}))
+		Expect(ids(filepath.Join(checkout, "eval", "fixtures", "antipatterns-derived", "coach-self"))).To(Equal([]string{"arrow-code", "god-file", "spaghetti-conditional"}))
 	})
 
 	It("commits derived fixtures that coach-eval antipatterns runs and reports, every one passing against the real coach (#872 Task 5)", func() {
 		scan := runAntipatterns(filepath.Join(repositoryRoot(), "eval", "fixtures", "antipatterns-derived", "coach-self"), antipatternCoach())
 
 		Expect(scan.exitCode).To(Equal(0), scan.stderr)
-		Expect(coveredFixtureIDs(decodeTable(scan.stdout))).To(Equal(map[string]bool{"god-file": true, "spaghetti-conditional": true}))
+		Expect(coveredFixtureIDs(decodeTable(scan.stdout))).To(Equal(map[string]bool{"arrow-code": true, "god-file": true, "spaghetti-conditional": true}))
 	})
 })

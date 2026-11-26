@@ -111,13 +111,13 @@ var _ = Describe("profile-derived anti-pattern fixtures (#872 Task 5)", func() {
 			}
 			Expect(badFindings(readExpect(out, "arrow-code"))).To(Equal(rules))
 		},
-		Entry("depth 5: cognitive complexity 15, at the threshold", 5, false),
-		Entry("depth 6: cognitive complexity 21, over it", 6, true),
+		Entry("depth 4: cognitive complexity 10, under Coach's 15", 4, false),
+		Entry("depth 5: cognitive complexity 15, which reaches it", 5, true),
 	)
 
 	When("the profile observed no shape a template reads", func() {
 		It("emits no fixture and says so in the result", func() {
-			result, err := generate(profileWith(map[string]int{"3": 9}, map[string]int{"15": 1}, map[string]int{"11": 1}, 0), out)
+			result, err := generate(profileWith(map[string]int{"2": 9}, map[string]int{"14": 1}, map[string]int{"11": 1}, 0), out)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Emitted).To(BeEmpty())

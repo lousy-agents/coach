@@ -40,7 +40,7 @@ func profileWith(nesting, cognitive, branchDensity map[string]int, doesWork int)
 
 // everyShape is a profile that observed every shape a template reads.
 func everyShape() []byte {
-	return profileWith(map[string]int{"2": 9, "4": 1, "5": 3}, map[string]int{"3": 4, "19": 2}, map[string]int{"13": 2}, 1)
+	return profileWith(map[string]int{"2": 9, "4": 3, "5": 1}, map[string]int{"3": 4, "19": 2}, map[string]int{"13": 2}, 1)
 }
 
 func acceptAll([]byte) error { return nil }
