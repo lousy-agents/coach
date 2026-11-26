@@ -3,8 +3,8 @@ package evalcensus
 import "reflect"
 
 // linkSupersessions makes each new record that re-measures a target the ledger holds supersede the latest record
-// still current for that target and measure. A record is current until a later record supersedes it, and an earlier
-// record is never rewritten. A record that already names what it supersedes is left as it is.
+// still current for that target, measure and source. A record is current until a later record supersedes it, and an
+// earlier record is never rewritten. A record that already names what it supersedes is left as it is.
 func linkSupersessions(existing, batch []Record) []Record {
 	superseded := make(map[string]bool, len(existing))
 	for _, record := range existing {
@@ -29,13 +29,14 @@ func linkSupersessions(existing, batch []Record) []Record {
 	return linked
 }
 
-// latestCurrent is the last record in the ledger, in its order, that is still current and is about the same target
-// and measure as record.
+// latestCurrent is the last record in the ledger, in its order, that is still current and is about the same target,
+// measure and source as record.
 func latestCurrent(existing []Record, superseded map[string]bool, record Record) (Record, bool) {
 	var found Record
 	ok := false
 	for _, earlier := range existing {
-		if superseded[earlier.RecordID] || earlier.Measure != record.Measure || !reflect.DeepEqual(earlier.Target, record.Target) {
+		if superseded[earlier.RecordID] || earlier.Measure != record.Measure ||
+			!reflect.DeepEqual(earlier.Target, record.Target) || !reflect.DeepEqual(earlier.Source, record.Source) {
 			continue
 		}
 		found, ok = earlier, true
