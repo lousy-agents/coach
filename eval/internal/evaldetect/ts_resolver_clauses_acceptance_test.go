@@ -164,6 +164,10 @@ var _ = Describe("the TypeScript resolver's clauses", func() {
 		Entry(".", map[string]string{"src/core/inner/d.ts": "import { I } from \".\";\n"}),
 		Entry("..", map[string]string{"src/core/inner/sub/d.ts": "import { I } from \"..\";\n"}),
 		Entry("a path with a trailing slash", map[string]string{"src/core/inner/d.ts": "import { I } from \"../inner/\";\n"}),
+		Entry("a baseUrl path with a trailing slash", map[string]string{
+			"tsconfig.json":       `{"compilerOptions":{"baseUrl":"."}}`,
+			"src/core/inner/d.ts": "import { I } from \"src/core/inner/\";\n",
+		}),
 	)
 
 	When("a file imports its own directory as . and baseUrl names another layer", func() {
