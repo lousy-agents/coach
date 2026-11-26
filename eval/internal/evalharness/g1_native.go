@@ -64,8 +64,3 @@ func gradeNativeG1(program evalgen.Program, tree oracleTree) (int, error) {
 	}
 	return len(required), nil
 }
-
-func moduleNameOf(program evalgen.Program) string {
-	first, _, _ := strings.Cut(strings.TrimPrefix(string(program.Tree["go.mod"]), "module "), "\n")
-	return first
-}
