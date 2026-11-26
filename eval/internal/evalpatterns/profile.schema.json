@@ -70,7 +70,7 @@
       }
     },
     "not_covered": {
-      "description": "Observed shapes that no generator operator or fixture covers, by the profile's own measure names.",
+      "description": "Observed shapes that no generator operator or fixture covers. The shape list is provisional: it names the profile's own measures until #872 Task 2 settles the closed list.",
       "type": "array",
       "items": {
         "type": "object",
