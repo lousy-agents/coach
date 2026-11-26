@@ -27,48 +27,19 @@ func Involve(repoDir, since string, units []Unit, fixes []FixCommit) (Involvemen
 		if err != nil {
 			return Involvement{}, err
 		}
-		if len(touched) == 0 {
-			result.Unmapped++
-		}
-		for _, index := range touched {
-			if result.FixSHA[index] == "" {
-				result.FixSHA[index] = fix.SHA
-			}
-		}
+		result.record(fix.SHA, touched)
 	}
 	return result, nil
 }
 
-func unitIdentities(repoDir, since string, units []Unit) (map[lineIdentity]int, error) {
-	owner := map[lineIdentity]int{}
-	for index, unit := range units {
-		identities, err := blameLines(repoDir, since, unit.Path, []lineRange{{unit.Start, unit.End}})
-		if err != nil {
-			return nil, err
-		}
-		for _, identity := range identities {
-			owner[identity] = index
+// record notes that fix touched these units, keeping each unit's oldest fix.
+func (result *Involvement) record(fix string, touched []int) {
+	if len(touched) == 0 {
+		result.Unmapped++
+	}
+	for _, index := range touched {
+		if result.FixSHA[index] == "" {
+			result.FixSHA[index] = fix
 		}
 	}
-	return owner, nil
-}
-
-func touchedUnits(repoDir, fix string, owner map[lineIdentity]int) ([]int, error) {
-	changed, err := changedOldLines(repoDir, fix)
-	if err != nil {
-		return nil, err
-	}
-	var touched []int
-	for path, ranges := range changed {
-		identities, err := blameLines(repoDir, fix+"^", path, ranges)
-		if err != nil {
-			return nil, err
-		}
-		for _, identity := range identities {
-			if index, ok := owner[identity]; ok {
-				touched = append(touched, index)
-			}
-		}
-	}
-	return touched, nil
 }

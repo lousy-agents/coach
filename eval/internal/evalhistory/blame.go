@@ -56,15 +56,21 @@ func parsePorcelain(output string) ([]lineIdentity, error) {
 			identities = append(identities, current)
 		case strings.HasPrefix(line, "filename "):
 			current.path = strings.TrimPrefix(line, "filename ")
-		default:
-			if match := porcelainHeader.FindStringSubmatch(line); match != nil {
-				number, err := strconv.Atoi(match[2])
-				if err != nil {
-					return nil, err
-				}
-				current = lineIdentity{commit: match[1], line: number}
+		case porcelainHeader.MatchString(line):
+			header, err := parseHeader(line)
+			if err != nil {
+				return nil, err
 			}
+			current = header
 		}
 	}
 	return identities, nil
+}
+
+// parseHeader reads a porcelain line header: the commit and the line's
+// number in that commit.
+func parseHeader(line string) (lineIdentity, error) {
+	match := porcelainHeader.FindStringSubmatch(line)
+	number, err := strconv.Atoi(match[2])
+	return lineIdentity{commit: match[1], line: number}, err
 }
