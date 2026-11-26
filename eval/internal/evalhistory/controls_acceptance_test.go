@@ -104,5 +104,8 @@ var _ = Describe("the flagged-vs-unflagged risk ratio", func() {
 		Entry("no control", 6, 10, 0, 0, "no control"),
 		Entry("no flagged unit involved", 0, 10, 3, 30, "zero cell"),
 		Entry("no control involved", 6, 10, 0, 30, "zero cell"),
+		Entry("every flagged unit and every control involved", 5, 5, 3, 3, "no variance: every unit involved"),
+		Entry("every flagged unit involved", 5, 5, 3, 30, "no variance: every flagged unit involved"),
+		Entry("every control involved", 6, 10, 3, 3, "no variance: every control involved"),
 	)
 })
