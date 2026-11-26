@@ -18,8 +18,8 @@ type Involvement struct {
 
 // UnprocessedFix is a fix that could not be traced, and why.
 type UnprocessedFix struct {
-	SHA    string
-	Reason string
+	SHA    string `json:"sha"`
+	Reason string `json:"reason"`
 }
 
 // Involve traces each fix's changed lines back by blame identity to the

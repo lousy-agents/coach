@@ -27,17 +27,18 @@ type UnmappedFixes struct {
 
 // RepositoryHistory is one repository's history between Since and Until.
 type RepositoryHistory struct {
-	ID            string        `json:"id"`
-	Since         string        `json:"since"`
-	Until         string        `json:"until"`
-	CoachExit     int           `json:"coach_exit"`
-	Evidence      string        `json:"evidence,omitempty"`
-	Commits       int           `json:"commits"`
-	Fixes         int           `json:"fixes"`
-	MatchRate     float64       `json:"match_rate"`
-	UnmappedFixes UnmappedFixes `json:"unmapped_fixes"`
-	Rules         []RuleResult  `json:"rules"`
-	findings      []placedFinding
+	ID               string           `json:"id"`
+	Since            string           `json:"since"`
+	Until            string           `json:"until"`
+	CoachExit        int              `json:"coach_exit"`
+	Evidence         string           `json:"evidence,omitempty"`
+	Commits          int              `json:"commits"`
+	Fixes            int              `json:"fixes"`
+	MatchRate        float64          `json:"match_rate"`
+	UnmappedFixes    UnmappedFixes    `json:"unmapped_fixes"`
+	UnprocessedFixes []UnprocessedFix `json:"unprocessed_fixes"`
+	Rules            []RuleResult     `json:"rules"`
+	findings         []placedFinding
 }
 
 // RuleResult compares one rule's flagged units with their controls.

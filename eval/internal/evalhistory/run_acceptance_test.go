@@ -2,6 +2,8 @@ package evalhistory_test
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -144,6 +146,30 @@ var _ = Describe("a history run over a pinned corpus", func() {
 			again, err := evalhistory.Run(corpus, fakeCoach(signals), 7)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(again.Repositories).To(Equal(summary.Repositories))
+		})
+	})
+
+	When("a fix cannot be traced", func() {
+		It("reports it, with its reason, among the unmapped fixes and still compares the rule", func() {
+			g := newHistory()
+			Expect(os.MkdirAll(filepath.Join(g.dir, "sub"), 0o755)).To(Succeed())
+			g.git("update-index", "--add", "--cacheinfo", "160000,"+strings.Repeat("1", 40)+",sub")
+			start := g.commit("start", map[string]string{"p/s.go": unitsSource})
+			g.git("update-index", "--add", "--cacheinfo", "160000,"+strings.Repeat("2", 40)+",sub")
+			g.git("commit", "-q", "-m", "fix: bump the submodule")
+			bump := g.git("rev-parse", "HEAD")
+			end := g.commit("fix: B", map[string]string{"p/s.go": replaceLine(unitsSource, 8, "\tx := 20")})
+
+			summary, err := evalhistory.Run(corpusFor(g, start, end, goRule(cognitive)), fakeCoach(signals[:1]), 7)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(summary.AnalysisFailed()).To(BeFalse())
+			repo := summary.Repositories[0]
+			Expect(repo.Fixes).To(Equal(2))
+			Expect(repo.UnmappedFixes.Function).To(Equal(1))
+			Expect(repo.UnprocessedFixes).To(HaveLen(1))
+			Expect(repo.UnprocessedFixes[0].SHA).To(Equal(bump))
+			Expect(repo.UnprocessedFixes[0].Reason).To(ContainSubstring("sub"))
+			Expect(ruleResult(summary, cognitive).FlaggedInvolved).To(Equal(1))
 		})
 	})
 
