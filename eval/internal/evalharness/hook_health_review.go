@@ -11,7 +11,7 @@ import (
 // reviewProblem reads the report the hook reads, and says what makes a program that should be clean not clean.
 func (c *hookChecker) reviewProblem(work string) string {
 	env := []string{"PATH=" + c.coachDir + string(os.PathListSeparator) + os.Getenv("PATH")}
-	output, err := run(work, env, "", filepath.Join(c.coachDir, "coach"), "codesignal", "--worktree", "--no-interactive", "--fail-on-incomplete-coverage", "--format", "json")
+	output, err := runIn(work, env, "", filepath.Join(c.coachDir, "coach"), "codesignal", "--worktree", "--no-interactive", "--fail-on-incomplete-coverage", "--format", "json")
 	if err != nil {
 		return fmt.Sprintf("the review did not run cleanly (exit %d): %s", exitCodeOf(err), strings.TrimSpace(output))
 	}

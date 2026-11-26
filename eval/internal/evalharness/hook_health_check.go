@@ -98,6 +98,6 @@ func (c *hookChecker) probe(work string, plan probePlan) hookFailure {
 
 func (c *hookChecker) hook(work string) (int, string) {
 	env := []string{"PATH=" + c.coachDir + string(os.PathListSeparator) + os.Getenv("PATH"), "CLAUDE_PROJECT_DIR=" + work}
-	output, err := run(work, env, hookPayload, "sh", hookPath)
+	output, err := runIn(work, env, hookPayload, "sh", hookPath)
 	return exitCodeOf(err), output
 }

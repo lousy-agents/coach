@@ -15,7 +15,7 @@ func (c *hookChecker) prepare(source, work string, plan probePlan) error {
 		{"init", "-q"}, {"add", "-A"},
 		{"-c", "user.name=coach-eval", "-c", "user.email=coach-eval@example.invalid", "commit", "-q", "-m", "initial"},
 	} {
-		if output, err := run(work, nil, "", "git", step...); err != nil {
+		if output, err := runIn(work, nil, "", "git", step...); err != nil {
 			return fmt.Errorf("git %s in the copy of %s: %v: %s", step[0], source, err, output)
 		}
 	}
