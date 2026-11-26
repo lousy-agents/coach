@@ -15,6 +15,10 @@ const (
 	// package in the snapshot. Witnesses for that run are suppressed rather
 	// than reporting an ordinary reachable path as a bypass.
 	DiagLayerBypassAmbiguousLayer = "project_layer_bypass_ambiguous_layer"
+	// DiagLayerBypassRequiredLayerUnmatched is carried together with
+	// DiagLayerBypassAmbiguousLayer when the cause is that the required layer
+	// matches no package; its Message names the layer and says what to fix.
+	DiagLayerBypassRequiredLayerUnmatched = "project_layer_bypass_required_layer_unmatched"
 )
 
 // LayerBypassConfidence classifies how a LayerBypassWitness's Path was

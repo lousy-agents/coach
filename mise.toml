@@ -388,6 +388,22 @@ go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
 "$bin_dir/coach-eval" antipatterns --coach "$bin_dir/coach" --fixtures eval/fixtures/antipatterns "$@"
 """
 
+# Runs the self-review hook on every tuning cell: healthy on the unmodified program, and blocking on a probe edit that
+# adds a forbidden import. Builds coach from this checkout, and needs git, jq and sh.
+[tasks.eval-hook-health]
+description = "Check the self-review hook and its probe edit on the Go and TypeScript tuning cells; exit 0, 1 a health or probe failure, 2 a missing tool or input"
+depends = ["js-install"]
+run = """
+set -eu
+bin_dir=$(mktemp -d)
+trap 'rm -rf "$bin_dir"' EXIT
+go build -o "$bin_dir/coach" ./cmd/coach
+go -C eval build -o "$bin_dir/coach-eval" ./cmd/coach-eval
+for language in go typescript; do
+  "$bin_dir/coach-eval" generate --tuning --language "$language" | "$bin_dir/coach-eval" hook-health --coach "$bin_dir/coach"
+done
+"""
+
 # Runs every spec of the eval module with the race detector. Local only: no workflow runs it, because the owner
 # keeps the evaluation out of CI (#814). It installs the JS packages the TypeScript specs need, and it takes about
 # ten to fifteen minutes (more under load), so the timeout is part of the task.
