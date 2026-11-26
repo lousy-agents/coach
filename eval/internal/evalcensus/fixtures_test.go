@@ -22,7 +22,7 @@ func automatedRecord(id string, value string) evalcensus.Record {
 		RecordID: id,
 		Target: evalcensus.Target{
 			CorpusID: "pilot", SHA: fixtureSHA, RuleID: "complexity.cognitive_complexity",
-			Path: "pkg/a/a.go", Lines: [2]int{3, 9},
+			Path: "pkg/a/a.go", Lines: &[2]int{3, 9},
 		},
 		Measure: "detector_agreement",
 		Value:   json.RawMessage(value),

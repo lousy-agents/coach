@@ -23,14 +23,15 @@ type Record struct {
 	Supersedes     *string         `json:"supersedes"`
 }
 
-// Target names the finding a record is about.
+// Target names the finding a record is about. Lines is nil for a
+// file-level finding, which Coach reports with no line span.
 type Target struct {
 	CorpusID    string  `json:"corpus_id"`
 	SHA         string  `json:"sha"`
 	RuleID      string  `json:"rule_id"`
 	Path        string  `json:"path"`
 	Subject     *string `json:"subject"`
-	Lines       [2]int  `json:"lines"`
+	Lines       *[2]int `json:"lines"`
 	Fingerprint *string `json:"fingerprint"`
 }
 

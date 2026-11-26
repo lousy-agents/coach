@@ -99,8 +99,8 @@ var _ = Describe("the census record ledger", func() {
 		Entry("the engineer_action deferred", func(r *evalcensus.Record) { r.EngineerAction = strPtr("deferred") }, false),
 		Entry("the engineer_action abandoned", func(r *evalcensus.Record) { r.EngineerAction = strPtr("abandoned") }, false),
 		Entry("the engineer_action no_usage_observed", func(r *evalcensus.Record) { r.EngineerAction = strPtr("no_usage_observed") }, false),
-		Entry("a one-line range", func(r *evalcensus.Record) { r.Target.Lines = [2]int{7, 7} }, false),
-		Entry("a range starting at line 1", func(r *evalcensus.Record) { r.Target.Lines = [2]int{1, 4} }, false),
+		Entry("a one-line range", func(r *evalcensus.Record) { r.Target.Lines = &[2]int{7, 7} }, false),
+		Entry("a range starting at line 1", func(r *evalcensus.Record) { r.Target.Lines = &[2]int{1, 4} }, false),
 	)
 
 	DescribeTable("a record that is not a whole human verdict is refused",
@@ -154,8 +154,8 @@ var _ = Describe("the census record ledger", func() {
 		Entry("an empty value", func(r *evalcensus.Record) { r.Value = nil }),
 		Entry("an empty rule_id", func(r *evalcensus.Record) { r.Target.RuleID = "" }),
 		Entry("an empty path", func(r *evalcensus.Record) { r.Target.Path = "" }),
-		Entry("a line range that ends before it starts", func(r *evalcensus.Record) { r.Target.Lines = [2]int{9, 3} }),
-		Entry("a line range starting at 0", func(r *evalcensus.Record) { r.Target.Lines = [2]int{0, 3} }),
+		Entry("a line range that ends before it starts", func(r *evalcensus.Record) { r.Target.Lines = &[2]int{9, 3} }),
+		Entry("a line range starting at 0", func(r *evalcensus.Record) { r.Target.Lines = &[2]int{0, 3} }),
 		Entry("an unknown measure", func(r *evalcensus.Record) { r.Measure = "vibes" }),
 		Entry("an unknown source kind", func(r *evalcensus.Record) { r.Source.Kind = "rumour" }),
 		Entry("an unknown rater kind", func(r *evalcensus.Record) { r.Rater.Kind = "robot" }),

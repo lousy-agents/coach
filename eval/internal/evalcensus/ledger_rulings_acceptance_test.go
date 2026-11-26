@@ -77,6 +77,9 @@ var _ = Describe("the census rulings", func() {
 			Expect(first).To(MatchRegexp(`^[0-9a-f]{16}-[0-9a-f]{16}$`))
 			Expect(strings.Split(first, "-")[0]).To(Equal(strings.Split(second, "-")[0]))
 			Expect(strings.Split(evalcensus.NewRecordID(other), "-")[0]).NotTo(Equal(strings.Split(first, "-")[0]))
+
+			named := automatedRecord("already-named", `"agree"`)
+			Expect(strings.Split(evalcensus.NewRecordID(named), "-")[0]).To(Equal(strings.Split(first, "-")[0]), "the hash ignores any record_id the record carries")
 		})
 	})
 })

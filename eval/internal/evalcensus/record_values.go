@@ -12,10 +12,7 @@ func valueProblem(record Record) string {
 	if record.Measure == "human_verdict" {
 		return "human_verdict needs a human source and a human rater"
 	}
-	if !isAutomatedValue(record.Value) {
-		return "an automated source may write only agree, disagree or a number"
-	}
-	return ""
+	return automatedValueProblem(record)
 }
 
 func isHumanVerdict(record Record) bool {
@@ -36,10 +33,7 @@ func humanVerdictProblem(record Record) string {
 	return ""
 }
 
-func isAutomatedValue(value json.RawMessage) bool {
-	if automatedValues[stringValue(value)] {
-		return true
-	}
+func isNumber(value json.RawMessage) bool {
 	var decoded any
 	if json.Unmarshal(value, &decoded) != nil {
 		return false
@@ -55,4 +49,19 @@ func stringValue(value json.RawMessage) string {
 		return ""
 	}
 	return text
+}
+
+// automatedValueProblem ties an automated measure to its kind of value: an
+// agreement is agree or disagree, an association is a number.
+func automatedValueProblem(record Record) string {
+	if record.Measure == "flagged_vs_unflagged_association" {
+		if !isNumber(record.Value) {
+			return "flagged_vs_unflagged_association takes a number"
+		}
+		return ""
+	}
+	if !automatedValues[stringValue(record.Value)] {
+		return "detector_agreement takes agree or disagree"
+	}
+	return ""
 }

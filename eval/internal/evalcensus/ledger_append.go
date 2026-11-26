@@ -3,6 +3,8 @@ package evalcensus
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -42,12 +44,16 @@ func appendLines(path string, records []Record) error {
 	if err != nil {
 		return err
 	}
+	size, err := file.Seek(0, io.SeekEnd)
+	if err != nil {
+		file.Close()
+		return err
+	}
 	if endsMidLine(file) {
 		lines = *bytes.NewBuffer(append([]byte{'\n'}, lines.Bytes()...))
 	}
 	if _, err := writeLedger(file, lines.Bytes()); err != nil {
-		file.Close()
-		return err
+		return errors.Join(err, file.Truncate(size), file.Close())
 	}
 	return file.Close()
 }
