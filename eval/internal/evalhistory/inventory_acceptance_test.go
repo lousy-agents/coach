@@ -78,8 +78,8 @@ var _ = Describe("mapping Coach's findings to units", func() {
 			{RuleID: "complexity.cognitive_complexity", Path: "q/q.go", Subject: "Q", StartRow: 2, EndRow: 8},
 		}
 
-		cognitive := evalhistory.FlaggedUnits(inventory, signals, "complexity.cognitive_complexity")
-		density := evalhistory.FlaggedUnits(inventory, signals, "complexity.branch_density")
+		cognitive := flaggedUnits(inventory, signals, "complexity.cognitive_complexity")
+		density := flaggedUnits(inventory, signals, "complexity.branch_density")
 
 		Expect(cognitive.Level).To(Equal(evalhistory.FunctionLevel))
 		Expect(cognitive.Units).To(Equal([]int{1, 2}))
@@ -91,23 +91,23 @@ var _ = Describe("mapping Coach's findings to units", func() {
 	It("counts a finding that falls in no unit as unplaced", func() {
 		signals := []evalhistory.Signal{{RuleID: "complexity.cognitive_complexity", Path: "gone.go", Subject: "G", StartRow: 2, EndRow: 4}}
 
-		flagged := evalhistory.FlaggedUnits(inventory, signals, "complexity.cognitive_complexity")
+		flagged := flaggedUnits(inventory, signals, "complexity.cognitive_complexity")
 		Expect(flagged.Units).To(BeEmpty())
 		Expect(flagged.Unplaced).To(Equal(1))
 	})
 
-	It("treats a finding with a location but no subject as a function finding", func() {
+	It("places a max_nesting_depth finding in its file, whatever its location", func() {
 		signals := []evalhistory.Signal{{RuleID: "complexity.max_nesting_depth", Path: "p/p.go", StartRow: 6, EndRow: 9}}
 
-		flagged := evalhistory.FlaggedUnits(inventory, signals, "complexity.max_nesting_depth")
-		Expect(flagged.Level).To(Equal(evalhistory.FunctionLevel))
-		Expect(flagged.Units).To(Equal([]int{1}))
+		flagged := flaggedUnits(inventory, signals, "complexity.max_nesting_depth")
+		Expect(flagged.Level).To(Equal(evalhistory.FileLevel))
+		Expect(flagged.Units).To(Equal([]int{0}))
 	})
 
 	It("places an architecture.layer_violation finding on an import line in its file unit", func() {
 		signals := []evalhistory.Signal{{RuleID: "architecture.layer_violation", Path: "p/p.go", Subject: "architecture.layer_violation:p->q", StartRow: 1}}
 
-		flagged := evalhistory.FlaggedUnits(inventory, signals, "architecture.layer_violation")
+		flagged := flaggedUnits(inventory, signals, "architecture.layer_violation")
 		Expect(flagged.Level).To(Equal(evalhistory.FileLevel))
 		Expect(flagged.Units).To(Equal([]int{0}))
 		Expect(flagged.Unplaced).To(BeZero())
@@ -120,23 +120,23 @@ var _ = Describe("mapping Coach's findings to units", func() {
 		Expect(err).To(MatchError(ContainSubstring("architecture.made_up")))
 	})
 
-	It("counts a finding at another level than the rule's first as unplaced", func() {
+	It("places each finding of a file-level rule in its file, whatever its rows", func() {
 		signals := []evalhistory.Signal{
 			{RuleID: "complexity.branch_density", Path: "q/q.go"},
 			{RuleID: "complexity.branch_density", Path: "p/p.go", Subject: "B", StartRow: 6, EndRow: 9},
 		}
 
-		flagged := evalhistory.FlaggedUnits(inventory, signals, "complexity.branch_density")
+		flagged := flaggedUnits(inventory, signals, "complexity.branch_density")
 		Expect(flagged.Level).To(Equal(evalhistory.FileLevel))
-		Expect(flagged.Units).To(Equal([]int{1}))
-		Expect(flagged.Unplaced).To(Equal(1))
+		Expect(flagged.Units).To(Equal([]int{1, 0}))
+		Expect(flagged.Unplaced).To(BeZero())
 	})
 
 	DescribeTable("a function finding in a gap between units is unplaced, not given to the next unit",
 		func(startRow int) {
 			signals := []evalhistory.Signal{{RuleID: "complexity.cognitive_complexity", Path: "p/p.go", Subject: "X", StartRow: startRow, EndRow: startRow}}
 
-			flagged := evalhistory.FlaggedUnits(inventory, signals, "complexity.cognitive_complexity")
+			flagged := flaggedUnits(inventory, signals, "complexity.cognitive_complexity")
 			Expect(flagged.Units).To(BeEmpty())
 			Expect(flagged.Unplaced).To(Equal(1))
 		},
@@ -150,6 +150,14 @@ var _ = Describe("mapping Coach's findings to units", func() {
 			{RuleID: "complexity.cognitive_complexity", Path: "p/p.go", Subject: "B", StartRow: 7, EndRow: 8},
 		}
 
-		Expect(evalhistory.FlaggedUnits(inventory, signals, "complexity.cognitive_complexity").Units).To(Equal([]int{1}))
+		Expect(flaggedUnits(inventory, signals, "complexity.cognitive_complexity").Units).To(Equal([]int{1}))
 	})
 })
+
+// flaggedUnits is FlaggedUnits for a rule the table holds: any error fails the spec.
+func flaggedUnits(inventory evalhistory.Inventory, signals []evalhistory.Signal, ruleID string) evalhistory.Flagged {
+	GinkgoHelper()
+	flagged, err := evalhistory.FlaggedUnits(inventory, signals, ruleID)
+	Expect(err).NotTo(HaveOccurred())
+	return flagged
+}

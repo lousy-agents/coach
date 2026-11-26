@@ -50,7 +50,10 @@ func (result *RepositoryHistory) compare(corpus evalcensus.Corpus, dir string, f
 		if !slices.Contains(rule.Languages, "go") {
 			continue
 		}
-		ruleResult, placed := compareRule(inventory, involved, findings, rule.RuleID, seed)
+		ruleResult, placed, err := compareRule(inventory, involved, findings, rule.RuleID, seed)
+		if err != nil {
+			return err
+		}
 		result.Rules = append(result.Rules, ruleResult)
 		result.findings = append(result.findings, placed...)
 	}
