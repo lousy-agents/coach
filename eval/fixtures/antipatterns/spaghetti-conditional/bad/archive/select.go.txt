@@ -1,0 +1,38 @@
+package archive
+
+// File is a file in a directory listing.
+type File struct {
+	Name     string
+	Size     int
+	Age      int
+	Pinned   bool
+	Temp     bool
+	ReadOnly bool
+}
+
+// Expired picks the files to delete. The rules are interleaved in one loop: each condition, continue and break
+// depends on the ones before it, so no rule can be read, tested or changed on its own.
+func Expired(files []File, maxAge, maxSize, quota int) []string {
+	var names []string
+	used := 0
+	for _, f := range files {
+		if f.Pinned || f.ReadOnly && !f.Temp {
+			continue
+		}
+		if f.Temp && f.Age > 1 || f.Age > maxAge && f.Size > 0 {
+			names = append(names, f.Name)
+			continue
+		}
+		if f.Size <= maxSize || f.Pinned {
+			continue
+		}
+		if used+f.Size > quota || f.Age > maxAge/2 && f.Size > 2*maxSize {
+			names = append(names, f.Name)
+			used += f.Size
+		}
+		if used > quota*2 {
+			break
+		}
+	}
+	return names
+}

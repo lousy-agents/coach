@@ -72,7 +72,7 @@ var _ = Describe("the instant a census run is recorded at", func() {
 		records, err := evalcensus.LoadRecords(filepath.Join(root, "pilot", "records.jsonl"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(records).NotTo(BeEmpty())
-		for _, record := range records {
+		for _, record := range evalcensus.CurrentRecords(records) {
 			Expect(record.Date).To(Equal("2001-02-03"))
 		}
 	})

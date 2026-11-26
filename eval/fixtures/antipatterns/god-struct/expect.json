@@ -1,0 +1,11 @@
+{
+  "id": "god-struct",
+  "name": "God struct",
+  "source": "One type with many unrelated fields and methods (Riel, Object-Oriented Design Heuristics, heuristic 3.2: a god class). Known miss: Coach has no rule for it",
+  "seed": "none",
+  "status": "not_covered",
+  "expect": {
+    "bad": "none",
+    "good": "none"
+  }
+}

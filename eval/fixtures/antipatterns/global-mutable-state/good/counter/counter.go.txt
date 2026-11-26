@@ -1,0 +1,17 @@
+package counter
+
+// Counter holds an amount that its owner passes around explicitly.
+type Counter struct {
+	total int
+}
+
+// Add records an amount and returns the new counter.
+func (c Counter) Add(n int) Counter {
+	c.total += n
+	return c
+}
+
+// Total returns the amount recorded so far.
+func (c Counter) Total() int {
+	return c.total
+}
