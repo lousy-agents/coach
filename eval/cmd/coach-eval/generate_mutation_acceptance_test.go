@@ -16,7 +16,7 @@ const (
 
 // standInGremlins writes the report a chosen mutation run would: it logs each invocation, takes the report's path
 // from --output, and names the entry package's source file so the mutants fall inside the api surface's route.
-const standInGremlins = `echo run >> "$GREMLINS_LOG"
+const standInGremlins = `if [ -d tests/feature ]; then echo hidden >> "$GREMLINS_LOG"; else echo base >> "$GREMLINS_LOG"; fi
 out=""
 while [ $# -gt 0 ]; do
   if [ "$1" = "--output" ]; then out="$2"; fi
@@ -53,14 +53,18 @@ func (s standIn) environment(mode string) []string {
 	return []string{gremlinsOverrideVariable + "=" + s.binary, "GREMLINS_LOG=" + s.log, "GREMLINS_STATE=" + s.state, "STANDIN_MODE=" + mode, "COACH_BIN="}
 }
 
-func (s standIn) invocations() int {
+// runs lists what each invocation saw in its working tree, in order: "base" for the program as the agent gets it,
+// "hidden" for the first feature's oracle with its hidden tests.
+func (s standIn) runs() []string {
 	content, err := os.ReadFile(s.log)
 	if os.IsNotExist(err) {
-		return 0
+		return nil
 	}
 	Expect(err).NotTo(HaveOccurred())
-	return len(strings.Fields(string(content)))
+	return strings.Fields(string(content))
 }
+
+func (s standIn) invocations() int { return len(s.runs()) }
 
 func validationOf(program generatedProgram) map[string]any {
 	return manifestOf(program)["validation"].(map[string]any)
@@ -91,7 +95,7 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 			runs := validation["mutation_runs"].(map[string]any)
 			Expect(runs["pass_to_pass"].(map[string]any)["valid"]).To(BeEquivalentTo(5))
 			Expect(runs["fail_to_pass"].(map[string]any)["valid"]).To(BeEquivalentTo(5))
-			Expect(gremlins.invocations()).To(Equal(2), "one run on the base, one on the first feature's oracle")
+			Expect(gremlins.runs()).To(Equal([]string{"base", "hidden"}), "the PASS_TO_PASS suite on the program, then the FAIL_TO_PASS suite on the first feature's oracle")
 		})
 	})
 
@@ -188,6 +192,19 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 			Expect(outcome.stderr).To(ContainSubstring("--no-mutation"))
 			Expect(outcome.stderr).To(ContainSubstring("held_out"))
 		})
+	})
+
+	It("exits 2 and names Gremlins when the module cache lacks it, without fetching anything (AC-25)", func() {
+		emptyCache := GinkgoT().TempDir()
+
+		outcome := runGenerate(GinkgoT().TempDir(), []string{"GOMODCACHE=" + emptyCache}, "--cell", "1", "--seed", "3")
+
+		Expect(outcome.exitCode).To(Equal(2), outcome.stderr)
+		Expect(outcome.stdout).To(BeEmpty())
+		Expect(outcome.stderr).To(ContainSubstring("gremlins"))
+		for path := range readTree(emptyCache) {
+			Expect(path).To(HaveSuffix(".lock"), "the go command leaves lock files, and nothing else may be downloaded")
+		}
 	})
 
 	It("runs the gate by default with the pinned tool, and ignores the test-only override in the release build (AC-25)", func() {

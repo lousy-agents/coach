@@ -116,6 +116,15 @@ var _ = Describe("the pinned Gremlins (design §6, step 6; §10)", func() {
 		Expect(string(output)).To(ContainSubstring("github.com/go-gremlins/gremlins\tv0.6.0"))
 	})
 
+	It("refuses a binary built from another Gremlins version (AC-25)", func() {
+		gremlins, err := evalharness.ResolveGremlins(evalModule, nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		err = evalharness.Gremlins{Binary: gremlins.Binary, Version: "v0.0.1"}.CheckVersion()
+
+		Expect(err).To(MatchError(ContainSubstring("pinned version is v0.0.1")))
+	})
+
 	DescribeTable("exits as a missing tool when the module cache lacks it, without fetching it, whatever the caller's environment says (AC-25)",
 		func(callerEnv ...string) {
 			emptyCache := GinkgoT().TempDir()
