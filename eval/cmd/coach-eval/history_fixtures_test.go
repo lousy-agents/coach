@@ -51,10 +51,22 @@ type historyRepoEntry struct {
 	ProjectConfig string `json:"project_config,omitempty"`
 }
 
+// writeHistoryCorpus writes a manifest that both a census and a history can read: the licence and sample seed are
+// the census's, and history ignores them.
 func writeHistoryCorpus(repos ...historyRepoEntry) string {
+	entries := make([]map[string]any, 0, len(repos))
+	for _, repo := range repos {
+		raw, err := json.Marshal(repo)
+		Expect(err).NotTo(HaveOccurred())
+		var entry map[string]any
+		Expect(json.Unmarshal(raw, &entry)).To(Succeed())
+		entry["licence"] = "MIT"
+		entry["sample"] = map[string]any{"seed": 7}
+		entries = append(entries, entry)
+	}
 	raw, err := json.Marshal(map[string]any{
 		"corpus_id":    "fixture",
-		"repositories": repos,
+		"repositories": entries,
 		"rules":        []any{map[string]any{"rule_id": "complexity.cognitive_complexity", "languages": []string{"go"}}},
 	})
 	Expect(err).NotTo(HaveOccurred())

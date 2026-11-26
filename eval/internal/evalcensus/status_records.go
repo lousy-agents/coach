@@ -32,5 +32,5 @@ func statusRationale(status RuleStatus) string {
 	if status.Evidence != "" {
 		return status.Evidence
 	}
-	return fmt.Sprintf("findings=%d adjudicable=%d", status.Findings, status.Adjudicable)
+	return fmt.Sprintf("findings=%d adjudicable=%d sampled=%d", status.Findings, status.Adjudicable, len(status.SampledKeys))
 }

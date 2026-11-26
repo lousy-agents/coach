@@ -22,12 +22,18 @@ type CoachIdentity struct {
 	SHA256 string `json:"sha256"`
 }
 
-// RepositoryResult is one repository's census outcome.
+// RepositoryResult is one repository's census outcome, and the seed and size its sample drew with.
 type RepositoryResult struct {
-	ID        string       `json:"id"`
-	SHA       string       `json:"sha"`
-	CoachExit int          `json:"coach_exit"`
-	Statuses  []RuleStatus `json:"statuses"`
+	ID        string            `json:"id"`
+	SHA       string            `json:"sha"`
+	CoachExit int               `json:"coach_exit"`
+	Sample    *RepositorySample `json:"sample,omitempty"`
+	Statuses  []RuleStatus      `json:"statuses"`
+}
+
+// RepositorySample is the seed a repository's sample is drawn with.
+type RepositorySample struct {
+	Seed int64 `json:"seed"`
 }
 
 // Run checks out every corpus repository before scanning any, so an
