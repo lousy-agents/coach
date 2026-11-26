@@ -18,7 +18,7 @@ Experimental AI coach for humans making software with agents. Analysis packages 
 
 The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) exposes one subcommand, `codesignal`, via the `pkg/semantics` → `pkg/codesignal` pipeline. Product direction lives in `docs/product/prd.md`; system design in `docs/architecture/system-overview.md`.
 
-**Living product evaluation**: `docs/product/evaluations/codesignal-pilot-readiness.html` is the current leave-pilot evidence, not a historical snapshot. Closing a #282 child or merging user-facing `coach codesignal` behavior means updating it: re-run the affected claim against HEAD, move closed gaps to the archive and keep them there, restamp date / HEAD / `#282 · N / 25`, and re-rank only after a run. GitHub `CLOSED` is not sufficient evidence.
+**Living product evaluation**: `docs/product/evaluations/codesignal-pilot-readiness.html` is the current leave-pilot evidence, not a historical snapshot. Closing a #282 child or merging user-facing `coach codesignal` behavior means updating it: re-run the affected claim against HEAD, move closed gaps to the archive and keep them there, restamp date / HEAD / `#282 · N / 25`, and re-rank only after a run. GitHub `CLOSED` is not sufficient evidence. Once `eval-census` (#787) and `eval-history` (#788) ship, each restamp shall also run `mise run eval-census` and `mise run eval-history`, and shall record both runs in `eval/ledger/runs.jsonl`.
 
 ## Agent Skills (`.agents/skills/`)
 
@@ -154,6 +154,8 @@ mise run ts-project-backend-acceptance
 mise run wasm-build
 mise run vulncheck
 ```
+
+Once `eval-precommit` (#786) ships, contributors shall run `mise run ci-fast` and `mise run eval-precommit` before commit. `eval-precommit` is model-free and runs locally; it is not in the CI-mirrored list above, and no workflow shall invoke an `eval-*` task.
 
 Run `ci-fast` inside an implement/review loop and `ci-all` for the broadest local run. Neither is the pre-PR gate. `ci-all` reaches `js-install` through its sidecar build, so the sidecar and TypeScript-backend specs do run inside `test` — but `test` carries no `-ginkgo.fail-on-empty`, so if their compiler preconditions fail they skip and `ci-all` stays green. The `projectmodel-sidecar` and `ts-project-backend` leaves exist to make that skip a failure. `platform-smoke` has no local equivalent at all, and no local composite pins Node 26, so `ts-project-backend-node26` proves nothing a local run can reproduce without writing that `mise.local.toml`.
 
