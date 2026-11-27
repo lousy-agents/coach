@@ -1270,7 +1270,7 @@ regardless of layers.
 
 ### `security.toctou_check_then_act`
 
-This rule is a syntactic pattern match and advisory only. It reports a medium-severity finding for each act on a path that an earlier check on the same path text gated. **No finding means only that this syntactic rule did not match.** It does not show that the code is free of time-of-check-to-time-of-use races. The report's all-clear line, `No active CodeSignal findings`, describes the rules that ran. It says nothing more about this race.
+This rule is a syntactic pattern match. Each gating `if` or `while` that matches yields one medium-severity finding, located at the first matching act in its body. Later acts under the same gate get no finding of their own. The finding does not change the exit code. **No finding means only that this syntactic rule did not match.** It does not show that the code is free of time-of-check-to-time-of-use races. The report's all-clear line, `No active CodeSignal findings`, describes the rules that ran. It says nothing more about this race.
 
 The rule matches these shapes:
 
@@ -1286,7 +1286,7 @@ Go:
 - A gate other than a direct `err == nil`: an `err != nil` early return, `errors.Is(err, fs.ErrNotExist)`, `os.IsNotExist(err)`, or a compound condition.
 - A `Stat` or `Lstat` in a statement before the `if`, or one whose results are discarded.
 - An act other than the five listed, such as `os.Create`, `os.Mkdir`, `os.MkdirAll`, `os.WriteFile`, or `os.Rename`. `os.OpenFile` is matched.
-- An act reached only through a walk callback that has no `Stat` or `Lstat` gate of its own.
+- An act in a walk callback on the callback's own path variable, such as `os.Remove(q)` where `q` is not the gated `p`. Only the gated text is matched, so an act inside a callback is matched when it names `p`.
 
 TypeScript and TSX:
 
