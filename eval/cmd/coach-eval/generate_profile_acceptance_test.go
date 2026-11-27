@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -153,16 +152,16 @@ var _ = Describe("coach-eval generate --profile (#872 Task 4)", func() {
 		Entry("a profile with --cell", func(p string) []string { return []string{"--profile", p, "--count", "1", "--cell", "3"} }, "--cell"),
 		Entry("a profile with --tuning", func(p string) []string { return []string{"--profile", p, "--count", "1", "--tuning"} }, "--tuning"),
 		Entry("a profile with a dimension", func(p string) []string { return []string{"--profile", p, "--count", "1", "--layers", "3"} }, "--layers"),
-		Entry("a profile without --count", func(p string) []string { return []string{"--profile", p} }, "--count"),
+		Entry("a profile without --count", func(p string) []string { return []string{"--profile", p} }, "needs --count"),
 		Entry("--count without a profile", func(string) []string { return []string{"--count", "2"} }, "--profile"),
 		Entry("a count of 0", func(p string) []string { return []string{"--profile", p, "--count", "0"} }, "--count"),
 		Entry("a count over the cell space", func(p string) []string { return []string{"--profile", p, "--count", "1729"} }, "--count"),
 		Entry("a profile file that does not exist", func(string) []string {
 			return []string{"--profile", filepath.Join(GinkgoT().TempDir(), "missing.profile.json"), "--count", "1"}
 		}, "missing.profile.json"),
-		Entry("a profile that fails the committed schema (AC-3.6)", func(string) []string {
-			raw := strings.Replace(string(committedProfile()), `"label":`, `"path":"pkg/x","label":`, 1)
-			return []string{"--profile", writeProfile([]byte(raw)), "--count", "1"}
+		Entry("a profile that fails the committed schema, sealed to its contents (AC-3.6)", func(string) []string {
+			raw := edited(committedProfile(), true, func(profile map[string]any) { profile["path"] = "pkg/x" })
+			return []string{"--profile", writeProfile(raw), "--count", "1"}
 		}, "does not validate"),
 		Entry("a profile from another extractor version", func(string) []string {
 			raw := edited(committedProfile(), true, func(profile map[string]any) { profile["extractor_version"] = "0.1.0" })
