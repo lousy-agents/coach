@@ -104,7 +104,7 @@ runner image's git, so a sandbox run of the task uses
 the task's own pin wins over the caller's:
 
 ```sh
-COACH_CI_GIT_VERSION=2.43.0 mise exec -- go run ./cmd/acceptance-ci-env ./...
+COACH_CI_GIT_VERSION=2.43.0 mise exec -- go run ./cmd/acceptance-ci-env -timeout 25m ./...
 ```
 
 The `ts-project-backend` specs need `js/semantics/node_modules`, which CI's job

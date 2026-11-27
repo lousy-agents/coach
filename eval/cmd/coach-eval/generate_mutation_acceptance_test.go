@@ -32,6 +32,10 @@ if [ "$mode" = "exit1" ]; then echo 'partial output'; exit 1; fi
 if [ "$mode" = "hang" ]; then sleep 20 & echo $! > "$GREMLINS_PIDFILE"; wait; mode=good; fi
 if [ "$mode" = "hang-orphan" ]; then setsid sleep 20 & echo $! > "$GREMLINS_PIDFILE"; sleep 30; fi
 if [ "$mode" = "empty" ]; then exit 0; fi
+if [ "$mode" = "empty-base" ] && [ ! -d tests/feature ]; then exit 0; fi
+if [ "$mode" = "empty-hidden" ] && [ -d tests/feature ]; then exit 0; fi
+if [ "$mode" = "one-base" ] && [ -d tests/feature ]; then exit 0; fi
+if [ "$mode" = "one-hidden" ] && [ ! -d tests/feature ]; then exit 0; fi
 if [ "$mode" = "unreadable" ]; then mkdir "$out"; exit 0; fi
 if [ "$mode" = "bad-once" ]; then
   if [ -e "$GREMLINS_STATE" ]; then mode=good; else : > "$GREMLINS_STATE"; mode=bad; fi
@@ -42,6 +46,7 @@ mixed='{"type":"A","status":"KILLED","line":1,"column":1},{"type":"A","status":"
 if [ "$mode" = "mixed" ]; then
   if [ -e "$GREMLINS_STATE" ]; then mutations="$mixed"; else : > "$GREMLINS_STATE"; mutations="$good"; fi
 elif [ "$mode" = "bad" ]; then mutations="$bad"; else mutations="$good"; fi
+case "$mode" in one-base|one-hidden) mutations='{"type":"A","status":"KILLED","line":1,"column":1}';; esac
 printf '{"files":[{"file_name":"%s","mutations":[%s]}]}' "$file" "$mutations" > "$out"
 `
 
@@ -130,11 +135,53 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 
 			Expect(validation["mutation_checked"]).To(Equal(true))
 			Expect(validation["mutation_score"]).To(BeNil())
+			Expect(validation["mutation_vacuous"]).To(Equal(true), "no valid mutant in either suite: the gate measured nothing, and the record says so (#902)")
+			Expect(validation["mutation_vacuous_reason"]).To(ContainSubstring("no valid mutant in either suite"))
 			runs := validation["mutation_runs"].(map[string]any)
 			Expect(runs["pass_to_pass"].(map[string]any)["valid"]).To(BeEquivalentTo(0))
 			Expect(runs["fail_to_pass"].(map[string]any)["valid"]).To(BeEquivalentTo(0))
 			Expect(gremlins.runs()).To(Equal([]string{"base", "hidden"}), "both suites ran; the empty result is not a skipped gate")
 		})
+	})
+
+	DescribeTable("the gate is not vacuous when either suite has a valid mutant (#902)",
+		func(mode string) {
+			outcome := gated(GinkgoT().TempDir(), newStandIn(), mode, "--cell", "1", "--seed", "3")
+			Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+			validation := validationOf(decodeGenerated(outcome.stdout))
+
+			Expect(validation["mutation_checked"]).To(Equal(true))
+			Expect(validation["mutation_vacuous"]).To(Equal(false))
+			Expect(validation).NotTo(HaveKey("mutation_vacuous_reason"))
+		},
+		Entry("both suites have valid mutants", "good"),
+		Entry("only the PASS_TO_PASS suite is empty", "empty-base"),
+		Entry("only the FAIL_TO_PASS suite is empty", "empty-hidden"),
+		Entry("exactly one valid mutant in the PASS_TO_PASS suite and none in the other", "one-base"),
+		Entry("exactly one valid mutant in the FAIL_TO_PASS suite and none in the other", "one-hidden"),
+	)
+
+	It("regenerates a program that a binary of the earlier validation version cached without mutation_vacuous, and records it (#902, AC-32)", func() {
+		cacheHome := GinkgoT().TempDir()
+		gremlins := newStandIn()
+		earlier := append(gremlins.environment("empty"), validationVersionVariable+"=2")
+
+		cached := runGenerateBinary(faultBinary, cacheHome, earlier, "--cell", "1", "--seed", "3")
+		current := gated(cacheHome, gremlins, "empty", "--cell", "1", "--seed", "3")
+
+		Expect([]int{cached.exitCode, current.exitCode}).To(Equal([]int{0, 0}))
+		Expect(decodeGenerated(cached.stdout).Cache).To(Equal("miss"))
+		Expect(decodeGenerated(current.stdout).Cache).To(Equal("miss"), "an entry validated under the earlier version is not served")
+		Expect(validationOf(decodeGenerated(current.stdout))["mutation_vacuous"]).To(Equal(true))
+	})
+
+	It("records a vacuous gate for the held-out panel like any other, because every Go template is vacuous today and refusing would block it (#902)", func() {
+		outcome := runGenerateBinary(faultBinary, GinkgoT().TempDir(), append(newStandIn().environment("empty"), "EVAL_ORACLE_DIR="+GinkgoT().TempDir()), "--cell", "1", "--seed", "3", "--panel", "held_out")
+		Expect(outcome.exitCode).To(Equal(0), outcome.stderr)
+		validation := validationOf(decodeGenerated(outcome.stdout))
+
+		Expect(validation["mutation_checked"]).To(Equal(true))
+		Expect(validation["mutation_vacuous"]).To(Equal(true))
 	})
 
 	When("Gremlins leaves something at the report's path that cannot be read as a report", func() {
@@ -277,6 +324,8 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 
 			Expect(validation["mutation_checked"]).To(Equal(false))
 			Expect(validation).NotTo(HaveKey("mutation_score"))
+			Expect(validation).NotTo(HaveKey("mutation_vacuous"), "a skipped gate is not a vacuous one: it measured nothing because it did not run")
+			Expect(validation).NotTo(HaveKey("mutation_vacuous_reason"))
 			Expect(gremlins.invocations()).To(Equal(0))
 		})
 
@@ -313,6 +362,7 @@ var _ = Describe("coach-eval generate and the mutation gate", Ordered, ContinueO
 		Expect(gremlins.invocations()).To(Equal(0), "the release build does not read the override")
 		Expect(validation["mutation_checked"]).To(Equal(true))
 		Expect(validation["mutation_score"]).To(BeNil(), "today's programs are branch-free: Gremlins finds no mutant, so the gate passes vacuously")
+		Expect(validation["mutation_vacuous"]).To(Equal(true))
 		runs := validation["mutation_runs"].(map[string]any)
 		Expect(runs["pass_to_pass"].(map[string]any)["valid"]).To(BeEquivalentTo(0))
 		Expect(runs["fail_to_pass"].(map[string]any)["valid"]).To(BeEquivalentTo(0))

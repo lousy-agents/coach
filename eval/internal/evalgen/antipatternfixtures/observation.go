@@ -14,6 +14,8 @@ type observation struct {
 	threshold, limit int
 	// basis replaces the default account of how the value was chosen.
 	basis string
+	// packages is the packages each layer holds, for a template of layers.
+	packages int
 }
 
 // typical is the observation of a distribution, or false when no value

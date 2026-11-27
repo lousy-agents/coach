@@ -6,6 +6,15 @@ import (
 	"github.com/lousy-agents/coach/eval/internal/evalgen"
 )
 
+// gateState is the mutation gate's part of a cache key. A run that skips the gate keys its own entries, because the
+// entry it writes records mutation_checked: false (#906).
+func gateState(skipped bool) string {
+	if skipped {
+		return "skipped"
+	}
+	return "checked"
+}
+
 // pinnedGremlins is the tool the gate runs, or the zero value when the run skips the gate or generates a language
 // the gate does not cover. It is resolved before anything is generated, so a missing tool is a missing input.
 func pinnedGremlins(request GenerateRequest) (Gremlins, error) {

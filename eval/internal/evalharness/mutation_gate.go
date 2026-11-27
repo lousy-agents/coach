@@ -39,7 +39,7 @@ type mutationOutcome struct {
 }
 
 // judgeMutation runs the gate and records the verdicts. A run that passes vacuously (no valid mutant, which is
-// every base program until operators add branches) is recorded with a null score.
+// every base program until operators add branches) is recorded with a null score and as mutation_vacuous.
 func judgeMutation(gremlins Gremlins, cache mutationCache, program evalgen.Program) (mutationOutcome, error) {
 	scope, err := MutationScope(program)
 	if err != nil {
@@ -47,6 +47,7 @@ func judgeMutation(gremlins Gremlins, cache mutationCache, program evalgen.Progr
 	}
 	runs := map[string]any{}
 	var scores, shares []float64
+	valid := 0
 	for _, run := range mutationRuns(program) {
 		report, err := cache.report(gremlins, run.tree)
 		if err != nil {
@@ -61,38 +62,10 @@ func judgeMutation(gremlins Gremlins, cache mutationCache, program evalgen.Progr
 			return mutationOutcome{rejectedAt: evalgen.StepMutation}, nil
 		}
 		runs[run.suite] = verdictFields(verdict)
+		valid += verdict.Valid
 		if verdict.Score != nil {
 			scores, shares = append(scores, *verdict.Score), append(shares, *verdict.NotCoveredShare)
 		}
 	}
-	return mutationOutcome{fields: map[string]any{
-		"mutation_checked": true, "mutation_runs": runs,
-		"mutation_score": lowest(scores), "not_covered_share": highest(shares),
-	}}, nil
-}
-
-func verdictFields(verdict MutationVerdict) map[string]any {
-	return map[string]any{"valid": verdict.Valid, "score": verdict.Score, "not_covered_share": verdict.NotCoveredShare}
-}
-
-func lowest(values []float64) any {
-	if len(values) == 0 {
-		return nil
-	}
-	lowest := values[0]
-	for _, value := range values {
-		lowest = min(lowest, value)
-	}
-	return lowest
-}
-
-func highest(values []float64) any {
-	if len(values) == 0 {
-		return nil
-	}
-	highest := values[0]
-	for _, value := range values {
-		highest = max(highest, value)
-	}
-	return highest
+	return mutationOutcome{fields: gateRecord(runs, scores, shares, valid)}, nil
 }

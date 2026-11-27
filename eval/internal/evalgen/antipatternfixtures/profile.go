@@ -21,7 +21,16 @@ type profile struct {
 	SchemaVersion    string `json:"schema_version"`
 	Identity         string `json:"identity"`
 	ExtractorVersion string `json:"extractor_version"`
-	Shapes           struct {
+	Dimensions       struct {
+		Layers map[string]int `json:"layers"`
+	} `json:"dimensions"`
+	Roles map[string]struct {
+		Packages map[string]int `json:"packages"`
+	} `json:"roles"`
+	NotCovered []struct {
+		Shape string `json:"shape"`
+	} `json:"not_covered"`
+	Shapes struct {
 		Nesting       map[string]int `json:"nesting"`
 		Cognitive     map[string]int `json:"cognitive"`
 		BranchDensity map[string]int `json:"branch_density"`
