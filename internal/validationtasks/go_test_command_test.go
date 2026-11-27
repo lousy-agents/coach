@@ -18,7 +18,9 @@ var minutesWord = regexp.MustCompile(`^(\d+)m$`)
 // ./cmd/acceptance-ci-env, which forwards its arguments. A command that
 // carries any shell metacharacter is not one command line, and one that
 // carries -args hands the test binary flags that can override the timeout, so
-// neither names a timeout.
+// neither names a timeout. Go takes the last of repeated timeout flags and
+// accepts -test.timeout and two dashes, so a command that spells the flag more
+// than once, in any form, names none.
 func goTestTimeoutMinutes(command string) (int, bool) {
 	words := strings.Fields(command)
 	if strings.ContainsAny(command, shellMeta) || slices.Contains(words, "-args") {
@@ -36,21 +38,24 @@ func goTestTimeoutMinutes(command string) (int, bool) {
 }
 
 func timeoutFlag(args []string) (int, bool) {
+	var values []string
 	for i, arg := range args {
-		value := ""
-		switch {
-		case arg == "-timeout" && i+1 < len(args):
-			value = args[i+1]
-		case strings.HasPrefix(arg, "-timeout="):
-			value = strings.TrimPrefix(arg, "-timeout=")
-		default:
+		name, value, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+		if !strings.HasPrefix(arg, "-") || strings.TrimPrefix(name, "test.") != "timeout" {
 			continue
 		}
-		if match := minutesWord.FindStringSubmatch(value); match != nil {
-			minutes, err := strconv.Atoi(match[1])
-			return minutes, err == nil
+		if !hasValue && i+1 < len(args) {
+			value = args[i+1]
 		}
+		values = append(values, value)
+	}
+	if len(values) != 1 {
 		return 0, false
 	}
-	return 0, false
+	match := minutesWord.FindStringSubmatch(values[0])
+	if match == nil {
+		return 0, false
+	}
+	minutes, err := strconv.Atoi(match[1])
+	return minutes, err == nil
 }
