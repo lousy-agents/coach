@@ -16,6 +16,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.34.0
 	github.com/onsi/gomega v1.44.0
 	github.com/redis/go-redis/v9 v9.24.0
+	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/mod v0.43.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/text v0.44.0
@@ -46,7 +47,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/vmihailenco/msgpack v4.0.4+incompatible // indirect
 	go.uber.org/atomic v1.12.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.63.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect

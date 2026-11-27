@@ -16,7 +16,7 @@ Feature Zero defines the **full eventual taxonomy** so later epics (Baseline Sca
 | --- | --- | --- | --- |
 | Fast acceptance | Existing public Go package/CLI boundaries, in-process fakes/transports | `mise run test-acceptance-fast` | **Runnable now** (the eleven existing `*Acceptance` suites, including `internal/acceptanceharness`'s and `internal/fakegithub`'s own contract tests — see section 1's subsection below for the full list) |
 | Thin offline Compose proof | External runner + fake GitHub + `pkg/githubingest` + CodeSignal; no API/worker binaries | `mise run test-acceptance-thin-proof` | **Runnable now** (Task 0.3): `cmd/thinproof-runner` against `cmd/fakegithub-server` as a Compose service, no image pull, no egress |
-| HTTP contract acceptance | Public HTTP routes, controlled fakes, deterministic store/time | `test-acceptance-core` | Reserved name; in-process `coach-api` acceptance lives under `go test -race ./... -run Acceptance` today. This task name was never added to `mise.toml`. |
+| HTTP contract acceptance | Public HTTP routes, controlled fakes, deterministic store/time | `test-acceptance-core` | Reserved name; in-process `coach-api` acceptance lives under `go test -race -timeout 25m ./... -run Acceptance` today. This task name was never added to `mise.toml`. |
 | Platform workflow acceptance | Compose API + worker + Postgres + Redis Streams + model stub + fake GitHub + fixture repo + external runner | `test-acceptance` (full workflow leg) | Reserved name; current compose E2E proof is `mise run platform-smoke`, not this task. |
 | Queue-provider conformance | Black-box contract against real Redis Streams + LocalStack SQS | `test-queue-conformance` | **Runnable now**: harness self-test against the in-memory reference adapter (Task 0.4), plus the `redisstream` and `sqs` adapters' own conformance tests against real Docker-spun-up Redis Streams / LocalStack SQS wherever Docker is available, skipping gracefully otherwise (Baseline Task 3a) |
 | Operator smoke | Narrow credential-free Compose submission/poll path | `mise run platform-smoke` | **Runnable now** (CI leaf): stub model, fixture repo, requires both `source=deterministic` and `source=agent`. |
@@ -28,14 +28,14 @@ A lower layer passing is never evidence that a higher layer has run — each lay
 
 ```toml
 [tasks.test-acceptance-fast]
-run = "go test -race ./... -run Acceptance"
+run = "go test -race -timeout 25m ./... -run Acceptance"
 ```
 
 ```toml
 [tasks.test-acceptance-fast]
 run = [
   "go run ./cmd/acceptance-guard-preflight",
-  "go test -race ./... -run Acceptance",
+  "go test -race -timeout 25m ./... -run Acceptance",
 ]
 ```
 
