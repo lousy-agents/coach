@@ -18,11 +18,21 @@ func distroCommands(workflow, job string) []string {
 	return commands
 }
 
-// commandsNaming returns the commands whose package arguments are exactly packages.
+// distroPackages returns the packages an acceptance-ci-env command names: its package arguments without the program
+// path that `go run` takes first.
+func distroPackages(command string) []string {
+	arguments := packageArguments(command)
+	if len(arguments) > 0 && arguments[0] == distroCommandWord {
+		return arguments[1:]
+	}
+	return arguments
+}
+
+// commandsNaming returns the commands whose packages are exactly packages.
 func commandsNaming(commands []string, packages ...string) []string {
 	var named []string
 	for _, command := range commands {
-		if slices.Equal(packageArguments(command), packages) {
+		if slices.Equal(distroPackages(command), packages) {
 			named = append(named, command)
 		}
 	}

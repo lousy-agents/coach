@@ -17,13 +17,13 @@ var _ = Describe("the packages the distro-git legs run (#925, #920)", func() {
 		commands := distroCommands(yml, "distro-git")
 		Expect(commands).NotTo(BeEmpty())
 
-		Expect(packageArguments(commands[0])).To(Equal(packageArguments(restCommands(toml)[0])))
+		Expect(distroPackages(commands[0])).To(Equal(packageArguments(restCommands(toml)[0])))
 	})
 
 	It("names every package of the module but cmd/coach, each exactly once, in distro-git's first command (D5)", func() {
 		commands := distroCommands(yml, "distro-git")
 		Expect(commands).NotTo(BeEmpty())
-		listed := importPathsNamedBy(packageArguments(commands[0]))
+		listed := importPathsNamedBy(distroPackages(commands[0]))
 		everything := goList("./...")
 
 		Expect(listed).NotTo(HaveKey(coachPackage), "cmd/coach runs in distro-git's second command, with the skip")
