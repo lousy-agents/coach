@@ -1286,11 +1286,12 @@ Go:
 - A gate other than a direct `err == nil`: an `err != nil` early return, `errors.Is(err, fs.ErrNotExist)`, `os.IsNotExist(err)`, or a compound condition.
 - A `Stat` or `Lstat` in a statement before the `if`, or one whose results are discarded.
 - An act other than the five listed, such as `os.Create`, `os.Mkdir`, `os.MkdirAll`, `os.WriteFile`, or `os.Rename`. `os.OpenFile` is matched.
+- An act from another package, such as `ioutil.ReadFile`.
 - An act in a walk callback on the callback's own path variable, such as `os.Remove(q)` where `q` is not the gated `p`. Only the gated text is matched, so an act inside a callback is matched when it names `p`.
 
 TypeScript and TSX:
 
-- A condition that is not a bare `existsSync` call: `existsSync(p) && …`, `… || existsSync(p)`, a `for` loop condition, or a negation such as `!existsSync(p)`.
+- A condition that is not a bare `existsSync` call: `existsSync(p) && …`, `… || existsSync(p)`, a `for` loop condition, a `do` … `while` loop, or a negation such as `!existsSync(p)`. A ternary, `existsSync(p) ? readFileSync(p) : null`, is not an `if` or `while` and is not matched either.
 - An act that sits only in the `else` branch of an `if`.
 - An async check followed by an awaited act, such as `fs.promises.access` followed by `await fs.promises.readFile`.
 - An act other than the five listed, such as `mkdirSync`, `copyFileSync`, `renameSync`, or `openSync`.
@@ -1298,6 +1299,7 @@ TypeScript and TSX:
 Both languages:
 
 - Paths match by source text. A different spelling of the same file does not match, such as `path.join(dir, name)` against `p`, a second variable that holds the same path, or any other alias.
+- Calls match the package or function name as written, not the binding. A call under a renamed import is not matched: `o.Stat` and `o.Open` after `import o "os"` in Go, or `ex(p)` after `import { existsSync as ex }` in TypeScript.
 - There is no alias analysis, no interprocedural analysis, and no runtime proof.
 
 ## Signed archive without mise

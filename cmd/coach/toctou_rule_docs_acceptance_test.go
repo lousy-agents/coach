@@ -46,6 +46,10 @@ var _ = Describe("the security.toctou_check_then_act rule's documented boundary 
 		Entry("a Stat in a statement before the if", "A `Stat` or `Lstat` in a statement before the `if`"),
 		Entry("the Go create acts that are not matched", "`os.Create`, `os.Mkdir`, `os.MkdirAll`, `os.WriteFile`, or `os.Rename`"),
 		Entry("the Go walk callback acting on its own path variable", "An act in a walk callback on the callback's own path variable"),
+		Entry("an act from another package", "An act from another package, such as `ioutil.ReadFile`."),
+		Entry("the TypeScript do-while loop", "a `do` … `while` loop"),
+		Entry("the TypeScript ternary", "A ternary, `existsSync(p) ? readFileSync(p) : null`, is not an `if` or `while`"),
+		Entry("a renamed import", "A call under a renamed import is not matched"),
 		Entry("the TypeScript negated condition", "a negation such as `!existsSync(p)`"),
 		Entry("the TypeScript else-branch act", "An act that sits only in the `else` branch of an `if`."),
 		Entry("the TypeScript async check", "`fs.promises.access`"),
@@ -162,6 +166,35 @@ export function read(p: string) {
   return undefined;
 }
 `, 1),
+		Entry("a Go call under a renamed os import reports none",
+			"toctou.go", `package main
+
+import o "os"
+
+func f(p string) error {
+	if _, err := o.Stat(p); err == nil {
+		return o.Remove(p)
+	}
+	return nil
+}
+`, 0),
+		Entry("a TypeScript call under a renamed existsSync import reports none",
+			"toctou.ts", `import { existsSync as ex, readFileSync } from "node:fs";
+
+export function read(p: string) {
+  if (ex(p)) {
+    return readFileSync(p);
+  }
+  return undefined;
+}
+`, 0),
+		Entry("a TypeScript ternary reports none",
+			"toctou.ts", `import { existsSync, readFileSync } from "node:fs";
+
+export function read(p: string) {
+  return existsSync(p) ? readFileSync(p) : null;
+}
+`, 0),
 		Entry("a negated TypeScript guard reports none",
 			"toctou.ts", `import { existsSync, readFileSync } from "node:fs";
 
