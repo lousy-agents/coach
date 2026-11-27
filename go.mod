@@ -16,7 +16,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.34.0
 	github.com/onsi/gomega v1.44.0
 	github.com/redis/go-redis/v9 v9.24.0
-	go.yaml.in/yaml/v3 v3.0.5
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/mod v0.43.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/text v0.44.0
