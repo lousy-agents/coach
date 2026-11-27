@@ -132,8 +132,8 @@ var _ = Describe("the go test timeout of the other full-module runs (#909)", fun
 		Expect(limit).To(Equal(28))
 	})
 
-	It("keeps the sandbox recipe in validation-and-ci.md on the arguments the distro-git leg runs, so a contributor reproduces its timeout", func() {
-		Expect(readRepoText("docs/development/validation-and-ci.md")).To(ContainSubstring("go run ./cmd/acceptance-ci-env -timeout 25m"))
+	It("keeps the sandbox recipe in validation-and-ci.md on the whole-module run under CI's conditions, with the go test timeout the distro-git legs use", func() {
+		Expect(readRepoText("docs/development/validation-and-ci.md")).To(ContainSubstring("go run ./cmd/acceptance-ci-env -timeout 25m ./..."))
 	})
 
 	It("quotes test-acceptance-fast's go test command with its timeout in acceptance-harness.md", func() {
