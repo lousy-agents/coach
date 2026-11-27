@@ -159,17 +159,28 @@ GHA is a parallel scheduler of atomic `mise run <task>` steps. The local
 `ci` / `ci-fast` / `ci-all` composites are serial bundles of the same tasks; the
 workflow does not invoke those composites.
 
-Nine independent leaf jobs plus a `status` aggregator:
+Ten independent leaf jobs plus a `status` aggregator:
 
-- `verify` — `ci-go`: gofmt / go-vet / tidy-check / acceptance-style-check /
-  source-layout-check / test / test-examples. `install_args` names Go, pnpm,
+- `verify` — `ci-go`'s steps, with `test-rest` for `test`: gofmt / go-vet /
+  tidy-check / acceptance-style-check / source-layout-check / test-rest /
+  test-examples. `install_args` names Go, pnpm,
   and bun; the first `mise run` step then installs whatever else `mise.toml` declares, Node
   included, so the sidecar suite skips because the sidecar is not built, not
-  because `node` is missing. pnpm and bun are named because `test` carries
+  because `node` is missing. pnpm and bun are named because `test-rest` carries
   `cmd/coach`'s real-execution sentinel-script proofs for the frozen adapter
   rows, and those fail rather than skip when their binary is absent; npm needs
   no entry because it ships with Node. Toolchain comes from `mise.toml`
   (`go = "1.27.4"`), not `go.mod`'s language version.
+- `verify-policy` — `mise run test-policy`: the `cmd/coach` acceptance specs in
+  files named `policy_`, 1,122 of its 2,976, about 43% of its spec time. It has
+  `verify`'s runner, mise, cache and env, so the two halves run alike.
+  `test-rest` runs every other package, the plain `Test` functions of
+  `cmd/coach`, and the rest of its specs, with the same pattern as
+  `-ginkgo.skip-file`, so each spec runs in exactly one of the two jobs (each
+  half also builds `coach` once, in the suite's setup). `mise run test`
+  remains the whole run for a local machine. The split exists because
+  `cmd/coach` ran serially in one process and set the wall time of `verify`
+  (339–569 s of its 11–14 minutes); see #605 and #920 for the measurement.
 - `js-verify` — `mise run js-ci` only.
 - `projectmodel-sidecar` — `mise run projectmodel-sidecar-acceptance` (builds
   the sidecar, then the real suite). Parallel with `js-verify`.

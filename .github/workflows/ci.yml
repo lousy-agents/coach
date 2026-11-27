@@ -65,12 +65,40 @@ jobs:
         run: mise run source-layout-check
 
       - name: test
-        run: mise run test
+        run: mise run test-rest
         env:
           COACH_REQUIRE_REAL_MISE: "1"
 
       - name: test-examples
         run: mise run test-examples
+
+  # The other half of `mise run test` (#920): cmd/coach's acceptance specs in files named policy_*, which `verify`'s
+  # test-rest skips by the same pattern. Same runner, mise, cache and env as `verify`, so the halves run alike.
+  verify-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
+        with:
+          version: "2026.11.14"
+          install_args: go pnpm bun
+          experimental: true
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: test-policy
+        run: mise run test-policy
+        env:
+          COACH_REQUIRE_REAL_MISE: "1"
 
   js-verify:
     runs-on: ubuntu-latest
@@ -311,7 +339,7 @@ jobs:
   # failed leaf still produces a failed status rather than a missing check.
   status:
     if: always()
-    needs: [verify, js-verify, projectmodel-sidecar, ts-project-backend, ts-project-backend-node26, wasm-build, vulncheck, platform-smoke, distro-git]
+    needs: [verify, verify-policy, js-verify, projectmodel-sidecar, ts-project-backend, ts-project-backend-node26, wasm-build, vulncheck, platform-smoke, distro-git]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -33,7 +33,15 @@ var _ = Describe("the CI leg on Ubuntu 24.04's own git (#737)", func() {
 		Expect(readRepoText("README.md")).To(ContainSubstring("`git` 2.43 or later"))
 		Expect(readRepoText("docs/development/validation-and-ci.md")).To(ContainSubstring("`distro-git`"))
 		agents := readRepoText("AGENTS.md")
-		Expect(agents).To(ContainSubstring("Nine independent leaf jobs"))
 		Expect(agents).To(ContainSubstring("`distro-git`"))
+	})
+
+	It("#920: counts the leaf jobs in AGENTS.md and in the CI document as the workflow has them", func() {
+		leaves := len(leafJobs(readRepoText(".github/workflows/ci.yml")))
+		words := map[int]string{9: "Nine", 10: "Ten", 11: "Eleven", 12: "Twelve"}
+		Expect(words).To(HaveKey(leaves), "name the count of %d leaf jobs in this table, and in the two documents", leaves)
+
+		Expect(readRepoText("AGENTS.md")).To(ContainSubstring(words[leaves] + " independent leaf jobs"))
+		Expect(readRepoText("docs/development/validation-and-ci.md")).To(ContainSubstring(words[leaves] + " independent leaf jobs"))
 	})
 })

@@ -42,6 +42,22 @@ run = [
 description = "Run all unit tests with race detection"
 run = "go test -race -timeout 25m ./..."
 
+# `test` split in two for CI (#920): verify-policy runs cmd/coach's specs whose file names contain `policy_`, and verify
+# runs everything else. The two share one -ginkgo.focus-file / -ginkgo.skip-file pattern, so each Ginkgo spec runs in
+# exactly one of them, and the policy half names the suite entry point with -run, so the plain Test functions of
+# cmd/coach run once, in test-rest. The packages are named, not listed with `go list`, because the timeout specs read
+# only commands without shell metacharacters; a validationtasks spec checks the names against `go list ./...`.
+[tasks.test-rest]
+description = "Every package's tests but cmd/coach's policy-named acceptance specs (the verify job)"
+run = [
+  "go test -race -timeout 25m ./deploy/... ./internal/... ./pkg/... ./cmd/acceptance-ci-env ./cmd/acceptance-guard-preflight ./cmd/acceptance-style-guard ./cmd/coach-api ./cmd/coach-worker ./cmd/codesignal-report ./cmd/fakegithub-server ./cmd/model-stub ./cmd/platform-smoke ./cmd/semantics-json ./cmd/semantics-wasm-smoke ./cmd/source-layout-guard ./cmd/thinproof-preflight ./cmd/thinproof-runner",
+  "go test -race -timeout 25m ./cmd/coach -ginkgo.skip-file=policy_",
+]
+
+[tasks.test-policy]
+description = "cmd/coach's policy-named acceptance specs (the verify-policy job)"
+run = "go test -race -timeout 25m -run TestCoachAcceptance ./cmd/coach -ginkgo.focus-file=policy_ -ginkgo.fail-on-empty"
+
 [tasks.test-examples]
 description = "Run Go example tests"
 run = "go test -run Example ./..."
@@ -289,7 +305,7 @@ run = "govulncheck -mode source -scan symbol -show verbose ./..."
 # vulncheck is its own leaf, like wasm-build, so it is not a verify step and
 # stays out of this list. ci-all runs it.
 [tasks.ci-go]
-description = "Go slice matching the verify job: gofmt/vet/tidy/style/test/examples"
+description = "Go slice of the verify and verify-policy jobs together: gofmt/vet/tidy/style/test/examples"
 run = [
   { task = "gofmt" },
   { task = "go-vet" },
