@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 var tomlString = regexp.MustCompile(`(?m)^\s*(?:run\s*=\s*\[?\s*)?("(?:[^"\\]|\\.)*")\s*,?\s*\]?\s*$`)
