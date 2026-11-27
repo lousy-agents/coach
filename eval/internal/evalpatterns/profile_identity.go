@@ -62,3 +62,13 @@ func VerifyProfileIdentity(raw []byte) error {
 	}
 	return nil
 }
+
+// ValidateSealedProfile accepts a profile that the committed schema accepts
+// and whose identity is the one its contents seal to, so whatever records
+// that identity names the contents it was derived from.
+func ValidateSealedProfile(raw []byte) error {
+	if err := ValidateProfile(raw); err != nil {
+		return err
+	}
+	return VerifyProfileIdentity(raw)
+}

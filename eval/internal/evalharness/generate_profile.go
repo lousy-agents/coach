@@ -27,7 +27,7 @@ func profileCells(asked profileRequest, tuning bool, index int, dimensions evalg
 	if err != nil {
 		return nil, "", fmt.Errorf("--profile: %w", err)
 	}
-	profile, err := evalgen.ReadProfile(raw, validSealedProfile)
+	profile, err := evalgen.ReadProfile(raw, evalpatterns.ValidateSealedProfile)
 	if err != nil {
 		return nil, "", fmt.Errorf("--profile %s: %w", asked.path, err)
 	}
@@ -50,14 +50,4 @@ func profileConflicts(asked profileRequest, tuning bool, index int, dimensions e
 		return fmt.Errorf("--profile needs --count N, the number of cells to draw")
 	}
 	return nil
-}
-
-// validSealedProfile is a profile the committed schema accepts and whose
-// identity is the one its contents seal to, so the identity a manifest
-// records names the contents that chose its cell (AC-3.4).
-func validSealedProfile(raw []byte) error {
-	if err := evalpatterns.ValidateProfile(raw); err != nil {
-		return err
-	}
-	return evalpatterns.VerifyProfileIdentity(raw)
 }
