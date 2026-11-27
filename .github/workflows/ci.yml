@@ -332,14 +332,51 @@ jobs:
           experimental: true
 
       - name: Go tests under git 2.43, as a non-root user
-        run: mise exec -- go run ./cmd/acceptance-ci-env -timeout 25m ./...
+        run: mise exec -- go run ./cmd/acceptance-ci-env -timeout 25m ./deploy/... ./internal/... ./pkg/... ./cmd/acceptance-ci-env ./cmd/acceptance-guard-preflight ./cmd/acceptance-style-guard ./cmd/coach-api ./cmd/coach-worker ./cmd/codesignal-report ./cmd/fakegithub-server ./cmd/model-stub ./cmd/platform-smoke ./cmd/semantics-json ./cmd/semantics-wasm-smoke ./cmd/source-layout-guard ./cmd/thinproof-preflight ./cmd/thinproof-runner
+
+      - name: cmd/coach outside the policy half, under git 2.43, as a non-root user
+        run: mise exec -- go run ./cmd/acceptance-ci-env -timeout 25m ./cmd/coach -ginkgo.skip-file=policy_
+
+  # The other half of distro-git (#925): cmd/coach's acceptance specs in files
+  # named policy_*, which distro-git skips by the same pattern as `verify`'s
+  # halves. Same container, git pin and setup as distro-git, so the halves run
+  # alike; it is its own job, and in status.needs, so a failing half fails status.
+  distro-git-policy:
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    timeout-minutes: 30
+    env:
+      COACH_CI_GIT_VERSION: "2.43.0"
+    steps:
+      # jq, python3 and strace are on the runner image every other leaf uses,
+      # and the hook, gitrepo and ts-project-backend specs fail rather than skip
+      # without them.
+      - name: install Ubuntu 24.04's git, and the tools the runner image has
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl xz-utils build-essential jq python3 strace
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The container runs as root over a workspace the runner's user owns, and
+      # git refuses a repository another user owns. acceptance-ci-env lists the
+      # files as root before it copies them for nobody.
+      - name: mark the workspace safe for root's git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
+        with:
+          version: "2026.11.14"
+          install_args: go pnpm bun
+          experimental: true
+
+      - name: cmd/coach's policy half under git 2.43, as a non-root user
+        run: mise exec -- go run ./cmd/acceptance-ci-env -timeout 25m -run TestCoachAcceptance ./cmd/coach -ginkgo.focus-file=policy_ -ginkgo.fail-on-empty
 
   # Single required check for branch protection. Leaf jobs stay parallel;
   # this job fails if any required leaf is not success. if: always() so a
   # failed leaf still produces a failed status rather than a missing check.
   status:
     if: always()
-    needs: [verify, verify-policy, js-verify, projectmodel-sidecar, ts-project-backend, ts-project-backend-node26, wasm-build, vulncheck, platform-smoke, distro-git]
+    needs: [verify, verify-policy, js-verify, projectmodel-sidecar, ts-project-backend, ts-project-backend-node26, wasm-build, vulncheck, platform-smoke, distro-git, distro-git-policy]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
