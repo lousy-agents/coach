@@ -1268,6 +1268,38 @@ with no `forbidden_imports` wording. `architecture.layer_bypass` is defined agai
 `required_layer` alone, and file-local rules run on every analyzed file
 regardless of layers.
 
+### `security.toctou_check_then_act`
+
+This rule is a syntactic pattern match and advisory only. It reports a medium-severity finding for each act on a path that an earlier check on the same path text gated. **No finding means only that this syntactic rule did not match.** It does not show that the code is free of time-of-check-to-time-of-use races. The report's all-clear line, `No active CodeSignal findings`, describes the rules that ran. It says nothing more about this race.
+
+The rule matches these shapes:
+
+- **Go.** An `if` whose initializer binds the second result of `os.Stat` or `os.Lstat` to an identifier (`_, err := os.Stat(p)`, or with `=`), whose condition is `err == nil` (or `nil == err`), and whose body calls `os.Open`, `os.OpenFile`, `os.Remove`, `os.RemoveAll`, or `os.ReadFile` on the same first-argument text `p`. The body is searched through nested statements and function literals.
+- **TypeScript and TSX.** An `if` or `while` whose condition is a bare call `existsSync(p)` or `<object>.existsSync(p)`, and whose body (the `if`'s consequence, or the `while`'s body) calls `readFileSync`, `writeFileSync`, `appendFileSync`, `unlinkSync`, or `rmSync` on the same first-argument text `p`. The callee may be bare or a member of any object. The body is searched through nested statements and functions.
+
+The rule matches names, not bindings. In TypeScript and TSX, `cache.existsSync(p)` followed by `cache.readFileSync(p)` matches even when `cache` is not `fs`, and so does a user-defined `existsSync`.
+
+The rule does not match the following forms. Each is a known gap, not evidence that the code is safe.
+
+Go:
+
+- A gate other than a direct `err == nil`: an `err != nil` early return, `errors.Is(err, fs.ErrNotExist)`, `os.IsNotExist(err)`, or a compound condition.
+- A `Stat` or `Lstat` in a statement before the `if`, or one whose results are discarded.
+- An act other than the five listed, such as `os.Create`, `os.Mkdir`, `os.MkdirAll`, `os.WriteFile`, or `os.Rename`. `os.OpenFile` is matched.
+- An act reached only through a walk callback that has no `Stat` or `Lstat` gate of its own.
+
+TypeScript and TSX:
+
+- A condition that is not a bare `existsSync` call: `existsSync(p) && …`, `… || existsSync(p)`, a `for` loop condition, or a negation such as `!existsSync(p)`.
+- An act that sits only in the `else` branch of an `if`.
+- An async check followed by an awaited act, such as `fs.promises.access` followed by `await fs.promises.readFile`.
+- An act other than the five listed, such as `mkdirSync`, `copyFileSync`, `renameSync`, or `openSync`.
+
+Both languages:
+
+- Paths match by source text. A different spelling of the same file does not match, such as `path.join(dir, name)` against `p`, a second variable that holds the same path, or any other alias.
+- There is no alias analysis, no interprocedural analysis, and no runtime proof.
+
 ## Signed archive without mise
 
 Release workflow signs `checksums.txt` with cosign (`sign-blob`, keyless
