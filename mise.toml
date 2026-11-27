@@ -44,8 +44,8 @@ run = "go test -race -timeout 25m ./..."
 
 # `test` split in two for CI (#920): verify-policy runs cmd/coach's specs whose file names contain `policy_`, and verify
 # runs everything else. The two share one -ginkgo.focus-file / -ginkgo.skip-file pattern, so each Ginkgo spec runs in
-# exactly one of them, and the policy half names the suite entry point with -run so the plain Test functions of
-# cmd/coach run once, in this half. The packages are named, not listed with `go list`, because the timeout specs read
+# exactly one of them, and the policy half names the suite entry point with -run, so the plain Test functions of
+# cmd/coach run once, in test-rest. The packages are named, not listed with `go list`, because the timeout specs read
 # only commands without shell metacharacters; a validationtasks spec checks the names against `go list ./...`.
 [tasks.test-rest]
 description = "Every package's tests but cmd/coach's policy-named acceptance specs (the verify job)"
