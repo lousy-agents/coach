@@ -356,7 +356,7 @@ Generated code is trusted, so **it runs natively, without Docker**. Docker isola
 
 **Coverage.** Rule × language coverage follows the CLI contract (`docs/product/prd.md:357` → `docs/cli-codesignal.md` "## Rule IDs"). Applicability was read from `pkg/semantics/*` and `pkg/codesignal/rule_*.go`, and `n/a` cells get look-alikes.
 
-**Caching.** Fixtures are **cached, not committed**, under `$XDG_CACHE_HOME/coach-eval/fixtures/<key>`. The key is a hash of the generator version, operators, seed, **`coach` binary hash** and **detector versions**. Detection needs no Docker.
+**Caching.** Fixtures are **cached, not committed**, under `$XDG_CACHE_HOME/coach-eval/fixtures/<key>`. The key is a hash of the generator version, operators, seed, **`coach` binary hash**, **detector versions**, the validation fingerprint, and whether the run skipped the mutation gate, so a program cached with the gate skipped is never served to a run that asks for it. Detection needs no Docker.
 
 ### Pattern profiles and profile-derived fixtures (#872)
 
