@@ -35,3 +35,32 @@ func containsAll(text string, parts ...string) bool {
 	}
 	return true
 }
+
+func TestGoSearchFlagsAPathThroughANodeWithoutSourcePosition(t *testing.T) {
+	parents := map[string]string{"sink": "source"}
+	search := &layerBypassSearch{}
+
+	search.collectWitnesses("source", []string{"sink"}, parents, map[string]layerBypassNodePosition{}, "service", false)
+
+	if !search.unclassifiedNodeSeen {
+		t.Fatal("a path through a node with no position did not mark the search unclassified")
+	}
+	if len(search.witnesses) != 0 {
+		t.Fatalf("a path through a node with no position produced a witness: %+v", search.witnesses)
+	}
+}
+
+func TestGoSearchReportsAPathWhoseNodesAllHaveASourcePosition(t *testing.T) {
+	parents := map[string]string{"sink": "source"}
+	positions := map[string]layerBypassNodePosition{"source": {Dir: "pkg/handlers", File: "pkg/handlers/handler.go", Line: 1}}
+	search := &layerBypassSearch{}
+
+	search.collectWitnesses("source", []string{"sink"}, parents, positions, "service", false)
+
+	if search.unclassifiedNodeSeen {
+		t.Fatal("a fully positioned path marked the search unclassified")
+	}
+	if len(search.witnesses) != 1 {
+		t.Fatalf("a fully positioned path produced %d witnesses, want 1", len(search.witnesses))
+	}
+}
