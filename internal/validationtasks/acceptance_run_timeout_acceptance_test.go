@@ -136,6 +136,10 @@ var _ = Describe("the go test timeout of the other full-module runs (#909)", fun
 		Expect(readRepoText("docs/development/validation-and-ci.md")).To(ContainSubstring("go run ./cmd/acceptance-ci-env -timeout 25m ./..."))
 	})
 
+	It("keeps git 2.43.0 in the sandbox recipe's environment, the pin the distro-git legs run under, so a contributor reproduces its git", func() {
+		Expect(readRepoText("docs/development/validation-and-ci.md")).To(ContainSubstring("COACH_CI_GIT_VERSION=2.43.0 mise exec -- go run ./cmd/acceptance-ci-env"))
+	})
+
 	It("quotes test-acceptance-fast's go test command with its timeout in acceptance-harness.md", func() {
 		Expect(readRepoText("docs/architecture/acceptance-harness.md")).To(ContainSubstring("go test -race -timeout 25m ./... -run Acceptance"))
 	})
