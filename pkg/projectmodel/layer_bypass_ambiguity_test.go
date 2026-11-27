@@ -22,7 +22,7 @@ func TestLayerAmbiguityDiagnostics(t *testing.T) {
 	both := []string{DiagLayerBypassAmbiguousLayer, DiagLayerBypassRequiredLayerUnmatched}
 	tests := []ambiguityCase{
 		ambiguityRow("nothing is ambiguous", applied, false),
-		ambiguityRow("a matched layer with a node outside every layer is ambiguous without the unmatched cause", applied, true, DiagLayerBypassAmbiguousLayer),
+		ambiguityRow("a matched layer with a node that has no source position is ambiguous without the unmatched cause", applied, true, DiagLayerBypassAmbiguousLayer),
 		ambiguityRow("a layer under which nothing sits names the cause", unmatched, false, both...),
 		ambiguityRow("a layer that is ambiguous for another reason names no cause", otherReason, false, DiagLayerBypassAmbiguousLayer),
 		ambiguityRow("an unclassified node does not repeat the ambiguous code", unmatched, true, both...),
