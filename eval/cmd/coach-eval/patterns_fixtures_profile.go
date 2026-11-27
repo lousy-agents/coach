@@ -22,7 +22,7 @@ func fixturesFor(path, out string, stderr io.Writer) fixturesLine {
 		line.Exit = antipatternfixtures.InputInvalid
 		return line
 	}
-	result, err := antipatternfixtures.Generate(raw, evalpatterns.ValidateProfile, out, label, antipatternfixtures.Templates(), antipatternfixtures.GoVet)
+	result, err := antipatternfixtures.Generate(raw, evalpatterns.ValidateSealedProfile, out, label, antipatternfixtures.Templates(), antipatternfixtures.GoVet)
 	for _, emitted := range result.Emitted {
 		line.Emitted = append(line.Emitted, emitted.ID)
 	}
