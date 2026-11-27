@@ -97,5 +97,5 @@ func (r *generateRun) output(cell evalgen.Cell, location evalgen.Location, manif
 }
 
 func (r *generateRun) fixtureKey(generatorKey string) string {
-	return FixtureKey(generatorKey, r.coach.hash, detectorVersion(), ValidationFingerprint(validationSteps(), validationVersion()))
+	return FixtureKey(generatorKey, r.coach.hash, detectorVersion(), ValidationFingerprint(validationSteps(), validationVersion()), gateState(r.request.NoMutation))
 }

@@ -67,6 +67,53 @@ var _ = Describe("the fixture cache's key and the pinned detector's version (AC-
 		Entry("only the version changes", validationVersionVariable+"=another"),
 	)
 
+	It("pin, not red-first: a held_out run neither reads nor replaces a tuning entry for the same cell and seed, because the panel is part of the key (AC-23, #906)", func() {
+		cacheHome := GinkgoT().TempDir()
+		oracle := GinkgoT().TempDir()
+		env := newStandIn().environment("good")
+		heldOutEnv := append(append([]string{}, env...), "EVAL_ORACLE_DIR="+oracle)
+		heldOutArgs := append(append([]string{}, args...), "--panel", "held_out")
+
+		tuning := runGenerateBinary(faultBinary, cacheHome, env, args...)
+		heldOut := runGenerateBinary(faultBinary, cacheHome, heldOutEnv, heldOutArgs...)
+		tuningAgain := runGenerateBinary(faultBinary, cacheHome, env, args...)
+
+		Expect([]int{tuning.exitCode, heldOut.exitCode, tuningAgain.exitCode}).To(Equal([]int{0, 0, 0}), heldOut.stderr)
+		Expect(decodeGenerated(tuning.stdout).Cache).To(Equal("miss"))
+		Expect(decodeGenerated(heldOut.stdout).Cache).To(Equal("miss"), "a held_out run does not read the tuning entry")
+		Expect(decodeGenerated(tuningAgain.stdout).Cache).To(Equal("hit"), "a held_out run does not replace the tuning entry")
+		Expect(manifestOf(decodeGenerated(tuningAgain.stdout))["program"].(map[string]any)["panel"]).To(Equal("tuning"))
+	})
+
+	It("does not serve an entry cached with the mutation gate skipped to a run that asks for the gate (AC-23, #906)", func() {
+		cacheHome := GinkgoT().TempDir()
+		env := newStandIn().environment("good")
+		skippedArgs := append(append([]string{}, args...), "--no-mutation")
+
+		skipped := runGenerateBinary(faultBinary, cacheHome, env, skippedArgs...)
+		gated := runGenerateBinary(faultBinary, cacheHome, env, args...)
+
+		Expect([]int{skipped.exitCode, gated.exitCode}).To(Equal([]int{0, 0}))
+		Expect(decodeGenerated(skipped.stdout).Cache).To(Equal("miss"))
+		Expect(decodeGenerated(gated.stdout).Cache).To(Equal("miss"), "a run that skipped the gate is another key from a run that asks for it")
+		Expect(validationOf(decodeGenerated(gated.stdout))["mutation_checked"]).To(Equal(true))
+	})
+
+	It("does not overwrite a gated entry with a run that skips the gate, even when that run regenerates (AC-23, #906)", func() {
+		cacheHome := GinkgoT().TempDir()
+		env := newStandIn().environment("good")
+		noCacheSkippedArgs := append(append([]string{}, args...), "--no-cache", "--no-mutation")
+
+		gated := runGenerateBinary(faultBinary, cacheHome, env, args...)
+		skipped := runGenerateBinary(faultBinary, cacheHome, env, noCacheSkippedArgs...)
+		again := runGenerateBinary(faultBinary, cacheHome, env, args...)
+
+		Expect([]int{gated.exitCode, skipped.exitCode, again.exitCode}).To(Equal([]int{0, 0, 0}))
+		Expect(decodeGenerated(gated.stdout).Cache).To(Equal("miss"))
+		Expect(decodeGenerated(again.stdout).Cache).To(Equal("hit"), "the gated entry is still there after the skipped run")
+		Expect(validationOf(decodeGenerated(again.stdout))["mutation_checked"]).To(Equal(true), "the entry served is the gated one")
+	})
+
 	It("is not moved by either override in the release build (AC-32)", func() {
 		cacheHome := GinkgoT().TempDir()
 
