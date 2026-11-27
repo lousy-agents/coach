@@ -17,9 +17,9 @@ type layerAmbiguity struct {
 }
 
 // diagnostics adds to base the diagnostics for the required layer: the
-// ambiguous-layer code whenever the layer could not be applied or a reached
-// node lies outside every layer, and the unmatched-layer diagnostic only for
-// a layer under which nothing sits.
+// ambiguous-layer code whenever the layer could not be applied or a node on
+// a followed path has no source position, so its layer was never decided, and
+// the unmatched-layer diagnostic only for a layer under which nothing sits.
 func (a layerAmbiguity) diagnostics(base []Diagnostic, layer BypassLayer, unclassifiedNodeSeen bool) []Diagnostic {
 	diagnostics := append([]Diagnostic{}, base...)
 	if a.ambiguous {
