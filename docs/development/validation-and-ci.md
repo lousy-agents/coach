@@ -159,7 +159,7 @@ GHA is a parallel scheduler of atomic `mise run <task>` steps. The local
 `ci` / `ci-fast` / `ci-all` composites are serial bundles of the same tasks; the
 workflow does not invoke those composites.
 
-Ten independent leaf jobs plus a `status` aggregator:
+Eleven independent leaf jobs plus a `status` aggregator:
 
 - `verify` — `ci-go`'s steps, with `test-rest` for `test`: gofmt / go-vet /
   tidy-check / acceptance-style-check / source-layout-check / test-rest /
@@ -194,7 +194,9 @@ Ten independent leaf jobs plus a `status` aggregator:
   running, because a mise regression that declined the override would otherwise re-run the
   Node 24 leg and stay green, leaving the supported {24,26} set half-proven.
 - `wasm-build` — `mise run wasm-build`.
-- `distro-git` — the Go tests (`./...`) through `cmd/acceptance-ci-env`, in an
+- `distro-git` — the Go tests of every package but `cmd/coach`, then `cmd/coach`
+  with `-ginkgo.skip-file=policy_` (the same pattern `test-rest` skips by), each
+  through `cmd/acceptance-ci-env`, in an
   `ubuntu:24.04` container with that release's own git 2.43, the oldest git
   `docs/cli-codesignal.md` names. The specs that need git 2.44 or later skip
   there, and so do the `ts-project-backend` specs, because the job does not
@@ -204,6 +206,12 @@ Ten independent leaf jobs plus a `status` aggregator:
   git, and, run as root in the container, runs the tests as `nobody` with an
   empty HOME. Every other leaf runs the runner
   image's git, which floats. Allow 60 minutes.
+- `distro-git-policy` — the other half of `distro-git`: `cmd/coach`'s specs in
+  `policy_`-named files, through `cmd/acceptance-ci-env` with `-run
+  TestCoachAcceptance`, `-ginkgo.focus-file=policy_` and `-ginkgo.fail-on-empty`,
+  in the same container, under the same git pin and setup. It is its own job, not
+  a matrix of `distro-git`, so a failing half is a failing leaf in `status.needs`.
+  Allow 30 minutes.
 - `vulncheck` — `mise run vulncheck`. Symbol-level source scan, text output, so a reachable vulnerable symbol exits 3 and fails the job. `install_args` names Go and the pinned `govulncheck`; the Go module cache matches the other Go jobs. The vulnerability database is not cached. SARIF is not uploaded: that format exits 0 when findings exist, and an upload would need code-scanning write on a workflow whose grant is `contents: read`.
 - `platform-smoke` — `platform-up` / `platform-smoke` / `platform-down` as three
   steps, so teardown still runs on failure.

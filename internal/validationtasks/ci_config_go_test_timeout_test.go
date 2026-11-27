@@ -3,6 +3,7 @@ package validationtasks
 import (
 	"regexp"
 	"strconv"
+	"strings"
 
 	"go.yaml.in/yaml/v4"
 )
@@ -43,16 +44,28 @@ func workflowJob(workflow, name string) map[string]any {
 
 // jobGoTestTimeout reads the run: value of each step of the job, as YAML
 // decodes it, so a comment line or a trailing comment is not part of the value.
+// It names a timeout only when every step that runs go test or acceptance-ci-env
+// names one, and returns the smallest, so a job of several runs is held to its
+// weakest.
 func jobGoTestTimeout(workflow, job string) (int, bool) {
-	steps, _ := workflowJob(workflow, job)["steps"].([]any)
-	for _, step := range steps {
-		fields, _ := step.(map[string]any)
-		run, _ := fields["run"].(string)
-		if minutes, ok := goTestTimeoutMinutes(run); ok {
-			return minutes, true
+	smallest, found := 0, false
+	for _, run := range jobRunCommands(workflow, job) {
+		if !runsGoTest(run) {
+			continue
+		}
+		minutes, ok := goTestTimeoutMinutes(run)
+		if !ok {
+			return 0, false
+		}
+		if !found || minutes < smallest {
+			smallest, found = minutes, true
 		}
 	}
-	return 0, false
+	return smallest, found
+}
+
+func runsGoTest(run string) bool {
+	return strings.Contains(run, "go test") || strings.Contains(run, "./cmd/acceptance-ci-env")
 }
 
 func jobTimeoutMinutes(workflow, job string) (int, bool) {

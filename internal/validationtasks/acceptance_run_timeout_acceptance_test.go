@@ -29,7 +29,7 @@ func mutated(text, old, replacement string) string {
 var _ = Describe("the go test timeout of the other full-module runs (#909)", func() {
 	const (
 		floorMinutes = 25 // what `mise run test` uses (#605)
-		distroRun    = "run: mise exec -- go run ./cmd/acceptance-ci-env -timeout 25m ./..."
+		distroRun    = "run: mise exec -- go run ./cmd/acceptance-ci-env -timeout 25m ./deploy/..."
 		fastStep     = `"go test -race -timeout 25m ./... -run Acceptance",`
 	)
 
@@ -77,11 +77,11 @@ var _ = Describe("the go test timeout of the other full-module runs (#909)", fun
 			Expect(named).To(BeFalse())
 		},
 		Entry("a comment line in the job that mentions the flag, with the flag gone from the run line", func(yml string) string {
-			yml = mutated(yml, distroRun, "run: mise exec -- go run ./cmd/acceptance-ci-env ./...")
+			yml = mutated(yml, distroRun, "run: mise exec -- go run ./cmd/acceptance-ci-env ./deploy/...")
 			return mutated(yml, "      - name: Go tests under git 2.43", "      # acceptance-ci-env passes -timeout 25m through to go test (#909)\n      - name: Go tests under git 2.43")
 		}),
 		Entry("a trailing shell comment on the run line", func(yml string) string {
-			return mutated(yml, distroRun, "run: mise exec -- go run ./cmd/acceptance-ci-env ./... # -timeout 25m")
+			return mutated(yml, distroRun, "run: mise exec -- go run ./cmd/acceptance-ci-env ./deploy/... # -timeout 25m")
 		}),
 		Entry("a later -timeout, which go test lets win", func(yml string) string {
 			return mutated(yml, distroRun, distroRun+" -timeout 5m")
@@ -96,7 +96,7 @@ var _ = Describe("the go test timeout of the other full-module runs (#909)", fun
 			return mutated(yml, distroRun, distroRun+" -args -test.timeout 5m")
 		}),
 		Entry("a second command on the run line", func(yml string) string {
-			return mutated(yml, distroRun, "run: mise exec -- go run ./cmd/acceptance-ci-env ./...; echo -timeout 25m")
+			return mutated(yml, distroRun, "run: mise exec -- go run ./cmd/acceptance-ci-env ./deploy/...; echo -timeout 25m")
 		}),
 	)
 
@@ -132,7 +132,7 @@ var _ = Describe("the go test timeout of the other full-module runs (#909)", fun
 		Expect(limit).To(Equal(28))
 	})
 
-	It("keeps the sandbox recipe in validation-and-ci.md on the arguments the distro-git leg runs, so a contributor reproduces its timeout", func() {
+	It("keeps the sandbox recipe in validation-and-ci.md on the whole-module run under CI's conditions, with the go test timeout the distro-git legs use", func() {
 		Expect(readRepoText("docs/development/validation-and-ci.md")).To(ContainSubstring("go run ./cmd/acceptance-ci-env -timeout 25m ./..."))
 	})
 
