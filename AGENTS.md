@@ -77,6 +77,7 @@ All tasks are defined in `mise.toml`; run them with `mise run <task>`, and list 
 | `ci` | `ci-go` + `js-ci`. No `wasm-build`, and it builds the sidecar only after `test` has already run |
 | `ci-all` | sidecar-first Go slice + `js-ci` + `wasm-build` + `vulncheck`; not `platform-smoke` |
 | `test` | `go test -race -timeout 25m ./...` |
+| `test-rest`, `test-policy` | `test` in two halves, which CI runs in parallel as `verify` and `verify-policy`: `cmd/coach`'s acceptance specs in `policy_`-named files, and everything else |
 | `test-acceptance-fast` | the fast in-process Ginkgo/Gomega suites (offline, no real credentials) |
 
 Single test, Go side:
@@ -138,7 +139,7 @@ Error sentinels: `ErrNotFound`, `ErrAuth`, `ErrUnsupportedContent`, `ErrTooLarge
 
 ### Validation suite
 
-Run these before commit. Each is an atomic `mise run <task>` step CI also runs in `.github/workflows/ci.yml`; CI additionally runs `platform-up`/`platform-smoke`/`platform-down`, which are left out here because they need Docker and live services:
+Run these before commit. Each is an atomic `mise run <task>` step CI also runs in `.github/workflows/ci.yml`, except that CI runs `test` as its two halves, `test-rest` and `test-policy`; CI additionally runs `platform-up`/`platform-smoke`/`platform-down`, which are left out here because they need Docker and live services:
 
 ```sh
 mise run gofmt
@@ -245,4 +246,4 @@ A PR title follows the same rule as its commits. Agent tooling changes the way t
 
 ## CI shape (`.github/workflows/ci.yml`)
 
-Nine independent leaf jobs (`verify`, `js-verify`, `projectmodel-sidecar`, `ts-project-backend`, `ts-project-backend-node26`, `wasm-build`, `vulncheck`, `platform-smoke`, `distro-git`) plus a `status` aggregator, which is the single required check. `vulncheck` is a symbol-level `govulncheck` source scan of the module; it is not part of `verify`, because that job is already the race-test slice. The two `ts-project-backend` leaves run the same `mise run ts-project-backend-acceptance` task on different Node majors — the node26 leg writes a `mise.local.toml` pinning Node 26 and asserts the resolved major before running, so the supported Node {24,26} set carries execution evidence on both rather than on 24 alone. `distro-git` runs the Go tests through `cmd/acceptance-ci-env` in an `ubuntu:24.04` container, under that release's own git 2.43 (the documented minimum) as a non-root user, and its pin fails the job under any other git. Branch protection should require `status` only. Adding a leaf means adding it to `status.needs`, or the new leaf can fail while the required check stays green. The job graph is detailed in [`docs/development/validation-and-ci.md`](docs/development/validation-and-ci.md).
+Ten independent leaf jobs (`verify`, `verify-policy`, `js-verify`, `projectmodel-sidecar`, `ts-project-backend`, `ts-project-backend-node26`, `wasm-build`, `vulncheck`, `platform-smoke`, `distro-git`) plus a `status` aggregator, which is the single required check. `verify` and `verify-policy` together run `mise run test` in two halves, split by a shared `-ginkgo.focus-file` / `-ginkgo.skip-file` pattern on `cmd/coach`'s acceptance specs, so that the longest package does not set the wall time. `vulncheck` is a symbol-level `govulncheck` source scan of the module; it is not part of `verify`, because that job is already the race-test slice. The two `ts-project-backend` leaves run the same `mise run ts-project-backend-acceptance` task on different Node majors — the node26 leg writes a `mise.local.toml` pinning Node 26 and asserts the resolved major before running, so the supported Node {24,26} set carries execution evidence on both rather than on 24 alone. `distro-git` runs the Go tests through `cmd/acceptance-ci-env` in an `ubuntu:24.04` container, under that release's own git 2.43 (the documented minimum) as a non-root user, and its pin fails the job under any other git. Branch protection should require `status` only. Adding a leaf means adding it to `status.needs`, or the new leaf can fail while the required check stays green. The job graph is detailed in [`docs/development/validation-and-ci.md`](docs/development/validation-and-ci.md).
