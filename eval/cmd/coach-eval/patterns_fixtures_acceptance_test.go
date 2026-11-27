@@ -152,7 +152,7 @@ var _ = Describe("coach-eval patterns fixtures (#872 Task 5)", func() {
 		path := filepath.Join(profiles, "stand-in.profile.json")
 		raw, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(os.WriteFile(filepath.Join(profiles, "Bad.profile.json"), []byte(strings.Replace(string(raw), `"label":"stand-in"`, `"label":"Bad"`, 1)), 0o644)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(profiles, "Bad.profile.json"), edited(raw, true, func(profile map[string]any) { profile["label"] = "Bad" }), 0o644)).To(Succeed())
 		Expect(os.Remove(path)).To(Succeed())
 		sibling := filepath.Join(filepath.Dir(out), "sibling.txt")
 		Expect(os.WriteFile(sibling, []byte("kept\n"), 0o644)).To(Succeed())
@@ -171,7 +171,7 @@ var _ = Describe("coach-eval patterns fixtures (#872 Task 5)", func() {
 		path := filepath.Join(profiles, "stand-in.profile.json")
 		raw, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(os.WriteFile(filepath.Join(profiles, "...profile.json"), []byte(strings.Replace(string(raw), `"label":"stand-in"`, `"label":".."`, 1)), 0o644)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(profiles, "...profile.json"), edited(raw, true, func(profile map[string]any) { profile["label"] = ".." }), 0o644)).To(Succeed())
 		Expect(os.Remove(path)).To(Succeed())
 		sibling := filepath.Join(filepath.Dir(out), "sibling.txt")
 		Expect(os.WriteFile(sibling, []byte("kept\n"), 0o644)).To(Succeed())
@@ -200,7 +200,7 @@ var _ = Describe("coach-eval patterns fixtures (#872 Task 5)", func() {
 			path := filepath.Join(profiles, "stand-in.profile.json")
 			raw, err := os.ReadFile(path)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(os.WriteFile(path, []byte(strings.Replace(string(raw), `"label":`, `"path":"pkg/x","label":`, 1)), 0o644)).To(Succeed())
+			Expect(os.WriteFile(path, edited(raw, true, func(profile map[string]any) { profile["path"] = "pkg/x" }), 0o644)).To(Succeed())
 		}, func(profiles string) []string { return []string{"--profiles", profiles, "--out", out} }, "stand-in.profile.json"),
 		Entry("no --profiles", func(string) {}, func(string) []string { return []string{"--out", out} }, "--profiles is required"),
 		Entry("no --out", func(string) {}, func(profiles string) []string { return []string{"--profiles", profiles} }, "--out is required"),
