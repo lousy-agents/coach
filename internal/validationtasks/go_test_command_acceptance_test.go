@@ -17,6 +17,7 @@ var _ = Describe("reading the go test timeout out of one command line (#909)", f
 		Entry("as -timeout=value", "go test -race -timeout=30m ./...", 30),
 		Entry("under go test's own spelling of the flag", "go test -race -test.timeout 30m ./...", 30),
 		Entry("with two dashes", "go test -race --timeout 30m ./...", 30),
+		Entry("when a package is named timeout, which is not a flag", "go test -timeout 25m ./... timeout", 25),
 		Entry("when acceptance-ci-env forwards it", "mise exec -- go run ./cmd/acceptance-ci-env -timeout 25m ./...", 25),
 	)
 
