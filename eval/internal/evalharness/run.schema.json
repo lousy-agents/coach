@@ -62,6 +62,7 @@
     },
     "prompt_hash": {"type": "string", "minLength": 1},
     "oracle_hash": {"type": "string", "minLength": 1},
+    "profile": {"description": "The identity of the pattern profile the run's cells were drawn from, or null for a run without one (#872).", "type": ["string", "null"]},
     "parameters": {
       "type": "object",
       "additionalProperties": {"type": ["integer", "number", "string", "boolean"]}

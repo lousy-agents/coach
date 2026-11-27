@@ -34,6 +34,7 @@ func (r *generateRun) generateAndSave(cell evalgen.Cell, key string) (evalgen.Lo
 		r.tally.accept()
 		program = withValidation(withValidation(program, oracleFields), outcome.fields)
 		program.Manifest.Program.Panel = r.request.Panel
+		program.Manifest.Program.Profile = r.request.Profile
 		program.Manifest.Program.Replacements = replacement
 		program = withBaseFindings(r.coach, program)
 		location, err := r.store.Save(key, program)

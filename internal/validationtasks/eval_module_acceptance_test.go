@@ -39,6 +39,24 @@ func rootModuleImports(goListOutput string) []string {
 	return imports
 }
 
+// ringImports lists the import paths from go list output that are packages of
+// the named eval rings.
+func ringImports(goListOutput string, rings ...string) []string {
+	ringPaths := map[string]bool{}
+	for _, ring := range rings {
+		for _, prefix := range evalRingPrefixes[ring] {
+			ringPaths[evalModulePath+strings.TrimPrefix(prefix, "eval")] = true
+		}
+	}
+	var imports []string
+	for _, path := range strings.Fields(goListOutput) {
+		if ringPaths[path] {
+			imports = append(imports, path)
+		}
+	}
+	return imports
+}
+
 func evalModulePackageDirs(moduleRoot string) []string {
 	var dirs []string
 	for _, dir := range goPackageDirs(filepath.Join(moduleRoot, "eval")) {
@@ -80,6 +98,15 @@ var _ = Describe("the eval module", func() {
 			Expect(err).NotTo(HaveOccurred(), "go list -deps must run in the eval module")
 
 			Expect(rootModuleImports(string(output))).To(BeEmpty())
+		})
+
+		It("keeps the generation ring off the real-code, detection and grading rings, so a profile reaches the generator only as validated JSON (#872)", func() {
+			command := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", "./internal/evalgen/...")
+			command.Dir = filepath.Join(moduleRoot, "eval")
+			output, err := command.Output()
+			Expect(err).NotTo(HaveOccurred(), "go list -deps must run in the eval module")
+
+			Expect(ringImports(string(output), "real-code", "detection", "grading")).To(BeEmpty())
 		})
 	})
 })

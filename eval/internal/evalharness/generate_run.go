@@ -66,7 +66,7 @@ func (r *generateRun) produceAll() ([]generateOutput, error) {
 }
 
 func (r *generateRun) produce(cell evalgen.Cell) (generateOutput, error) {
-	key := r.fixtureKey(evalgen.Key(r.request.Language, cell, r.request.Seed, r.request.Panel))
+	key := r.fixtureKey(evalgen.Key(r.request.Language, cell, r.request.Seed, r.request.Panel, r.request.Profile))
 	location, manifest, intact := r.store.Lookup(key)
 	cache := "hit"
 	if r.request.NoCache || !intact {

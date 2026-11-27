@@ -19,10 +19,10 @@ const (
 )
 
 func TestTheCacheKeysOfBothLanguagesArePinned(t *testing.T) {
-	if got := evalgen.Key(evalgen.LanguageTypeScript, identityCell, 3, "tuning"); got != pinnedTypeScriptKey {
+	if got := evalgen.Key(evalgen.LanguageTypeScript, identityCell, 3, "tuning", ""); got != pinnedTypeScriptKey {
 		t.Errorf("TypeScript key = %s, want %s", got, pinnedTypeScriptKey)
 	}
-	if got := evalgen.Key(evalgen.LanguageGo, identityCell, 3, "tuning"); got != pinnedGoKey {
+	if got := evalgen.Key(evalgen.LanguageGo, identityCell, 3, "tuning", ""); got != pinnedGoKey {
 		t.Errorf("Go key = %s, want %s", got, pinnedGoKey)
 	}
 }

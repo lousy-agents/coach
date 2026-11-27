@@ -19,6 +19,7 @@ var comparableFields = []string{
 	"prompt_hash",
 	"oracle_hash",
 	"parameters",
+	"profile",
 }
 
 // differingFields returns the sorted paths of comparable leaves whose values differ between the two

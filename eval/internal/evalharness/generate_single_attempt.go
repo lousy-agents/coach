@@ -14,6 +14,7 @@ func (r *generateRun) generateAndSaveOnce(cell evalgen.Cell, key string) (evalge
 		return evalgen.Location{}, evalgen.Manifest{}, err
 	}
 	program.Manifest.Program.Panel = r.request.Panel
+	program.Manifest.Program.Profile = r.request.Profile
 	if err := validateProgram(program, r.tools); err != nil {
 		return evalgen.Location{}, evalgen.Manifest{}, fmt.Errorf("the generated program failed validation: %w", err)
 	}
