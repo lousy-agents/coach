@@ -49,6 +49,22 @@ var _ = Describe("the policy half's selection of cmd/coach's spec files (#920)",
 		Expect(specFilesMatching(filepath.Join("..", "..", "cmd", "coach"), "no_such_file_name_")).To(BeEmpty())
 	})
 
+	It("does not count a file the pattern matches when it holds no spec", func() {
+		dir := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(dir, "policy_helpers_test.go"), []byte("package x\n\nfunc helper() {}\n"), 0o644)).To(Succeed())
+
+		Expect(specFilesMatching(dir, "policy_")).To(BeEmpty())
+	})
+
+	It("counts a file the pattern matches that holds a spec as an It or as a table Entry, and no file the pattern does not match", func() {
+		dir := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(dir, "policy_entry_test.go"), []byte("package x\n\nvar _ = DescribeTable(\"t\", f, Entry(\"e\", 1))\n"), 0o644)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(dir, "policy_it_test.go"), []byte("package x\n\nvar _ = Describe(\"d\", func() { It(\"i\", f) })\n"), 0o644)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(dir, "other_it_test.go"), []byte("package x\n\nvar _ = Describe(\"d\", func() { It(\"i\", f) })\n"), 0o644)).To(Succeed())
+
+		Expect(specFilesMatching(dir, "policy_")).To(Equal([]string{"policy_entry_test.go", "policy_it_test.go"}))
+	})
+
 	It("fails the policy half when it selects no spec, with -ginkgo.fail-on-empty", func() {
 		Expect(strings.Fields(policyCommand(toml))).To(ContainElement("-ginkgo.fail-on-empty"))
 	})
